@@ -35,7 +35,7 @@ defmodule Ragex.MCP.ProtocolTest do
     end
 
     test "encodes error response" do
-      response = Protocol.error_response(-32600, "Invalid request", nil, 1)
+      response = Protocol.error_response(-32_600, "Invalid request", nil, 1)
       assert {:ok, json} = Protocol.encode(response)
       assert json =~ ~s("error")
       assert json =~ ~s("code":-32600)
@@ -51,18 +51,18 @@ defmodule Ragex.MCP.ProtocolTest do
 
   describe "error_response/4" do
     test "creates error response with data" do
-      response = Protocol.error_response(-32600, "Test error", %{info: "test"}, 1)
+      response = Protocol.error_response(-32_600, "Test error", %{info: "test"}, 1)
 
       assert %{
                jsonrpc: "2.0",
-               error: %{code: -32600, message: "Test error", data: %{info: "test"}},
+               error: %{code: -32_600, message: "Test error", data: %{info: "test"}},
                id: 1
              } = response
     end
 
     test "creates error response without data" do
-      response = Protocol.error_response(-32600, "Test error", nil, 1)
-      assert %{jsonrpc: "2.0", error: %{code: -32600, message: "Test error"}, id: 1} = response
+      response = Protocol.error_response(-32_600, "Test error", nil, 1)
+      assert %{jsonrpc: "2.0", error: %{code: -32_600, message: "Test error"}, id: 1} = response
       refute Map.has_key?(response.error, :data)
     end
   end

@@ -8,9 +8,9 @@ defmodule Ragex.Retrieval.Hybrid do
   - **Fusion**: Combine results from both approaches using RRF
   """
 
+  alias Ragex.Embeddings.Bumblebee
   alias Ragex.Graph.Store
   alias Ragex.VectorStore
-  alias Ragex.Embeddings.Bumblebee
 
   @doc """
   Performs hybrid search combining semantic and symbolic approaches.

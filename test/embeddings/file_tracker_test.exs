@@ -35,7 +35,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       assert :ok = FileTracker.track_file(file_path, analysis)
 
       tracked = FileTracker.list_tracked_files()
-      assert length(tracked) == 1
+      assert Enum.count(tracked) == 1
 
       {^file_path, metadata} = hd(tracked)
       assert metadata.path == file_path
@@ -68,7 +68,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
       # Should still have only one tracked file
       tracked = FileTracker.list_tracked_files()
-      assert length(tracked) == 1
+      assert Enum.count(tracked) == 1
 
       {^file_path, metadata} = hd(tracked)
       assert length(metadata.entities) == 2
@@ -216,11 +216,11 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       analysis = %{modules: [], functions: [], calls: [], imports: []}
       FileTracker.track_file(file_path, analysis)
 
-      assert length(FileTracker.list_tracked_files()) == 1
+      assert Enum.count(FileTracker.list_tracked_files()) == 1
 
       FileTracker.untrack_file(file_path)
 
-      assert length(FileTracker.list_tracked_files()) == 0
+      assert FileTracker.list_tracked_files() == []
     end
 
     test "handles untracking non-existent file" do
@@ -238,11 +238,11 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       FileTracker.track_file(file1, analysis)
       FileTracker.track_file(file2, analysis)
 
-      assert length(FileTracker.list_tracked_files()) == 2
+      assert Enum.count(FileTracker.list_tracked_files()) == 2
 
       FileTracker.clear_all()
 
-      assert length(FileTracker.list_tracked_files()) == 0
+      assert FileTracker.list_tracked_files() == []
     end
   end
 
@@ -318,13 +318,13 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
       # Clear and import
       FileTracker.clear_all()
-      assert length(FileTracker.list_tracked_files()) == 0
+      assert FileTracker.list_tracked_files() == []
 
       assert :ok = FileTracker.import(exported)
 
       # Check imported data
       tracked = FileTracker.list_tracked_files()
-      assert length(tracked) == 2
+      assert Enum.count(tracked) == 2
 
       paths = Enum.map(tracked, fn {path, _} -> path end)
       assert file1 in paths

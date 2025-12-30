@@ -9,7 +9,7 @@ defmodule Ragex.Editor.Transaction do
   - Automatic rollback on any failure
   """
 
-  alias Ragex.Editor.{Core, Types, Backup}
+  alias Ragex.Editor.{Core, Types}
   require Logger
 
   @typedoc """

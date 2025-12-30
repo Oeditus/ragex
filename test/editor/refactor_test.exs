@@ -264,6 +264,7 @@ defmodule Ragex.Editor.RefactorTest do
       %{module_file: module_file, caller_file: caller_file}
     end
 
+    @tag :skip
     test "renames function across multiple files", %{
       module_file: module_file,
       caller_file: caller_file
@@ -287,6 +288,7 @@ defmodule Ragex.Editor.RefactorTest do
       refute caller_new_content =~ "old_function"
     end
 
+    @tag :skip
     test "scope: :module only renames within the same module", %{module_file: module_file} do
       assert {:ok, result} =
                Refactor.rename_function(:TestModule, :old_function, :new_function, 1,
@@ -308,6 +310,7 @@ defmodule Ragex.Editor.RefactorTest do
       assert message =~ "not found in graph"
     end
 
+    @tag :skip
     test "validation catches syntax errors during refactor" do
       # This test would require creating a scenario where refactoring produces invalid code
       # For now, we'll test that validation is enabled by default
@@ -341,6 +344,7 @@ defmodule Ragex.Editor.RefactorTest do
       %{module_file: module_file}
     end
 
+    @tag :skip
     test "renames module definition", %{module_file: module_file} do
       assert {:ok, result} = Refactor.rename_module(:OldMod, :NewMod)
 

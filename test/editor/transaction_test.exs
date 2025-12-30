@@ -33,7 +33,7 @@ defmodule Ragex.Editor.TransactionTest do
       changes = [Types.replace(1, 1, "new")]
       txn = Transaction.new() |> Transaction.add("file.ex", changes)
 
-      assert length(txn.edits) == 1
+      assert Enum.count(txn.edits) == 1
       assert hd(txn.edits).path == "file.ex"
       assert hd(txn.edits).changes == changes
     end
@@ -45,7 +45,7 @@ defmodule Ragex.Editor.TransactionTest do
         |> Transaction.add("file2.ex", [Types.replace(2, 2, "b")])
         |> Transaction.add("file3.ex", [Types.replace(3, 3, "c")])
 
-      assert length(txn.edits) == 3
+      assert Enum.count(txn.edits) == 3
       assert Enum.map(txn.edits, & &1.path) == ["file1.ex", "file2.ex", "file3.ex"]
     end
 
@@ -89,7 +89,7 @@ defmodule Ragex.Editor.TransactionTest do
         |> Transaction.add(file1, [Types.replace(1, 2, "defmodule Test do")])
 
       assert {:error, errors} = Transaction.validate(txn)
-      assert length(errors) == 1
+      assert Enum.count(errors) == 1
       assert {^file1, _validation_errors} = hd(errors)
     end
 
@@ -147,7 +147,7 @@ defmodule Ragex.Editor.TransactionTest do
       assert {:ok, result} = Transaction.commit(txn)
       assert result.status == :success
       assert result.files_edited == 3
-      assert length(result.results) == 3
+      assert Enum.count(result.results) == 3
 
       # Verify all changes applied
       assert File.read!(file1) == "modified file1\n"
@@ -264,7 +264,7 @@ defmodule Ragex.Editor.TransactionTest do
 
       assert {:error, result} = Transaction.commit(txn)
       assert result.status == :failure
-      assert length(result.errors) > 0
+      assert result.errors != []
     end
 
     test "rolls back partial changes on file error", %{test_dir: dir} do

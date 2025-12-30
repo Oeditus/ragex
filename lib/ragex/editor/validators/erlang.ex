@@ -50,12 +50,10 @@ defmodule Ragex.Editor.Validators.Erlang do
   end
 
   defp group_forms(tokens) do
-    try do
-      forms = split_into_forms(tokens)
-      {:ok, forms}
-    rescue
-      e -> {:error, {1, :erl_parse, Exception.message(e)}}
-    end
+    forms = split_into_forms(tokens)
+    {:ok, forms}
+  rescue
+    e -> {:error, {1, :erl_parse, Exception.message(e)}}
   end
 
   defp split_into_forms(tokens) do
@@ -70,7 +68,7 @@ defmodule Ragex.Editor.Validators.Erlang do
       [form, [{:dot, _}]] -> form ++ [{:dot, 0}]
       [form] -> form
     end)
-    |> Enum.filter(&(length(&1) > 0))
+    |> Enum.filter(&(&1 != []))
   end
 
   defp validate_forms(forms) do
@@ -95,15 +93,13 @@ defmodule Ragex.Editor.Validators.Erlang do
   end
 
   defp format_error_message(module, error_descriptor) do
-    try do
-      # Try to format using the module's format_error function
-      if function_exported?(module, :format_error, 1) do
-        module.format_error(error_descriptor) |> to_string()
-      else
-        "syntax error: #{inspect(error_descriptor)}"
-      end
-    rescue
-      _ -> "syntax error: #{inspect(error_descriptor)}"
+    # Try to format using the module's format_error function
+    if function_exported?(module, :format_error, 1) do
+      module.format_error(error_descriptor) |> to_string()
+    else
+      "syntax error: #{inspect(error_descriptor)}"
     end
+  rescue
+    _ -> "syntax error: #{inspect(error_descriptor)}"
   end
 end

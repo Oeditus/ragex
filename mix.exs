@@ -27,7 +27,10 @@ defmodule Ragex.MixProject do
       # Embeddings and ML
       {:bumblebee, "~> 0.5"},
       {:nx, "~> 0.9"},
-      {:exla, "~> 0.9"}
+      {:exla, "~> 0.9"},
+      # Doc / Test
+      {:credo, "~> 1.5", only: :dev},
+      {:dialyxir, "~> 1.1", only: :dev}
     ]
   end
 end

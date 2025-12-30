@@ -32,7 +32,7 @@ defmodule Ragex.Analyzers.ElixirTest do
       """
 
       assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex")
-      assert length(result.functions) == 2
+      assert Enum.count(result.functions) == 2
 
       public_func = Enum.find(result.functions, &(&1.name == :public_function))
       assert public_func.arity == 2
@@ -55,7 +55,7 @@ defmodule Ragex.Analyzers.ElixirTest do
       """
 
       assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex")
-      assert length(result.imports) == 4
+      assert Enum.count(result.imports) == 4
 
       assert Enum.any?(result.imports, &(&1.type == :import && &1.to_module == Enum))
       assert Enum.any?(result.imports, &(&1.type == :require && &1.to_module == Logger))
@@ -73,7 +73,7 @@ defmodule Ragex.Analyzers.ElixirTest do
       """
 
       assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex")
-      assert length(result.calls) >= 1
+      assert result.calls != []
 
       call = Enum.find(result.calls, &(&1.to_function == :upcase))
       assert call.to_module == String

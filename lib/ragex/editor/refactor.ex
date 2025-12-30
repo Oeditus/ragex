@@ -7,9 +7,9 @@ defmodule Ragex.Editor.Refactor do
   the graph to find call sites and dependencies.
   """
 
-  alias Ragex.Graph.Store
-  alias Ragex.Editor.{Transaction, Types}
   alias Ragex.Editor.Refactor.Elixir, as: ElixirRefactor
+  alias Ragex.Editor.{Transaction, Types}
+  alias Ragex.Graph.Store
   require Logger
 
   @type refactor_result :: %{

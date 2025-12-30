@@ -157,70 +157,64 @@ defmodule Ragex.Embeddings.Bumblebee do
   # Private Functions
 
   defp load_model(model_info) do
-    try do
-      Logger.info("Loading model from #{model_info.repo}...")
+    Logger.info("Loading model from #{model_info.repo}...")
 
-      # Load the tokenizer
-      {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, model_info.repo})
+    # Load the tokenizer
+    {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, model_info.repo})
 
-      # Load the model
-      {:ok, model} = Bumblebee.load_model({:hf, model_info.repo})
+    # Load the model
+    {:ok, model} = Bumblebee.load_model({:hf, model_info.repo})
 
-      # Create a serving for embeddings
-      # Adjust sequence length based on model's max_tokens
-      sequence_length = min(model_info.max_tokens, 512)
+    # Create a serving for embeddings
+    # Adjust sequence length based on model's max_tokens
+    sequence_length = min(model_info.max_tokens, 512)
 
-      serving =
-        Bumblebee.Text.TextEmbedding.text_embedding(model, tokenizer,
-          output_attribute: :hidden_state,
-          output_pool: :mean_pooling,
-          embedding_processor: :l2_norm,
-          compile: [batch_size: 32, sequence_length: sequence_length],
-          defn_options: [compiler: EXLA]
-        )
+    serving =
+      Bumblebee.Text.TextEmbedding.text_embedding(model, tokenizer,
+        output_attribute: :hidden_state,
+        output_pool: :mean_pooling,
+        embedding_processor: :l2_norm,
+        compile: [batch_size: 32, sequence_length: sequence_length],
+        defn_options: [compiler: EXLA]
+      )
 
-      {:ok, serving, tokenizer, model}
-    rescue
-      e ->
-        {:error, Exception.message(e)}
-    end
+    {:ok, serving, tokenizer, model}
+  rescue
+    e ->
+      {:error, Exception.message(e)}
   end
 
   defp generate_embedding(text, serving) do
-    try do
-      # Truncate very long texts to avoid OOM
-      text = String.slice(text, 0, 5000)
+    # Truncate very long texts to avoid OOM
+    text = String.slice(text, 0, 5000)
 
-      result = Nx.Serving.run(serving, text)
+    result = Nx.Serving.run(serving, text)
 
-      # Extract the embedding tensor and convert to list
-      embedding = result.embedding |> Nx.to_flat_list()
+    # Extract the embedding tensor and convert to list
+    embedding = result.embedding |> Nx.to_flat_list()
 
-      {:ok, embedding}
-    rescue
-      e ->
-        {:error, Exception.message(e)}
-    end
+    {:ok, embedding}
+  rescue
+    e ->
+      {:error, Exception.message(e)}
   end
 
   defp generate_embeddings_batch(texts, serving) do
-    try do
-      # Truncate texts
-      texts = Enum.map(texts, &String.slice(&1, 0, 5000))
+    # Truncate texts
+    texts = Enum.map(texts, &String.slice(&1, 0, 5000))
 
-      results = Nx.Serving.run(serving, texts)
+    results = Nx.Serving.run(serving, texts)
 
-      # Extract embeddings
-      embeddings =
-        results
-        |> Enum.map(fn result ->
-          result.embedding |> Nx.to_flat_list()
-        end)
+    # Extract embeddings
+    embeddings =
+      results
+      |> Enum.map(fn result ->
+        result.embedding |> Nx.to_flat_list()
+      end)
 
-      {:ok, embeddings}
-    rescue
-      e ->
-        {:error, Exception.message(e)}
-    end
+    {:ok, embeddings}
+  rescue
+    e ->
+      {:error, Exception.message(e)}
   end
 end

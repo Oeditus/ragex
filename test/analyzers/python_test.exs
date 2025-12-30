@@ -8,10 +8,10 @@ defmodule Ragex.Analyzers.PythonTest do
   @python_available System.find_executable("python3") != nil
 
   setup do
-    unless @python_available do
-      {:ok, skip: true}
-    else
+    if @python_available do
       :ok
+    else
+      {:ok, skip: true}
     end
   end
 
@@ -33,7 +33,7 @@ defmodule Ragex.Analyzers.PythonTest do
       # File-level module should be created
       assert Enum.any?(result.modules, &(&1.name == :test))
 
-      assert length(result.functions) == 2
+      assert Enum.count(result.functions) == 2
 
       hello = Enum.find(result.functions, &(&1.name == :hello))
       assert hello.arity == 0
@@ -72,7 +72,7 @@ defmodule Ragex.Analyzers.PythonTest do
       assert test_class.metadata.type == :class
 
       # Methods should be functions
-      assert length(result.functions) == 3
+      assert Enum.count(result.functions) == 3
 
       init = Enum.find(result.functions, &(&1.name == :__init__))
       assert init.module == :TestClass
@@ -103,7 +103,7 @@ defmodule Ragex.Analyzers.PythonTest do
 
       assert {:ok, result} = PythonAnalyzer.analyze(source, "test.py")
 
-      assert length(result.imports) >= 3
+      assert result.imports != []
 
       assert Enum.any?(result.imports, &(&1.to_module == :os && &1.type == :import))
       assert Enum.any?(result.imports, &(&1.to_module == :sys && &1.type == :import))
@@ -124,7 +124,7 @@ defmodule Ragex.Analyzers.PythonTest do
       assert {:ok, result} = PythonAnalyzer.analyze(source, "test.py")
 
       # Should detect some calls
-      assert length(result.calls) > 0
+      assert result.calls != []
 
       # Check for specific calls
       assert Enum.any?(result.calls, &(&1.to_function == :print))

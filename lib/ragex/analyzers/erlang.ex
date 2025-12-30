@@ -131,7 +131,7 @@ defmodule Ragex.Analyzers.Erlang do
         file: context.file,
         line: line,
         doc: nil,
-        visibility: if(is_exported?(name, arity, context), do: :public, else: :private),
+        visibility: if(exported?(name, arity, context), do: :public, else: :private),
         metadata: %{}
       }
 
@@ -161,7 +161,7 @@ defmodule Ragex.Analyzers.Erlang do
   # Other forms
   defp analyze_form(_form, context), do: context
 
-  defp is_exported?(name, arity, context) do
+  defp exported?(name, arity, context) do
     exported = Map.get(context, :exported, MapSet.new())
     MapSet.member?(exported, {name, arity})
   end

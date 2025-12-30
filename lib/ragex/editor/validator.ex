@@ -45,10 +45,11 @@ defmodule Ragex.Editor.Validator do
   @spec validate(String.t(), keyword()) ::
           {:ok, :valid | :no_validator} | {:error, [Types.validation_error()]}
   def validate(content, opts \\ []) do
-    with {:ok, validator} <- select_validator(opts) do
-      Logger.debug("Validating with #{inspect(validator)}")
-      validator.validate(content, opts)
-    else
+    case select_validator(opts) do
+      {:ok, validator} ->
+        Logger.debug("Validating with #{inspect(validator)}")
+        validator.validate(content, opts)
+
       {:error, :no_validator} ->
         Logger.debug("No validator available for #{inspect(opts[:path])}")
         {:ok, :no_validator}

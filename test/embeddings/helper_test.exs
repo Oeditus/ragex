@@ -60,13 +60,10 @@ defmodule Ragex.Embeddings.HelperTest do
 
     test "returns error when model not ready" do
       # Don't wait for model
-      if not Helper.ready?() do
+      with false <- Helper.ready?() do
         analysis_result = %{modules: [], functions: [], calls: [], imports: []}
 
         assert {:error, :model_not_ready} = Helper.generate_and_store_embeddings(analysis_result)
-      else
-        # If model is ready, skip this test
-        :ok
       end
     end
   end

@@ -104,7 +104,7 @@ defmodule Ragex.VectorStore do
 
     stats = %{
       total_embeddings: length(embeddings),
-      dimensions: if(length(embeddings) > 0, do: length(elem(hd(embeddings), 2)), else: 0)
+      dimensions: if(embeddings != [], do: length(elem(hd(embeddings), 2)), else: 0)
     }
 
     {:reply, stats, state}
@@ -138,7 +138,10 @@ defmodule Ragex.VectorStore do
             text: text,
             embedding: embedding
           }
-        end, ordered: false, timeout: :infinity)
+        end,
+        ordered: false,
+        timeout: :infinity
+      )
       |> Enum.map(fn {:ok, result} -> result end)
       |> Enum.filter(fn result -> result.score >= threshold end)
       |> Enum.sort_by(fn result -> result.score end, :desc)

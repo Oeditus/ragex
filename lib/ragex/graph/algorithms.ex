@@ -182,7 +182,7 @@ defmodule Ragex.Graph.Algorithms do
     centrality = degree_centrality()
 
     degrees = centrality |> Map.values() |> Enum.map(& &1.total_degree)
-    avg_degree = if length(degrees) > 0, do: Enum.sum(degrees) / length(degrees), else: 0.0
+    avg_degree = if degrees != [], do: Enum.sum(degrees) / length(degrees), else: 0.0
 
     n = length(nodes)
     m = length(edges)
@@ -302,43 +302,60 @@ defmodule Ragex.Graph.Algorithms do
   end
 
   defp find_paths_dfs(current, target, adjacency, max_depth, max_paths, path, visited, count) do
-    if current == target do
-      # Found a path, increment count
-      {[Enum.reverse(path)], count + 1}
-    else
-      # Don't explore further if we've already reached max depth
-      if length(path) - 1 >= max_depth do
+    cond do
+      current == target ->
+        # Found a path, increment count
+        {[Enum.reverse(path)], count + 1}
+
+      length(path) - 1 >= max_depth ->
+        # Don't explore further if we've already reached max depth
         {[], count}
-      else
-        neighbors = Map.get(adjacency, current, [])
 
-        # Accumulate paths and count with early stopping
-        neighbors
-        |> Enum.reject(&MapSet.member?(visited, &1))
-        |> Enum.reduce({[], count}, fn neighbor, {acc_paths, acc_count} ->
-          # Stop exploring if we've hit max_paths
-          if acc_count >= max_paths do
-            {acc_paths, acc_count}
-          else
-            new_path = [neighbor | path]
-            new_visited = MapSet.put(visited, neighbor)
+      true ->
+        explore_neighbors(adjacency, current, target, max_depth, max_paths, path, visited, count)
+    end
+  end
 
-            {new_paths, new_count} =
-              find_paths_dfs(
-                neighbor,
-                target,
-                adjacency,
-                max_depth,
-                max_paths,
-                new_path,
-                new_visited,
-                acc_count
-              )
+  defp explore_neighbors(adjacency, current, target, max_depth, max_paths, path, visited, count) do
+    neighbors = Map.get(adjacency, current, [])
 
-            {acc_paths ++ new_paths, new_count}
-          end
-        end)
-      end
+    # Accumulate paths and count with early stopping
+    neighbors
+    |> Enum.reject(&MapSet.member?(visited, &1))
+    |> Enum.reduce({[], count}, fn neighbor, {acc_paths, acc_count} ->
+      explore_neighbor(
+        neighbor,
+        {target, adjacency, max_depth, max_paths, path, visited},
+        {acc_paths, acc_count}
+      )
+    end)
+  end
+
+  defp explore_neighbor(
+         neighbor,
+         {target, adjacency, max_depth, max_paths, path, visited},
+         {acc_paths, acc_count}
+       ) do
+    # Stop exploring if we've hit max_paths
+    if acc_count >= max_paths do
+      {acc_paths, acc_count}
+    else
+      new_path = [neighbor | path]
+      new_visited = MapSet.put(visited, neighbor)
+
+      {new_paths, new_count} =
+        find_paths_dfs(
+          neighbor,
+          target,
+          adjacency,
+          max_depth,
+          max_paths,
+          new_path,
+          new_visited,
+          acc_count
+        )
+
+      {acc_paths ++ new_paths, new_count}
     end
   end
 

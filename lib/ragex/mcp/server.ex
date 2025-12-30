@@ -8,8 +8,8 @@ defmodule Ragex.MCP.Server do
   use GenServer
   require Logger
 
-  alias Ragex.MCP.Protocol
   alias Ragex.MCP.Handlers.Tools
+  alias Ragex.MCP.Protocol
 
   defmodule State do
     @moduledoc false

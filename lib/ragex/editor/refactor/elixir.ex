@@ -109,14 +109,12 @@ defmodule Ragex.Editor.Refactor.Elixir do
   end
 
   defp ast_to_string(ast) do
-    try do
-      # Use Macro.to_string for basic conversion
-      code = Macro.to_string(ast)
-      {:ok, code}
-    rescue
-      e ->
-        {:error, "Failed to convert AST to string: #{inspect(e)}"}
-    end
+    # Use Macro.to_string for basic conversion
+    code = Macro.to_string(ast)
+    {:ok, code}
+  rescue
+    e ->
+      {:error, "Failed to convert AST to string: #{inspect(e)}"}
   end
 
   defp to_atom(value) when is_atom(value), do: value
@@ -125,52 +123,109 @@ defmodule Ragex.Editor.Refactor.Elixir do
   # Transform function definitions and calls
   defp transform_function_names(ast, old_name, new_name, target_arity) do
     Macro.prewalk(ast, fn node ->
-      case node do
-        # Function definition: def old_name(...) or defp old_name(...)
-        {:def, meta, [{^old_name, call_meta, args} = _call, body]} when is_list(args) ->
-          if target_arity == nil or length(args) == target_arity do
-            {:def, meta, [{new_name, call_meta, args}, body]}
-          else
-            node
-          end
-
-        {:defp, meta, [{^old_name, call_meta, args} = _call, body]} when is_list(args) ->
-          if target_arity == nil or length(args) == target_arity do
-            {:defp, meta, [{new_name, call_meta, args}, body]}
-          else
-            node
-          end
-
-        # Function call: old_name(...)
-        {^old_name, meta, args} when is_list(args) ->
-          if target_arity == nil or length(args) == target_arity do
-            {new_name, meta, args}
-          else
-            node
-          end
-
-        # Module-qualified call: Module.old_name(...)
-        {{:., dot_meta, [module, ^old_name]}, call_meta, args} when is_list(args) ->
-          if target_arity == nil or length(args) == target_arity do
-            {{:., dot_meta, [module, new_name]}, call_meta, args}
-          else
-            node
-          end
-
-        # Function reference: &old_name/arity
-        {:&, meta, [{:/, slash_meta, [{^old_name, name_meta, context}, arity]}]}
-        when is_integer(arity) ->
-          if target_arity == nil or arity == target_arity do
-            {:&, meta, [{:/, slash_meta, [{new_name, name_meta, context}, arity]}]}
-          else
-            node
-          end
-
-        _ ->
-          node
-      end
+      transform_function_node(node, old_name, new_name, target_arity)
     end)
   end
+
+  defp transform_function_node(node, old_name, new_name, target_arity) do
+    case node do
+      {:def, meta, [{^old_name, call_meta, args} = _call, body]} when is_list(args) ->
+        maybe_rename_def(node, meta, call_meta, args, body, new_name, target_arity)
+
+      {:defp, meta, [{^old_name, call_meta, args} = _call, body]} when is_list(args) ->
+        maybe_rename_defp(node, meta, call_meta, args, body, new_name, target_arity)
+
+      {^old_name, meta, args} when is_list(args) ->
+        maybe_rename_call(node, meta, args, new_name, target_arity)
+
+      {{:., dot_meta, [module, ^old_name]}, call_meta, args} when is_list(args) ->
+        maybe_rename_qualified_call(
+          node,
+          dot_meta,
+          module,
+          new_name,
+          call_meta,
+          args,
+          target_arity
+        )
+
+      {:&, meta, [{:/, slash_meta, [{^old_name, name_meta, context}, arity]}]}
+      when is_integer(arity) ->
+        maybe_rename_function_ref(
+          node,
+          meta,
+          slash_meta,
+          new_name,
+          name_meta,
+          context,
+          arity,
+          target_arity
+        )
+
+      _ ->
+        node
+    end
+  end
+
+  defp maybe_rename_def(node, meta, call_meta, args, body, new_name, target_arity) do
+    if arity_matches?(args, target_arity) do
+      {:def, meta, [{new_name, call_meta, args}, body]}
+    else
+      node
+    end
+  end
+
+  defp maybe_rename_defp(node, meta, call_meta, args, body, new_name, target_arity) do
+    if arity_matches?(args, target_arity) do
+      {:defp, meta, [{new_name, call_meta, args}, body]}
+    else
+      node
+    end
+  end
+
+  defp maybe_rename_call(node, meta, args, new_name, target_arity) do
+    if arity_matches?(args, target_arity) do
+      {new_name, meta, args}
+    else
+      node
+    end
+  end
+
+  defp maybe_rename_qualified_call(
+         node,
+         dot_meta,
+         module,
+         new_name,
+         call_meta,
+         args,
+         target_arity
+       ) do
+    if arity_matches?(args, target_arity) do
+      {{:., dot_meta, [module, new_name]}, call_meta, args}
+    else
+      node
+    end
+  end
+
+  defp maybe_rename_function_ref(
+         node,
+         meta,
+         slash_meta,
+         new_name,
+         name_meta,
+         context,
+         arity,
+         target_arity
+       ) do
+    if target_arity == nil or arity == target_arity do
+      {:&, meta, [{:/, slash_meta, [{new_name, name_meta, context}, arity]}]}
+    else
+      node
+    end
+  end
+
+  defp arity_matches?(args, nil), do: true
+  defp arity_matches?(args, target_arity), do: length(args) == target_arity
 
   # Transform module names
   defp transform_module_names(ast, old_name, new_name) do

@@ -5,19 +5,19 @@ defmodule Ragex.MCP.Handlers.Tools do
   Implements the tools/list and tools/call methods.
   """
 
-  alias Ragex.Graph.Store
-  alias Ragex.Graph.Algorithms
-  alias Ragex.VectorStore
-  alias Ragex.Retrieval.Hybrid
+  alias Ragex.Analyzers.Directory
   alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
-  alias Ragex.Analyzers.Python, as: PythonAnalyzer
   alias Ragex.Analyzers.JavaScript, as: JavaScriptAnalyzer
-  alias Ragex.Analyzers.Directory
-  alias Ragex.Watcher
+  alias Ragex.Analyzers.Python, as: PythonAnalyzer
+  alias Ragex.Editor.{Core, Refactor, Transaction, Types}
   alias Ragex.Embeddings.Bumblebee
   alias Ragex.Embeddings.Helper, as: EmbeddingsHelper
-  alias Ragex.Editor.{Core, Types, Transaction, Refactor}
+  alias Ragex.Graph.Algorithms
+  alias Ragex.Graph.Store
+  alias Ragex.Retrieval.Hybrid
+  alias Ragex.VectorStore
+  alias Ragex.Watcher
 
   @doc """
   Lists all available tools.
@@ -793,9 +793,7 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp semantic_search(%{"query" => query} = params) do
     # Check if embedding model is ready
-    if not Bumblebee.ready?() do
-      {:error, "Embedding model not ready. Please wait for model to load."}
-    else
+    if Bumblebee.ready?() do
       # Generate query embedding
       case Bumblebee.embed(query) do
         {:ok, query_embedding} ->
@@ -841,6 +839,8 @@ defmodule Ragex.MCP.Handlers.Tools do
         {:error, reason} ->
           {:error, "Failed to generate embedding: #{inspect(reason)}"}
       end
+    else
+      {:error, "Embedding model not ready. Please wait for model to load."}
     end
   end
 
@@ -860,9 +860,7 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp hybrid_search_tool(%{"query" => query} = params) do
     # Check if embedding model is ready
-    if not Bumblebee.ready?() do
-      {:error, "Embedding model not ready. Please wait for model to load."}
-    else
+    if Bumblebee.ready?() do
       # Parse options
       strategy =
         case Map.get(params, "strategy", "fusion") do
@@ -916,6 +914,8 @@ defmodule Ragex.MCP.Handlers.Tools do
         {:error, reason} ->
           {:error, "Hybrid search failed: #{inspect(reason)}"}
       end
+    else
+      {:error, "Embedding model not ready. Please wait for model to load."}
     end
   end
 
@@ -997,33 +997,30 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp parse_node_id(node_str) do
-    cond do
+    if String.contains?(node_str, "/") and String.contains?(node_str, ".") do
       # Module.function/arity
-      String.contains?(node_str, "/") and String.contains?(node_str, ".") ->
-        case String.split(node_str, ".") do
-          [module_str, func_arity] ->
-            case String.split(func_arity, "/") do
-              [func_str, arity_str] ->
-                case Integer.parse(arity_str) do
-                  {arity, ""} ->
-                    {:ok,
-                     {:function, String.to_atom(module_str), String.to_atom(func_str), arity}}
+      case String.split(node_str, ".") do
+        [module_str, func_arity] ->
+          case String.split(func_arity, "/") do
+            [func_str, arity_str] ->
+              case Integer.parse(arity_str) do
+                {arity, ""} ->
+                  {:ok, {:function, String.to_atom(module_str), String.to_atom(func_str), arity}}
 
-                  _ ->
-                    {:error, :invalid_arity}
-                end
+                _ ->
+                  {:error, :invalid_arity}
+              end
 
-              _ ->
-                {:error, :invalid_format}
-            end
+            _ ->
+              {:error, :invalid_format}
+          end
 
-          _ ->
-            {:error, :invalid_format}
-        end
-
+        _ ->
+          {:error, :invalid_format}
+      end
+    else
       # Just a module name
-      true ->
-        {:ok, {:module, String.to_atom(node_str)}}
+      {:ok, {:module, String.to_atom(node_str)}}
     end
   end
 
@@ -1253,41 +1250,42 @@ defmodule Ragex.MCP.Handlers.Tools do
       end
 
     # Parse files and build transaction
-    with {:ok, transaction} <- build_transaction(files_data, txn_opts) do
-      case Transaction.commit(transaction) do
-        {:ok, result} ->
-          {:ok,
-           %{
-             status: "success",
-             files_edited: result.files_edited,
-             results:
-               Enum.map(result.results, fn r ->
-                 %{
-                   path: r.path,
-                   changes_applied: r.changes_applied,
-                   lines_changed: r.lines_changed,
-                   backup_id: r.backup_id,
-                   validation_performed: r.validation_performed
-                 }
-               end)
-           }}
+    case build_transaction(files_data, txn_opts) do
+      {:ok, transaction} ->
+        case Transaction.commit(transaction) do
+          {:ok, result} ->
+            {:ok,
+             %{
+               status: "success",
+               files_edited: result.files_edited,
+               results:
+                 Enum.map(result.results, fn r ->
+                   %{
+                     path: r.path,
+                     changes_applied: r.changes_applied,
+                     lines_changed: r.lines_changed,
+                     backup_id: r.backup_id,
+                     validation_performed: r.validation_performed
+                   }
+                 end)
+             }}
 
-        {:error, result} ->
-          error_details =
-            Enum.map(result.errors, fn {path, reason} ->
-              %{path: path, reason: inspect(reason)}
-            end)
+          {:error, result} ->
+            error_details =
+              Enum.map(result.errors, fn {path, reason} ->
+                %{path: path, reason: inspect(reason)}
+              end)
 
-          {:error,
-           %{
-             "type" => "transaction_error",
-             "message" => "Transaction failed",
-             "files_edited" => result.files_edited,
-             "rolled_back" => result.rolled_back,
-             "errors" => error_details
-           }}
-      end
-    else
+            {:error,
+             %{
+               "type" => "transaction_error",
+               "message" => "Transaction failed",
+               "files_edited" => result.files_edited,
+               "rolled_back" => result.rolled_back,
+               "errors" => error_details
+             }}
+        end
+
       {:error, reason} ->
         {:error, "Failed to build transaction: #{inspect(reason)}"}
     end

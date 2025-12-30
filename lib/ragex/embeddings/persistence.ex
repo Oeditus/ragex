@@ -7,8 +7,8 @@ defmodule Ragex.Embeddings.Persistence do
   """
 
   require Logger
-  alias Ragex.Graph.Store
   alias Ragex.Embeddings.Registry
+  alias Ragex.Graph.Store
 
   @version 1
   @cache_file_name "embeddings.ets"
@@ -61,10 +61,10 @@ defmodule Ragex.Embeddings.Persistence do
     config = Application.get_env(:ragex, :cache, enabled: true)
     enabled = Keyword.get(config, :enabled, true)
 
-    if not enabled do
-      {:error, :cache_disabled}
-    else
+    if enabled do
       do_load()
+    else
+      {:error, :cache_disabled}
     end
   end
 
@@ -169,67 +169,63 @@ defmodule Ragex.Embeddings.Persistence do
   # Private Functions
 
   defp do_save(table) do
-    try do
-      cache_path = get_cache_path()
-      cache_dir = Path.dirname(cache_path)
+    cache_path = get_cache_path()
+    cache_dir = Path.dirname(cache_path)
 
-      # Ensure cache directory exists
-      File.mkdir_p!(cache_dir)
+    # Ensure cache directory exists
+    File.mkdir_p!(cache_dir)
 
-      # Get current model info
-      model_id = Application.get_env(:ragex, :embedding_model, Registry.default())
-      {:ok, model_info} = Registry.get(model_id)
+    # Get current model info
+    model_id = Application.get_env(:ragex, :embedding_model, Registry.default())
+    {:ok, model_info} = Registry.get(model_id)
 
-      # Get embeddings from the provided table
-      embeddings = get_embeddings_from_table(table)
+    # Get embeddings from the provided table
+    embeddings = get_embeddings_from_table(table)
 
-      # Export file tracking data
-      file_tracking = Ragex.Embeddings.FileTracker.export()
+    # Export file tracking data
+    file_tracking = Ragex.Embeddings.FileTracker.export()
 
-      # Build metadata
-      metadata = %{
-        version: @version,
-        model_id: model_id,
-        model_repo: model_info.repo,
-        dimensions: model_info.dimensions,
-        timestamp: System.system_time(:second),
-        entity_count: length(embeddings),
-        file_tracking: file_tracking
-      }
+    # Build metadata
+    metadata = %{
+      version: @version,
+      model_id: model_id,
+      model_repo: model_info.repo,
+      dimensions: model_info.dimensions,
+      timestamp: System.system_time(:second),
+      entity_count: length(embeddings),
+      file_tracking: file_tracking
+    }
 
-      # Create temporary ETS table for serialization
-      temp_table = :ets.new(:temp_embeddings, [:set, :public])
+    # Create temporary ETS table for serialization
+    temp_table = :ets.new(:temp_embeddings, [:set, :public])
 
-      # Insert metadata as first entry
-      :ets.insert(temp_table, {:__metadata__, metadata})
+    # Insert metadata as first entry
+    :ets.insert(temp_table, {:__metadata__, metadata})
 
-      # Insert all embeddings
-      for {node_type, node_id, embedding, text} <- embeddings do
-        key = {node_type, node_id}
-        :ets.insert(temp_table, {key, embedding, text})
-      end
-
-      # Write to disk
-      :ets.tab2file(temp_table, String.to_charlist(cache_path))
-
-      # Clean up
-      :ets.delete(temp_table)
-
-      Logger.info("Saved #{length(embeddings)} embeddings to cache: #{cache_path}")
-      {:ok, cache_path}
-    rescue
-      e ->
-        Logger.error("Failed to save embeddings cache: #{Exception.message(e)}")
-        {:error, Exception.message(e)}
+    # Insert all embeddings
+    for {node_type, node_id, embedding, text} <- embeddings do
+      key = {node_type, node_id}
+      :ets.insert(temp_table, {key, embedding, text})
     end
+
+    # Write to disk
+    :ets.tab2file(temp_table, String.to_charlist(cache_path))
+
+    # Clean up
+    :ets.delete(temp_table)
+
+    Logger.info("Saved #{length(embeddings)} embeddings to cache: #{cache_path}")
+    {:ok, cache_path}
+  rescue
+    e ->
+      Logger.error("Failed to save embeddings cache: #{Exception.message(e)}")
+      {:error, Exception.message(e)}
   end
 
   defp do_load do
     cache_path = get_cache_path()
 
-    if not File.exists?(cache_path) do
-      {:error, :not_found}
-    else
+    if File.exists?(cache_path) do
       try do
         # Read metadata first to validate
         case read_metadata(cache_path) do
@@ -278,6 +274,8 @@ defmodule Ragex.Embeddings.Persistence do
           Logger.error("Failed to load embeddings cache: #{Exception.message(e)}")
           {:error, Exception.message(e)}
       end
+    else
+      {:error, :not_found}
     end
   end
 
@@ -322,23 +320,21 @@ defmodule Ragex.Embeddings.Persistence do
   end
 
   defp read_metadata(cache_path) do
-    try do
-      # Load table temporarily to read metadata
-      {:ok, temp_table} = :ets.file2tab(String.to_charlist(cache_path))
+    # Load table temporarily to read metadata
+    {:ok, temp_table} = :ets.file2tab(String.to_charlist(cache_path))
 
-      case :ets.lookup(temp_table, :__metadata__) do
-        [{:__metadata__, metadata}] ->
-          :ets.delete(temp_table)
-          {:ok, metadata}
+    case :ets.lookup(temp_table, :__metadata__) do
+      [{:__metadata__, metadata}] ->
+        :ets.delete(temp_table)
+        {:ok, metadata}
 
-        [] ->
-          :ets.delete(temp_table)
-          {:error, :no_metadata}
-      end
-    rescue
-      e ->
-        {:error, Exception.message(e)}
+      [] ->
+        :ets.delete(temp_table)
+        {:error, :no_metadata}
     end
+  rescue
+    e ->
+      {:error, Exception.message(e)}
   end
 
   defp clear_current_cache do
@@ -376,7 +372,7 @@ defmodule Ragex.Embeddings.Persistence do
     cache_root = Application.get_env(:ragex, :cache_root, default_cache_root())
 
     if File.exists?(cache_root) do
-      cutoff_time = System.system_time(:second) - days * 86400
+      cutoff_time = System.system_time(:second) - days * 86_400
 
       File.ls!(cache_root)
       |> Enum.each(fn project_hash ->

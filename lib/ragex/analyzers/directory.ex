@@ -8,10 +8,10 @@ defmodule Ragex.Analyzers.Directory do
 
   alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
-  alias Ragex.Analyzers.Python, as: PythonAnalyzer
   alias Ragex.Analyzers.JavaScript, as: JavaScriptAnalyzer
-  alias Ragex.Graph.Store
+  alias Ragex.Analyzers.Python, as: PythonAnalyzer
   alias Ragex.Embeddings.FileTracker
+  alias Ragex.Graph.Store
 
   @doc """
   Analyzes all supported files in a directory recursively.
@@ -121,7 +121,7 @@ defmodule Ragex.Analyzers.Directory do
               File.dir?(full_path) ->
                 find_files_recursive(full_path, depth + 1, max_depth, exclude_patterns, acc_inner)
 
-              is_supported_file?(full_path) ->
+              supported_file?(full_path) ->
                 [full_path | acc_inner]
 
               true ->
@@ -143,7 +143,7 @@ defmodule Ragex.Analyzers.Directory do
     end)
   end
 
-  defp is_supported_file?(path) do
+  defp supported_file?(path) do
     ext = Path.extname(path)
 
     ext in (ElixirAnalyzer.supported_extensions() ++
@@ -193,16 +193,18 @@ defmodule Ragex.Analyzers.Directory do
         _ -> nil
       end
 
-    if analyzer do
-      case File.read(file_path) do
-        {:ok, content} ->
-          analyzer.analyze(content, file_path)
+    do_analyze_file(analyzer, file_path)
+  end
 
-        {:error, reason} ->
-          {:error, {:file_read_error, reason}}
-      end
-    else
-      {:error, :unsupported_file_type}
+  defp do_analyze_file(nil, _file_path), do: {:error, :unsupported_file_type}
+
+  defp do_analyze_file(analyzer, file_path) do
+    case File.read(file_path) do
+      {:ok, content} ->
+        analyzer.analyze(content, file_path)
+
+      {:error, reason} ->
+        {:error, {:file_read_error, reason}}
     end
   end
 

@@ -3,7 +3,7 @@ defmodule Ragex.Editor.ValidatorsTest do
 
   alias Ragex.Editor.Validator
   alias Ragex.Editor.Validators.Elixir, as: ElixirValidator
-  alias Ragex.Editor.Validators.{Erlang, Python, Javascript}
+  alias Ragex.Editor.Validators.{Erlang, Javascript, Python}
 
   describe "Ragex.Editor.Validator" do
     test "detects Elixir files" do

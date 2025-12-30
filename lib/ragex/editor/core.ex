@@ -10,7 +10,7 @@ defmodule Ragex.Editor.Core do
   - Integration with validation pipeline
   """
 
-  alias Ragex.Editor.{Backup, Types, Validator, Formatter}
+  alias Ragex.Editor.{Backup, Formatter, Types, Validator}
   require Logger
 
   @doc """
@@ -215,17 +215,15 @@ defmodule Ragex.Editor.Core do
   defp apply_single_change(lines, %{type: :insert, line_start: start, content: content}) do
     total_lines = length(lines)
 
-    cond do
-      start < 1 or start > total_lines + 1 ->
-        {:error, "Insert position #{start} out of range (1-#{total_lines + 1})"}
+    if start < 1 or start > total_lines + 1 do
+      {:error, "Insert position #{start} out of range (1-#{total_lines + 1})"}
+    else
+      # Insert before line (1-indexed)
+      before = Enum.take(lines, start - 1)
+      after_lines = Enum.drop(lines, start - 1)
+      new_content_lines = String.split(content, "\n")
 
-      true ->
-        # Insert before line (1-indexed)
-        before = Enum.take(lines, start - 1)
-        after_lines = Enum.drop(lines, start - 1)
-        new_content_lines = String.split(content, "\n")
-
-        {:ok, before ++ new_content_lines ++ after_lines}
+      {:ok, before ++ new_content_lines ++ after_lines}
     end
   end
 
@@ -278,7 +276,7 @@ defmodule Ragex.Editor.Core do
          :ok <- File.rename(temp_path, path) do
       :ok
     else
-      {:error, reason} = error ->
+      {:error, _reason} = error ->
         # Clean up temp file if it exists
         File.rm(temp_path)
         error

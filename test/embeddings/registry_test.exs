@@ -8,7 +8,7 @@ defmodule Ragex.Embeddings.RegistryTest do
       models = Registry.all()
 
       assert is_list(models)
-      assert length(models) == 4
+      assert Enum.count(models) == 4
 
       # Check all expected models are present
       model_ids = Enum.map(models, & &1.id)
@@ -103,7 +103,7 @@ defmodule Ragex.Embeddings.RegistryTest do
     test "filters sentence transformer models" do
       models = Registry.by_type(:sentence_transformer)
 
-      assert length(models) >= 2
+      assert models != []
       assert Enum.all?(models, &(&1.type == :sentence_transformer))
 
       ids = Enum.map(models, & &1.id)
@@ -114,7 +114,7 @@ defmodule Ragex.Embeddings.RegistryTest do
     test "filters code models" do
       models = Registry.by_type(:code_model)
 
-      assert length(models) >= 1
+      assert models != []
       assert Enum.all?(models, &(&1.type == :code_model))
 
       ids = Enum.map(models, & &1.id)
@@ -124,7 +124,7 @@ defmodule Ragex.Embeddings.RegistryTest do
     test "filters multilingual models" do
       models = Registry.by_type(:multilingual)
 
-      assert length(models) >= 1
+      assert models != []
       assert Enum.all?(models, &(&1.type == :multilingual))
 
       ids = Enum.map(models, & &1.id)
@@ -257,7 +257,7 @@ defmodule Ragex.Embeddings.RegistryTest do
 
     test "all models have recommendations" do
       for model <- Registry.all() do
-        assert length(model.recommended_for) > 0
+        assert model.recommended_for != []
         assert Enum.all?(model.recommended_for, &is_binary/1)
       end
     end

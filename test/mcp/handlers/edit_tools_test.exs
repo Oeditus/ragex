@@ -132,7 +132,7 @@ defmodule Ragex.MCP.Handlers.EditToolsTest do
       assert {:error, error} = Tools.call_tool("edit_file", params)
       assert error["type"] == "validation_error"
       assert is_list(error["errors"])
-      assert length(error["errors"]) > 0
+      assert error["errors"] != []
     end
 
     test "supports language override", %{test_dir: dir} do
@@ -202,7 +202,7 @@ defmodule Ragex.MCP.Handlers.EditToolsTest do
       assert {:ok, result} = Tools.call_tool("validate_edit", params)
       assert result.status == "invalid"
       assert is_list(result.errors)
-      assert length(result.errors) > 0
+      assert result.errors != []
 
       # File should not be modified
       assert File.read!(test_file) == "defmodule Test do\nend\n"

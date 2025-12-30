@@ -73,7 +73,7 @@ defmodule Ragex.Editor.Backup do
 
       backups =
         files
-        |> Enum.filter(&is_backup_file?/1)
+        |> Enum.filter(&backup_file?/1)
         |> Enum.map(fn filename ->
           backup_path = Path.join(backup_dir, filename)
 
@@ -306,7 +306,7 @@ defmodule Ragex.Editor.Backup do
     end
   end
 
-  defp is_backup_file?(filename) do
+  defp backup_file?(filename) do
     # Backup files match pattern: YYYYMMDD_HHMMSS_randomhex[.gz]
     String.match?(filename, ~r/^\d{8}_\d{6}_[0-9a-f]+(.gz)?$/)
   end

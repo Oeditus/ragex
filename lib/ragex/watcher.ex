@@ -131,7 +131,7 @@ defmodule Ragex.Watcher do
     # Process all pending files
     files = MapSet.to_list(state.pending_files)
 
-    if length(files) > 0 do
+    if files != [] do
       Logger.info("Re-analyzing #{length(files)} changed file(s)")
 
       Task.start(fn ->
@@ -173,10 +173,10 @@ defmodule Ragex.Watcher do
     # Ignore :removed and :renamed for now
     has_relevant_event = Enum.any?(events, &(&1 in [:modified, :created]))
 
-    has_relevant_event and is_supported_file?(path)
+    has_relevant_event and supported_file?(path)
   end
 
-  defp is_supported_file?(path) do
+  defp supported_file?(path) do
     ext = Path.extname(path)
 
     # Check if it's a supported extension

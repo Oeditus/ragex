@@ -1,8 +1,8 @@
 defmodule Ragex.Graph.AlgorithmsTest do
   use ExUnit.Case, async: false
 
-  alias Ragex.Graph.Store
   alias Ragex.Graph.Algorithms
+  alias Ragex.Graph.Store
 
   setup do
     # Clear the store before each test
@@ -115,7 +115,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
       paths = Algorithms.find_paths(from, to)
 
       assert is_list(paths)
-      assert length(paths) > 0
+      assert paths != []
 
       # Should find the direct path A -> B
       assert [from, to] in paths
@@ -127,7 +127,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
 
       paths = Algorithms.find_paths(from, to)
 
-      assert length(paths) >= 2
+      assert Enum.count(paths) >= 2
 
       # Should find A -> B -> C
       path1 = [
@@ -157,7 +157,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
 
       # With max_depth 2, should find paths
       paths_deep = Algorithms.find_paths(from, to, max_depth: 2)
-      assert length(paths_deep) >= 2
+      assert Enum.count(paths_deep) >= 2
     end
 
     test "returns empty list when no path exists" do
@@ -240,15 +240,15 @@ defmodule Ragex.Graph.AlgorithmsTest do
 
       # Without limit, should find all 3 paths
       all_paths = Algorithms.find_paths(from, to)
-      assert length(all_paths) == 3
+      assert Enum.count(all_paths) == 3
 
       # With max_paths: 2, should only get 2 paths
       limited_paths = Algorithms.find_paths(from, to, max_paths: 2)
-      assert length(limited_paths) == 2
+      assert Enum.count(limited_paths) == 2
 
       # With max_paths: 1, should only get 1 path
       single_path = Algorithms.find_paths(from, to, max_paths: 1)
-      assert length(single_path) == 1
+      assert Enum.count(single_path) == 1
     end
 
     test "supports keyword options for max_depth and max_paths" do
@@ -371,7 +371,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
       Store.clear()
 
       # Simulate analysis of a simple module
-      code = """
+      _code = """
       defmodule TestModule do
         def foo, do: bar()
         def bar, do: baz()
@@ -425,7 +425,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
           {:function, :TestModule, :baz, 0}
         )
 
-      assert length(paths) > 0
+      assert paths != []
 
       # Test centrality
       centrality = Algorithms.degree_centrality()

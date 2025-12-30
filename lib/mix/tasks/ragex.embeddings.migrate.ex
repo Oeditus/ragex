@@ -39,7 +39,6 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
   use Mix.Task
 
   alias Ragex.Embeddings.Registry
-  alias Ragex.Embeddings.Bumblebee
   alias Ragex.Graph.Store
 
   @impl Mix.Task
@@ -83,7 +82,18 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
 
     # Get current configured model
     current_model_id = Application.get_env(:ragex, :embedding_model, Registry.default())
+    display_configured_model(current_model_id)
 
+    # Check existing embeddings
+    embeddings = Store.list_embeddings()
+    check_embeddings_status(embeddings, current_model_id)
+
+    # Show available models
+    display_available_models(current_model_id)
+    Mix.shell().info("")
+  end
+
+  defp display_configured_model(current_model_id) do
     case Registry.get(current_model_id) do
       {:ok, model_info} ->
         Mix.shell().info("✓ Configured Model: #{model_info.name}")
@@ -95,43 +105,50 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
       {:error, :not_found} ->
         Mix.shell().error("✗ Invalid model configured: #{inspect(current_model_id)}\n")
     end
+  end
 
-    # Check existing embeddings
-    embeddings = Store.list_embeddings()
+  defp check_embeddings_status([], _current_model_id) do
+    Mix.shell().info("✓ No embeddings stored yet\n")
+  end
 
-    if length(embeddings) == 0 do
-      Mix.shell().info("✓ No embeddings stored yet\n")
-    else
-      {sample_type, sample_id, sample_embedding, _text} = hd(embeddings)
-      embedding_dims = length(sample_embedding)
+  defp check_embeddings_status(embeddings, current_model_id) do
+    {sample_type, sample_id, sample_embedding, _text} = hd(embeddings)
+    embedding_dims = length(sample_embedding)
 
-      Mix.shell().info("✓ Stored Embeddings: #{length(embeddings)}")
-      Mix.shell().info("  Dimensions: #{embedding_dims}")
-      Mix.shell().info("  Sample: #{sample_type} #{inspect(sample_id)}\n")
+    Mix.shell().info("✓ Stored Embeddings: #{length(embeddings)}")
+    Mix.shell().info("  Dimensions: #{embedding_dims}")
+    Mix.shell().info("  Sample: #{sample_type} #{inspect(sample_id)}\n")
 
-      # Check compatibility
-      case Registry.get(current_model_id) do
-        {:ok, model_info} ->
-          if model_info.dimensions == embedding_dims do
-            Mix.shell().info(
-              "✓ Model and embeddings are compatible (#{model_info.dimensions} dimensions)\n"
-            )
-          else
-            Mix.shell().error("✗ INCOMPATIBILITY DETECTED!")
-            Mix.shell().error("  Configured model: #{model_info.dimensions} dimensions")
-            Mix.shell().error("  Stored embeddings: #{embedding_dims} dimensions")
-            Mix.shell().error("\n  Action required:")
-            Mix.shell().error("    1. Change config to use a compatible model")
-            Mix.shell().error("    2. OR run: mix ragex.embeddings.migrate --clear")
-            Mix.shell().error("    3. Then re-analyze your codebase\n")
-          end
+    check_compatibility(current_model_id, embedding_dims)
+  end
 
-        _ ->
-          :ok
-      end
+  defp check_compatibility(current_model_id, embedding_dims) do
+    case Registry.get(current_model_id) do
+      {:ok, model_info} ->
+        if model_info.dimensions == embedding_dims do
+          Mix.shell().info(
+            "✓ Model and embeddings are compatible (#{model_info.dimensions} dimensions)\n"
+          )
+        else
+          display_incompatibility_error(model_info.dimensions, embedding_dims)
+        end
+
+      _ ->
+        :ok
     end
+  end
 
-    # Show available models
+  defp display_incompatibility_error(model_dims, embedding_dims) do
+    Mix.shell().error("✗ INCOMPATIBILITY DETECTED!")
+    Mix.shell().error("  Configured model: #{model_dims} dimensions")
+    Mix.shell().error("  Stored embeddings: #{embedding_dims} dimensions")
+    Mix.shell().error("\n  Action required:")
+    Mix.shell().error("    1. Change config to use a compatible model")
+    Mix.shell().error("    2. OR run: mix ragex.embeddings.migrate --clear")
+    Mix.shell().error("    3. Then re-analyze your codebase\n")
+  end
+
+  defp display_available_models(current_model_id) do
     Mix.shell().info("Available Models:")
 
     for model <- Registry.all() do
@@ -139,8 +156,6 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
       Mix.shell().info("  • #{model.id}#{marker}")
       Mix.shell().info("    #{model.name} - #{model.dimensions} dims")
     end
-
-    Mix.shell().info("")
   end
 
   defp migrate_to_model(model_id_str, force) do
@@ -148,51 +163,70 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
 
     case Registry.get(model_id) do
       {:error, :not_found} ->
-        Mix.shell().error("✗ Unknown model: #{model_id_str}")
-        Mix.shell().info("\nAvailable models:")
-
-        for model <- Registry.all() do
-          Mix.shell().info("  • #{model.id}")
-        end
+        display_unknown_model_error(model_id_str)
 
       {:ok, target_model} ->
-        Mix.shell().info("Migrating to model: #{target_model.name}\n")
-
-        # Check current embeddings
-        embeddings = Store.list_embeddings()
-        current_model_id = Application.get_env(:ragex, :embedding_model, Registry.default())
-
-        if length(embeddings) > 0 and not force do
-          {:ok, current_model} = Registry.get(current_model_id)
-
-          if Registry.compatible?(current_model_id, model_id) do
-            Mix.shell().info("✓ Models are compatible (same dimensions)")
-            Mix.shell().info("  No migration needed. Update config.exs to:")
-            Mix.shell().info("  config :ragex, :embedding_model, :#{model_id}")
-            Mix.shell().info("\n  Or set environment variable:")
-            Mix.shell().info("  export RAGEX_EMBEDDING_MODEL=#{model_id}\n")
-          else
-            Mix.shell().error("✗ Dimension mismatch detected!")
-            Mix.shell().error("  Current: #{current_model.dimensions} dimensions")
-            Mix.shell().error("  Target: #{target_model.dimensions} dimensions")
-            Mix.shell().error("\n  You must regenerate embeddings:")
-            Mix.shell().error("    1. Clear existing: mix ragex.embeddings.migrate --clear")
-
-            Mix.shell().error(
-              "    2. Update config.exs: config :ragex, :embedding_model, :#{model_id}"
-            )
-
-            Mix.shell().error("    3. Re-analyze your codebase\n")
-          end
-        else
-          Mix.shell().info("✓ No embeddings to migrate (or --force specified)")
-          Mix.shell().info("\n  Next steps:")
-          Mix.shell().info("    1. Update config.exs:")
-          Mix.shell().info("       config :ragex, :embedding_model, :#{model_id}")
-          Mix.shell().info("    2. Restart server")
-          Mix.shell().info("    3. Analyze your codebase\n")
-        end
+        perform_migration(model_id, target_model, force)
     end
+  end
+
+  defp display_unknown_model_error(model_id_str) do
+    Mix.shell().error("✗ Unknown model: #{model_id_str}")
+    Mix.shell().info("\nAvailable models:")
+
+    for model <- Registry.all() do
+      Mix.shell().info("  • #{model.id}")
+    end
+  end
+
+  defp perform_migration(model_id, target_model, force) do
+    Mix.shell().info("Migrating to model: #{target_model.name}\n")
+
+    embeddings = Store.list_embeddings()
+    current_model_id = Application.get_env(:ragex, :embedding_model, Registry.default())
+
+    if embeddings != [] and not force do
+      handle_existing_embeddings(current_model_id, model_id, target_model)
+    else
+      display_clean_migration_steps(model_id)
+    end
+  end
+
+  defp handle_existing_embeddings(current_model_id, target_model_id, target_model) do
+    {:ok, current_model} = Registry.get(current_model_id)
+
+    if Registry.compatible?(current_model_id, target_model_id) do
+      display_compatible_migration(target_model_id)
+    else
+      display_incompatible_migration(current_model, target_model, target_model_id)
+    end
+  end
+
+  defp display_compatible_migration(model_id) do
+    Mix.shell().info("✓ Models are compatible (same dimensions)")
+    Mix.shell().info("  No migration needed. Update config.exs to:")
+    Mix.shell().info("  config :ragex, :embedding_model, :#{model_id}")
+    Mix.shell().info("\n  Or set environment variable:")
+    Mix.shell().info("  export RAGEX_EMBEDDING_MODEL=#{model_id}\n")
+  end
+
+  defp display_incompatible_migration(current_model, target_model, model_id) do
+    Mix.shell().error("✗ Dimension mismatch detected!")
+    Mix.shell().error("  Current: #{current_model.dimensions} dimensions")
+    Mix.shell().error("  Target: #{target_model.dimensions} dimensions")
+    Mix.shell().error("\n  You must regenerate embeddings:")
+    Mix.shell().error("    1. Clear existing: mix ragex.embeddings.migrate --clear")
+    Mix.shell().error("    2. Update config.exs: config :ragex, :embedding_model, :#{model_id}")
+    Mix.shell().error("    3. Re-analyze your codebase\n")
+  end
+
+  defp display_clean_migration_steps(model_id) do
+    Mix.shell().info("✓ No embeddings to migrate (or --force specified)")
+    Mix.shell().info("\n  Next steps:")
+    Mix.shell().info("    1. Update config.exs:")
+    Mix.shell().info("       config :ragex, :embedding_model, :#{model_id}")
+    Mix.shell().info("    2. Restart server")
+    Mix.shell().info("    3. Analyze your codebase\n")
   end
 
   defp clear_embeddings do

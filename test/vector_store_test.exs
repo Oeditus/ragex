@@ -1,9 +1,9 @@
 defmodule Ragex.VectorStoreTest do
   use ExUnit.Case, async: false
 
-  alias Ragex.VectorStore
-  alias Ragex.Graph.Store
   alias Ragex.Embeddings.Bumblebee
+  alias Ragex.Graph.Store
+  alias Ragex.VectorStore
 
   @moduletag :embeddings
   @moduletag timeout: 120_000

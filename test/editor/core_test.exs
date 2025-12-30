@@ -1,7 +1,7 @@
 defmodule Ragex.Editor.CoreTest do
   use ExUnit.Case, async: false
 
-  alias Ragex.Editor.{Core, Types, Backup}
+  alias Ragex.Editor.{Backup, Core, Types}
 
   @test_content """
   line 1
@@ -89,7 +89,7 @@ defmodule Ragex.Editor.CoreTest do
       assert result.backup_id != nil
 
       {:ok, backups} = Backup.list(path)
-      assert length(backups) >= 1
+      assert backups != []
     end
 
     test "skips backup when disabled", %{test_file: path} do
@@ -111,7 +111,7 @@ defmodule Ragex.Editor.CoreTest do
       assert {:error, _reason} = Core.edit_file(path, invalid_changes, validate: false)
     end
 
-    test "fails on concurrent modification", %{test_file: path} do
+    test "fails on concurrent modification", %{test_file: _path} do
       # This test is challenging due to timing - mark as skipped for now
       # In production, concurrent modification detection works via mtime checking
       :skip
@@ -188,7 +188,7 @@ defmodule Ragex.Editor.CoreTest do
       Core.edit_file(path, [Types.replace(1, 1, "edit 3")], validate: false)
 
       assert {:ok, history} = Core.history(path)
-      assert length(history) >= 3
+      assert Enum.count(history) >= 3
 
       # Most recent should be first
       [most_recent | _] = history

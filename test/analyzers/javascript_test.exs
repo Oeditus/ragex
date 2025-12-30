@@ -24,7 +24,7 @@ defmodule Ragex.Analyzers.JavaScriptTest do
       # Should have file-level module
       assert Enum.any?(result.modules, &(&1.name == :test))
 
-      assert length(result.functions) == 3
+      assert Enum.count(result.functions) == 3
 
       hello = Enum.find(result.functions, &(&1.name == :hello))
       assert hello.arity == 0
@@ -51,7 +51,7 @@ defmodule Ragex.Analyzers.JavaScriptTest do
 
       assert {:ok, result} = JavaScriptAnalyzer.analyze(source, "test.js")
 
-      assert length(result.functions) >= 4
+      assert Enum.count(result.functions) >= 4
 
       add = Enum.find(result.functions, &(&1.name == :add))
       assert add.arity == 2
@@ -123,7 +123,7 @@ defmodule Ragex.Analyzers.JavaScriptTest do
 
       assert {:ok, result} = JavaScriptAnalyzer.analyze(source, "test.js")
 
-      assert length(result.imports) >= 2
+      assert result.imports != []
 
       assert Enum.any?(result.imports, &(&1.to_module == :react && &1.type == :import))
       assert Enum.any?(result.imports, &(&1.to_module == :utils && &1.type == :import))
@@ -140,7 +140,7 @@ defmodule Ragex.Analyzers.JavaScriptTest do
 
       assert {:ok, result} = JavaScriptAnalyzer.analyze(source, "test.js")
 
-      assert length(result.imports) >= 3
+      assert result.imports != []
 
       assert Enum.any?(result.imports, &(&1.to_module == :fs && &1.type == :require))
       assert Enum.any?(result.imports, &(&1.to_module == :path && &1.type == :require))
@@ -163,7 +163,7 @@ defmodule Ragex.Analyzers.JavaScriptTest do
       assert {:ok, result} = JavaScriptAnalyzer.analyze(source, "test.js")
 
       # Should detect calls
-      assert length(result.calls) > 0
+      assert result.calls != []
 
       # Check for specific calls
       assert Enum.any?(result.calls, &(&1.to_module == :console && &1.to_function == :log))

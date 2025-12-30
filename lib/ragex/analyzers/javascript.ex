@@ -131,86 +131,92 @@ defmodule Ragex.Analyzers.JavaScript do
   # Extract function declarations
   defp extract_functions(context, line, line_num) do
     cond do
-      # function name(...) {}
       Regex.match?(~r/^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/, line) ->
-        case Regex.run(~r/^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/, line) do
-          [_, func_name, params] ->
-            arity = count_params(params)
+        extract_function_declaration(context, line, line_num)
 
-            func_info = %{
-              name: String.to_atom(func_name),
-              arity: arity,
-              module: context.module_name,
-              file: context.file,
-              line: line_num,
-              doc: nil,
-              visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
-              metadata: %{}
-            }
-
-            %{context | functions: [func_info | context.functions]}
-
-          _ ->
-            context
-        end
-
-      # const name = (...) => {}
-      # let name = (...) => {}
-      # var name = (...) => {}
-      # Handles: const add = (a: number, b: number): number => ...
       Regex.match?(
         ~r/^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)(?::[^=]+)?\s*=>/,
         line
       ) ->
-        case Regex.run(
-               ~r/^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)(?::[^=]+)?\s*=>/,
-               line
-             ) do
-          [_, func_name, params] ->
-            arity = count_params(params)
+        extract_arrow_function(context, line, line_num)
 
-            func_info = %{
-              name: String.to_atom(func_name),
-              arity: arity,
-              module: context.module_name,
-              file: context.file,
-              line: line_num,
-              doc: nil,
-              visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
-              metadata: %{arrow_function: true}
-            }
-
-            %{context | functions: [func_info | context.functions]}
-
-          _ ->
-            context
-        end
-
-      # Method in class: methodName(...) {}
       Regex.match?(~r/^\s*(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*\{/, line) and
           not Regex.match?(~r/^\s*(?:if|for|while|switch|catch)\s*\(/, line) ->
-        case Regex.run(~r/^\s*(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*\{/, line) do
-          [_, func_name, params] ->
-            arity = count_params(params)
-
-            func_info = %{
-              name: String.to_atom(func_name),
-              arity: arity,
-              module: context.module_name,
-              file: context.file,
-              line: line_num,
-              doc: nil,
-              visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
-              metadata: %{}
-            }
-
-            %{context | functions: [func_info | context.functions]}
-
-          _ ->
-            context
-        end
+        extract_class_method(context, line, line_num)
 
       true ->
+        context
+    end
+  end
+
+  defp extract_function_declaration(context, line, line_num) do
+    case Regex.run(~r/^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/, line) do
+      [_, func_name, params] ->
+        arity = count_params(params)
+
+        func_info = %{
+          name: String.to_atom(func_name),
+          arity: arity,
+          module: context.module_name,
+          file: context.file,
+          line: line_num,
+          doc: nil,
+          visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
+          metadata: %{}
+        }
+
+        %{context | functions: [func_info | context.functions]}
+
+      _ ->
+        context
+    end
+  end
+
+  defp extract_arrow_function(context, line, line_num) do
+    case Regex.run(
+           ~r/^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)(?::[^=]+)?\s*=>/,
+           line
+         ) do
+      [_, func_name, params] ->
+        arity = count_params(params)
+
+        func_info = %{
+          name: String.to_atom(func_name),
+          arity: arity,
+          module: context.module_name,
+          file: context.file,
+          line: line_num,
+          doc: nil,
+          visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
+          metadata: %{arrow_function: true}
+        }
+
+        %{context | functions: [func_info | context.functions]}
+
+      _ ->
+        context
+    end
+  end
+
+  defp extract_class_method(context, line, line_num) do
+    case Regex.run(~r/^\s*(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*\{/, line) do
+      [_, func_name, params] ->
+        arity = count_params(params)
+
+        func_info = %{
+          name: String.to_atom(func_name),
+          arity: arity,
+          module: context.module_name,
+          file: context.file,
+          line: line_num,
+          doc: nil,
+          visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
+          metadata: %{}
+        }
+
+        %{context | functions: [func_info | context.functions]}
+
+      _ ->
         context
     end
   end
@@ -238,7 +244,9 @@ defmodule Ragex.Analyzers.JavaScript do
 
         [_, func] ->
           # Skip common control flow keywords
-          if func not in ["if", "for", "while", "switch", "catch", "return"] do
+          if func in ["if", "for", "while", "switch", "catch", "return"] do
+            ctx
+          else
             call_info = %{
               from_module: ctx.module_name,
               from_function: :unknown,
@@ -250,8 +258,6 @@ defmodule Ragex.Analyzers.JavaScript do
             }
 
             %{ctx | calls: [call_info | ctx.calls]}
-          else
-            ctx
           end
 
         _ ->
