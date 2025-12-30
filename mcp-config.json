@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ragex": {
+      "command": "mix",
+      "args": ["run", "--no-halt"],
+      "cwd": "/home/am/Proyectos/Ammotion/ragex",
+      "env": {
+        "MIX_ENV": "prod"
+      }
+    }
+  }
+}
