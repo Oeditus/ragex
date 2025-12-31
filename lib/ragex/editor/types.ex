@@ -1,28 +1,15 @@
 defmodule Ragex.Editor.Types do
-  @moduledoc """
-  Common types and structs for the editor module.
-
-  Defines data structures for changes, backups, and operation results.
-  """
-
-  @typedoc """
-  Type of edit operation.
-  """
+  @moduledoc "Common types and structs for the editor module.\n\nDefines data structures for changes, backups, and operation results.\n"
+  @typedoc "Type of edit operation.\n"
   @type change_type :: :replace | :insert | :delete
-
-  @typedoc """
-  A single change to apply to a file.
-  """
+  @typedoc "A single change to apply to a file.\n"
   @type change :: %{
           type: change_type(),
           line_start: pos_integer(),
           line_end: pos_integer() | nil,
           content: String.t() | nil
         }
-
-  @typedoc """
-  Result of an edit operation.
-  """
+  @typedoc "Result of an edit operation.\n"
   @type edit_result :: %{
           path: String.t(),
           backup_id: String.t() | nil,
@@ -31,10 +18,7 @@ defmodule Ragex.Editor.Types do
           validation_performed: boolean(),
           timestamp: DateTime.t()
         }
-
-  @typedoc """
-  Information about a backup.
-  """
+  @typedoc "Information about a backup.\n"
   @type backup_info :: %{
           id: String.t(),
           path: String.t(),
@@ -43,76 +27,32 @@ defmodule Ragex.Editor.Types do
           created_at: DateTime.t(),
           original_mtime: integer()
         }
-
-  @typedoc """
-  Validation error.
-  """
+  @typedoc "Validation error.\n"
   @type validation_error :: %{
           line: pos_integer() | nil,
           column: pos_integer() | nil,
           message: String.t(),
           severity: :error | :warning
         }
-
-  @doc """
-  Creates a replace change struct.
-
-  ## Examples
-
-      iex> Types.replace(10, 15, "new content")
-      %{type: :replace, line_start: 10, line_end: 15, content: "new content"}
-  """
+  @doc "Creates a replace change struct.\n\n## Examples\n\n    iex> Types.replace(10, 15, \"new content\")\n    %{type: :replace, line_start: 10, line_end: 15, content: \"new content\"}\n"
   @spec replace(pos_integer(), pos_integer(), String.t()) :: change()
   def replace(line_start, line_end, content) do
-    %{
-      type: :replace,
-      line_start: line_start,
-      line_end: line_end,
-      content: content
-    }
+    %{type: :replace, line_start: line_start, line_end: line_end, content: content}
   end
 
-  @doc """
-  Creates an insert change struct.
-
-  ## Examples
-
-      iex> Types.insert(20, "inserted line")
-      %{type: :insert, line_start: 20, line_end: nil, content: "inserted line"}
-  """
+  @doc "Creates an insert change struct.\n\n## Examples\n\n    iex> Types.insert(20, \"inserted line\")\n    %{type: :insert, line_start: 20, line_end: nil, content: \"inserted line\"}\n"
   @spec insert(pos_integer(), String.t()) :: change()
   def insert(line_start, content) do
-    %{
-      type: :insert,
-      line_start: line_start,
-      line_end: nil,
-      content: content
-    }
+    %{type: :insert, line_start: line_start, line_end: nil, content: content}
   end
 
-  @doc """
-  Creates a delete change struct.
-
-  ## Examples
-
-      iex> Types.delete(5, 8)
-      %{type: :delete, line_start: 5, line_end: 8, content: nil}
-  """
+  @doc "Creates a delete change struct.\n\n## Examples\n\n    iex> Types.delete(5, 8)\n    %{type: :delete, line_start: 5, line_end: 8, content: nil}\n"
   @spec delete(pos_integer(), pos_integer()) :: change()
   def delete(line_start, line_end) do
-    %{
-      type: :delete,
-      line_start: line_start,
-      line_end: line_end,
-      content: nil
-    }
+    %{type: :delete, line_start: line_start, line_end: line_end, content: nil}
   end
 
-  @doc """
-  Validates a change struct.
-
-  Returns `:ok` if valid, `{:error, reason}` otherwise.
-  """
+  @doc "Validates a change struct.\n\nReturns `:ok` if valid, `{:error, reason}` otherwise.\n"
   @spec validate_change(change()) :: :ok | {:error, String.t()}
   def validate_change(%{type: type, line_start: line_start} = change)
       when type in [:replace, :insert, :delete] and is_integer(line_start) and line_start > 0 do
@@ -141,11 +81,11 @@ defmodule Ragex.Editor.Types do
     end
   end
 
-  def validate_change(_), do: {:error, "Invalid change structure"}
+  def validate_change(_) do
+    {:error, "Invalid change structure"}
+  end
 
-  @doc """
-  Creates an edit result struct.
-  """
+  @doc "Creates an edit result struct.\n"
   @spec edit_result(String.t(), keyword()) :: edit_result()
   def edit_result(path, opts \\ []) do
     %{
@@ -158,9 +98,7 @@ defmodule Ragex.Editor.Types do
     }
   end
 
-  @doc """
-  Creates a backup info struct.
-  """
+  @doc "Creates a backup info struct.\n"
   @spec backup_info(String.t(), String.t(), String.t(), keyword()) :: backup_info()
   def backup_info(id, path, backup_path, opts \\ []) do
     %{
@@ -173,9 +111,7 @@ defmodule Ragex.Editor.Types do
     }
   end
 
-  @doc """
-  Creates a validation error struct.
-  """
+  @doc "Creates a validation error struct.\n"
   @spec validation_error(String.t(), keyword()) :: validation_error()
   def validation_error(message, opts \\ []) do
     %{

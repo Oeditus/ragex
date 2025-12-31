@@ -19,7 +19,8 @@ defmodule Ragex.Analyzers.Elixir do
           modules: [],
           functions: [],
           calls: [],
-          imports: []
+          imports: [],
+          aliases: %{}  # Track aliases for resolution
         }
 
         context = traverse_ast(ast, context)
@@ -61,7 +62,8 @@ defmodule Ragex.Analyzers.Elixir do
     # Traverse module body
     context = traverse_ast(body, context)
 
-    %{context | current_module: nil}
+    # Clear aliases when leaving module
+    %{context | current_module: nil, aliases: %{}}
   end
 
   defp traverse_ast({:def, meta, [signature | _]} = node, context) do
@@ -89,7 +91,25 @@ defmodule Ragex.Analyzers.Elixir do
     add_import(context, module_alias, :use)
   end
 
-  defp traverse_ast({:alias, _meta, [module_alias | _]}, context) do
+  defp traverse_ast({:alias, _meta, [module_alias | rest]}, context) do
+    full_name = extract_module_name(module_alias)
+    
+    # Determine the alias name (last part of the module or explicit :as option)
+    alias_name = 
+      case rest do
+        [[as: {:__aliases__, _, [name]}]] -> name
+        _ -> 
+          # Use last part of module name
+          case full_name do
+            atom when is_atom(atom) ->
+              atom |> Atom.to_string() |> String.split(".") |> List.last() |> String.to_atom()
+            _ -> :unknown
+          end
+      end
+    
+    # Store alias in context
+    context = %{context | aliases: Map.put(context.aliases, alias_name, full_name)}
+    
     add_import(context, module_alias, :alias)
   end
 
@@ -98,7 +118,7 @@ defmodule Ragex.Analyzers.Elixir do
        when is_atom(func) and is_list(args) do
     if context.current_module && context.current_function do
       line = Keyword.get(meta2, :line, 0)
-      module_name = extract_module_name(module_alias)
+      module_name = resolve_module_name(module_alias, context)
       arity = length(args)
 
       call_info = %{
@@ -200,6 +220,30 @@ defmodule Ragex.Analyzers.Elixir do
   defp extract_module_name({:__aliases__, _meta, parts}), do: Module.concat(parts)
   defp extract_module_name(atom) when is_atom(atom), do: atom
   defp extract_module_name(_), do: :unknown
+  
+  # Resolve module name, checking aliases first
+  defp resolve_module_name({:__aliases__, _meta, [first | _rest] = parts}, context) do
+    # Check if first part is an alias
+    case Map.get(context.aliases, first) do
+      nil -> 
+        # Not an alias, use as-is
+        Module.concat(parts)
+      full_module ->
+        # It's an alias - if there's only one part, use the full module
+        # If there are multiple parts, append them to the aliased module
+        case parts do
+          [_single] -> full_module
+          [_first | rest] ->
+            # Concatenate the aliased module with the rest of the path
+            full_str = Atom.to_string(full_module)
+            rest_str = Enum.join(rest, ".")
+            String.to_atom("#{full_str}.#{rest_str}")
+        end
+    end
+  end
+  
+  defp resolve_module_name(atom, _context) when is_atom(atom), do: atom
+  defp resolve_module_name(other, _context), do: extract_module_name(other)
 
   defp add_import(context, module_alias, type) do
     if context.current_module do

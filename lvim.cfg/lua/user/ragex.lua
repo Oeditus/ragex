@@ -216,9 +216,14 @@ function M.find_callers()
   local func = vim.fn.expand("<cword>")
   local arity = M.get_function_arity()
 
-  local query = string.format("calls %s.%s/%d", module, func, arity)
-  
-  return M.execute("query_graph", { query = query })
+  return M.execute("query_graph", { 
+    query_type = "get_callers",
+    params = {
+      module = module,
+      ["function"] = func,
+      arity = arity,
+    },
+  })
 end
 
 -- Refactor: rename function
@@ -251,25 +256,45 @@ function M.rename_function(new_name, scope)
   )
 
   M.execute("refactor_code", params, function(result)
-    if not result or not result.result then
+    debug_log("refactor_code callback result: " .. vim.inspect(result))
+    
+    if not result then
       vim.notify("Refactoring failed: no response", vim.log.levels.ERROR)
+      return
+    end
+    
+    -- Handle error responses
+    if result.error then
+      vim.notify("Refactoring failed: " .. (result.error.message or vim.inspect(result.error)), vim.log.levels.ERROR)
+      return
+    end
+    
+    if not result.result then
+      vim.notify("Refactoring failed: no result in response", vim.log.levels.ERROR)
       return
     end
 
     -- Unwrap MCP response
     local data = result.result
+    debug_log("data before unwrap: " .. vim.inspect(data))
+    
     if data.content and data.content[1] and data.content[1].text then
       local ok, parsed = pcall(vim.fn.json_decode, data.content[1].text)
       if ok then
+        debug_log("parsed data: " .. vim.inspect(parsed))
         data = parsed
+      else
+        debug_log("Failed to parse JSON")
       end
     end
 
-    if data.success then
+    debug_log("final data: " .. vim.inspect(data))
+    
+    if data.status == "success" then
       vim.cmd("checktime") -- Reload buffers
-      vim.notify("Function renamed successfully", vim.log.levels.INFO)
+      vim.notify(string.format("Function renamed successfully (%d files)", data.files_modified or 0), vim.log.levels.INFO)
     else
-      local err = data.error or result.error or "unknown error"
+      local err = data.error or "unknown error"
       vim.notify("Refactoring failed: " .. vim.inspect(err), vim.log.levels.ERROR)
     end
   end)
@@ -304,9 +329,9 @@ function M.rename_module(old_name, new_name)
       end
     end
 
-    if data.success then
+    if data.status == "success" then
       vim.cmd("checktime") -- Reload buffers
-      vim.notify("Module renamed successfully", vim.log.levels.INFO)
+      vim.notify(string.format("Module renamed successfully (%d files)", data.files_modified or 0), vim.log.levels.INFO)
     else
       local err = data.error or result.error or "unknown error"
       vim.notify("Refactoring failed: " .. vim.inspect(err), vim.log.levels.ERROR)
@@ -350,21 +375,33 @@ function M.get_current_module()
   return nil
 end
 
--- Helper: Get function arity (simplified)
+-- Helper: Get function arity (improved)
 function M.get_function_arity()
+  -- Try current line first
   local line = vim.fn.getline(".")
+  local args = line:match("def%s+%w+%((.-)%)") or line:match("defp%s+%w+%((.-)%)")
   
-  -- Try to match function definition
-  local args = line:match("def%s+%w+%((.-)%)")
+  -- If not found, search backwards for function definition
   if not args then
-    args = line:match("defp%s+%w+%((.-)%)")
+    local current_line = vim.fn.line(".")
+    for i = current_line, math.max(1, current_line - 20), -1 do
+      local search_line = vim.fn.getline(i)
+      args = search_line:match("def%s+%w+%((.-)%)") or search_line:match("defp%s+%w+%((.-)%)")
+      if args then
+        break
+      end
+    end
   end
   
   if not args or args == "" then
-    return 0
+    -- Prompt user for arity
+    local arity_input = vim.fn.input("Function arity: ", "2")
+    return tonumber(arity_input) or 0
   end
   
   -- Count commas + 1 for number of arguments
+  -- Also handle default arguments (backslash backslash pattern)
+  args = args:gsub("%s*\\\\.*", "")  -- Remove default arguments
   local _, count = args:gsub(",", "")
   return count + 1
 end
@@ -400,6 +437,7 @@ function M.show_in_float(title, lines)
 end
 
 -- Show callers in floating window
+-- Show callers in floating window with navigation
 function M.show_callers()
   local module = M.get_current_module()
   if not module then
@@ -410,9 +448,14 @@ function M.show_callers()
   local func = vim.fn.expand("<cword>")
   local arity = M.get_function_arity()
 
-  local query = string.format("calls %s.%s/%d", module, func, arity)
-  
-  M.execute("query_graph", { query = query }, function(result)
+  M.execute("query_graph", { 
+    query_type = "get_callers",
+    params = {
+      module = module,
+      ["function"] = func,
+      arity = arity
+    }
+  }, function(result)
     if not result or not result.result then
       vim.notify("No callers found", vim.log.levels.WARN)
       return
@@ -427,24 +470,38 @@ function M.show_callers()
       end
     end
 
-    if not data.nodes then
-      vim.notify("No callers found", vim.log.levels.WARN)
+    if not data.callers or #data.callers == 0 then
+      vim.notify("No callers found for " .. module .. "." .. func .. "/" .. arity, vim.log.levels.INFO)
       return
     end
 
-    local lines = { string.format("# Callers of %s.%s/%d", module, func, arity), "" }
+    local lines = { string.format("# Callers of %s.%s/%d", module, func, arity), "", "Press <CR> to jump to caller, q to close", "" }
+    local locations = {}  -- Store file:line for each entry
     
-    for _, node in ipairs(data.nodes) do
-      if node.file and node.line then
-        table.insert(lines, string.format("- %s:%d", node.file, node.line))
+    for _, caller in ipairs(data.callers) do
+      if caller.file and caller.line then
+        local caller_name = string.format("%s.%s/%d", 
+          caller.caller_module or "?", 
+          caller.caller_function or "?", 
+          caller.caller_arity or 0)
+        table.insert(lines, string.format("%s:%d - %s", caller.file, caller.line, caller_name))
+        table.insert(locations, {file = caller.file, line = caller.line})
       end
     end
 
-    if #lines == 2 then
-      table.insert(lines, "No callers found")
-    end
-
-    M.show_in_float("Ragex Callers", lines)
+    local buf, win = M.show_in_float("Ragex Callers", lines)
+    
+    -- Add keybinding to jump to location
+    vim.keymap.set("n", "<CR>", function()
+      local line_num = vim.fn.line(".")
+      -- Line numbers 1-4 are header, locations start at line 5
+      local loc_index = line_num - 4
+      if loc_index > 0 and loc_index <= #locations then
+        local loc = locations[loc_index]
+        vim.cmd("close")  -- Close floating window
+        vim.cmd(string.format("edit +%d %s", loc.line, loc.file))
+      end
+    end, { noremap = true, silent = true, buffer = buf })
   end)
 end
 

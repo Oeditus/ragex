@@ -727,6 +727,9 @@ defmodule Ragex.MCP.Handlers.Tools do
       "get_dependencies" ->
         get_dependencies(params)
 
+      "get_callers" ->
+        get_callers(params)
+
       _ ->
         {:error, "Unknown query type: #{query_type}"}
     end
@@ -790,6 +793,37 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp get_dependencies(_), do: {:error, "Missing 'module' parameter"}
+
+  defp get_callers(%{"module" => module, "function" => function, "arity" => arity}) do
+    # Get incoming edges (callers)
+    module_atom = String.to_existing_atom("Elixir." <> module)
+    function_atom = String.to_atom(function)
+    full_id = {:function, module_atom, function_atom, arity}
+    
+    callers = Store.get_incoming_edges(full_id, :calls)
+    
+    # Enrich with file/line information
+    enriched_callers =
+      Enum.map(callers, fn %{from: {:function, mod, func, ar}} = edge ->
+        case Store.find_node(:function, {mod, func, ar}) do
+          nil ->
+            edge
+
+          node ->
+            Map.merge(edge, %{
+              caller_module: Atom.to_string(mod),
+              caller_function: Atom.to_string(func),
+              caller_arity: ar,
+              file: node[:file],
+              line: node[:line]
+            })
+        end
+      end)
+    
+    {:ok, %{callers: enriched_callers, count: length(enriched_callers)}}
+  end
+
+  defp get_callers(_), do: {:error, "Missing 'module', 'function', or 'arity' parameter"}
 
   defp semantic_search(%{"query" => query} = params) do
     # Check if embedding model is ready
@@ -1366,7 +1400,8 @@ defmodule Ragex.MCP.Handlers.Tools do
          {:ok, old_name} <- get_required_param(params, "old_name"),
          {:ok, new_name} <- get_required_param(params, "new_name"),
          {:ok, arity} <- get_required_param(params, "arity") do
-      module_atom = String.to_atom(module)
+      # Convert to atoms - Elixir automatically adds Elixir. prefix for module atoms
+      module_atom = String.to_existing_atom("Elixir." <> module)
       old_atom = String.to_atom(old_name)
       new_atom = String.to_atom(new_name)
 
@@ -1417,8 +1452,9 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp handle_rename_module(params, opts) do
     with {:ok, old_name} <- get_required_param(params, "old_name"),
          {:ok, new_name} <- get_required_param(params, "new_name") do
-      old_atom = String.to_atom(old_name)
-      new_atom = String.to_atom(new_name)
+      # Convert to atoms - Elixir automatically adds Elixir. prefix for module atoms
+      old_atom = String.to_existing_atom("Elixir." <> old_name)
+      new_atom = String.to_existing_atom("Elixir." <> new_name)
 
       case Refactor.rename_module(old_atom, new_atom, opts) do
         {:ok, result} ->
