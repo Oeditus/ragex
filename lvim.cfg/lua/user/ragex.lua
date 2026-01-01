@@ -179,7 +179,7 @@ function M.analyze_directory(path, opts)
     extensions = opts.extensions or { ".ex", ".exs" },
   }
 
-  vim.notify("Analyzing directory: " .. path, vim.log.levels.INFO)
+  vim.notify("Analyzing directory: " .. path .. "...", vim.log.levels.INFO)
   
   M.execute("analyze_directory", params, function(result)
     debug_log("analyze_directory result: " .. vim.inspect(result))
@@ -198,9 +198,9 @@ function M.analyze_directory(path, opts)
       
       local count = actual_result.analyzed or actual_result.success or 0
       local total = actual_result.total or 0
-      vim.notify(string.format("Analyzed %d/%d files", count, total), vim.log.levels.INFO)
+      vim.notify(string.format("✓ Analysis complete: %d/%d files indexed", count, total), vim.log.levels.INFO)
     else
-      vim.notify("Failed to analyze directory", vim.log.levels.ERROR)
+      vim.notify("✗ Failed to analyze directory", vim.log.levels.ERROR)
     end
   end)
 end

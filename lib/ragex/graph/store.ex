@@ -71,6 +71,16 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Counts nodes of a specific type.
+  """
+  def count_nodes_by_type(node_type) do
+    pattern = {{node_type, :"$1"}, :"$2"}
+    
+    :ets.match(@nodes_table, pattern)
+    |> length()
+  end
+
+  @doc """
   Adds an edge between two nodes.
 
   Edge types: :calls, :imports, :defines, :inherits, :implements

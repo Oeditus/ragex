@@ -742,7 +742,18 @@ defmodule Ragex.MCP.Handlers.Tools do
     limit = Map.get(params, "limit", 100)
 
     nodes = Store.list_nodes(node_type, limit)
-    {:ok, %{nodes: nodes, count: length(nodes)}}
+    
+    # Get actual total count from graph stats
+    stats = Store.stats()
+    total_count = if node_type do
+      # For specific node type, we need to count directly from ETS
+      # since stats() doesn't break down by type
+      Store.count_nodes_by_type(node_type)
+    else
+      stats.nodes
+    end
+    
+    {:ok, %{nodes: nodes, count: length(nodes), total_count: total_count}}
   end
 
   defp find_module(%{"name" => name}) do
