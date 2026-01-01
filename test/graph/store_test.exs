@@ -122,4 +122,31 @@ defmodule Ragex.Graph.StoreTest do
       assert stats.edges == 1
     end
   end
+
+  describe "count_nodes_by_type/1" do
+    test "correctly counts nodes of a given type" do
+      # Add various nodes
+      Store.add_node(:module, ModuleA, %{name: ModuleA})
+      Store.add_node(:module, ModuleB, %{name: ModuleB})
+      Store.add_node(:module, ModuleC, %{name: ModuleC})
+      Store.add_node(:function, {ModuleA, :func1, 0}, %{name: :func1})
+      Store.add_node(:function, {ModuleA, :func2, 1}, %{name: :func2})
+
+      # Count modules
+      assert Store.count_nodes_by_type(:module) == 3
+
+      # Count functions
+      assert Store.count_nodes_by_type(:function) == 2
+    end
+
+    test "returns 0 for a non-existent node type" do
+      # Add some nodes
+      Store.add_node(:module, ModuleA, %{name: ModuleA})
+      Store.add_node(:function, {ModuleA, :func1, 0}, %{name: :func1})
+
+      # Query non-existent type
+      assert Store.count_nodes_by_type(:nonexistent) == 0
+      assert Store.count_nodes_by_type(:variable) == 0
+    end
+  end
 end

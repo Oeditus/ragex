@@ -26,13 +26,6 @@ defmodule Ragex do
   alias Ragex.Graph.Store
 
   @doc """
-  Returns the version of Ragex.
-  """
-  def version do
-    "0.1.0"
-  end
-
-  @doc """
   Returns statistics about the knowledge graph.
   """
   def stats do

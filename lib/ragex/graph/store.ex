@@ -75,7 +75,7 @@ defmodule Ragex.Graph.Store do
   """
   def count_nodes_by_type(node_type) do
     pattern = {{node_type, :"$1"}, :"$2"}
-    
+
     :ets.match(@nodes_table, pattern)
     |> length()
   end

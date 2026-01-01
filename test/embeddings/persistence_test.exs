@@ -259,9 +259,12 @@ defmodule Ragex.Embeddings.PersistenceTest do
       assert File.exists?(path)
 
       # Manually set old mtime (10 days ago)
-      ten_days_ago = :calendar.universal_time()
-      {{year, month, day}, {hour, min, sec}} = ten_days_ago
-      old_date = {{year, month, day - 10}, {hour, min, sec}}
+      old_date =
+        :calendar.universal_time()
+        |> :calendar.datetime_to_gregorian_seconds()
+        |> Kernel.-(10 * 86_400)
+        |> :calendar.gregorian_seconds_to_datetime()
+
       File.touch!(path, old_date)
 
       # Now should be cleared

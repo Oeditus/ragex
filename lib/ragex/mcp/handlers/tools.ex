@@ -738,21 +738,34 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp query_graph(_), do: {:error, "Invalid parameters for query_graph"}
 
   defp list_nodes(params) do
-    node_type = Map.get(params, "node_type")
+    # Convert node_type string to atom (MCP sends strings, Store expects atoms)
+    node_type =
+      case Map.get(params, "node_type") do
+        "module" -> :module
+        "function" -> :function
+        "type" -> :type
+        "variable" -> :variable
+        "file" -> :file
+        atom when is_atom(atom) -> atom
+        _ -> nil
+      end
+
     limit = Map.get(params, "limit", 100)
 
     nodes = Store.list_nodes(node_type, limit)
-    
+
     # Get actual total count from graph stats
     stats = Store.stats()
-    total_count = if node_type do
-      # For specific node type, we need to count directly from ETS
-      # since stats() doesn't break down by type
-      Store.count_nodes_by_type(node_type)
-    else
-      stats.nodes
-    end
-    
+
+    total_count =
+      if node_type do
+        # For specific node type, we need to count directly from ETS
+        # since stats() doesn't break down by type
+        Store.count_nodes_by_type(node_type)
+      else
+        stats.nodes
+      end
+
     {:ok, %{nodes: nodes, count: length(nodes), total_count: total_count}}
   end
 
