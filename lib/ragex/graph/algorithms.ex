@@ -1260,8 +1260,12 @@ defmodule Ragex.Graph.Algorithms do
     lines =
       Enum.reduce(nodes_by_community, lines, fn {comm_id, comm_nodes}, acc ->
         if map_size(communities) > 0 do
-          acc = acc ++ ["  subgraph cluster_#{inspect(comm_id)} {"]
-          acc = acc ++ ["    label = \"Community #{inspect(comm_id)}\";"]
+          # Create safe cluster ID (alphanumeric only) for the subgraph name
+          safe_comm_id = safe_cluster_id(comm_id)
+          # Create readable label showing the actual community ID
+          readable_label = format_community_label(comm_id, length(comm_nodes))
+          acc = acc ++ ["  subgraph cluster_#{safe_comm_id} {"]
+          acc = acc ++ ["    label = \"#{readable_label}\";"]
           acc = acc ++ ["    style = filled;"]
           acc = acc ++ ["    color = lightgrey;"]
           acc = acc ++ [""]
@@ -1317,6 +1321,64 @@ defmodule Ragex.Graph.Algorithms do
   defp format_node_id_dot(node) do
     # Create valid DOT identifier
     "n_" <> (format_node_id_string(node) |> String.replace(~r/[^a-zA-Z0-9_]/, "_"))
+  end
+
+  defp safe_cluster_id(comm_id) do
+    # Convert community ID to safe alphanumeric string
+    cond do
+      is_integer(comm_id) ->
+        Integer.to_string(comm_id)
+
+      is_atom(comm_id) ->
+        Atom.to_string(comm_id) |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
+
+      is_tuple(comm_id) ->
+        # Hash the tuple to get a consistent integer ID
+        :erlang.phash2(comm_id) |> Integer.to_string()
+
+      true ->
+        # Fallback: hash any other type
+        :erlang.phash2(comm_id) |> Integer.to_string()
+    end
+  end
+
+  defp format_community_label(comm_id, node_count) do
+    # Create readable label for community
+    label_text =
+      cond do
+        is_integer(comm_id) ->
+          "Community #{comm_id}"
+
+        is_atom(comm_id) ->
+          "Community: #{Atom.to_string(comm_id)}"
+
+        is_tuple(comm_id) ->
+          # For tuple (likely a function node), show a shortened version
+          case comm_id do
+            {:function, module, name, arity} ->
+              "Cluster: #{module}.#{name}/#{arity}"
+
+            {:module, id} ->
+              "Module: #{id}"
+
+            _ ->
+              # For other tuples, show first element or hash
+              elem_count = tuple_size(comm_id)
+
+              if elem_count > 0 do
+                first = elem(comm_id, 0)
+                "Community: #{inspect(first)}... (#{elem_count} elements)"
+              else
+                "Community #{:erlang.phash2(comm_id)}"
+              end
+          end
+
+        true ->
+          "Community #{:erlang.phash2(comm_id)}"
+      end
+
+    # Add node count
+    "#{label_text} (#{node_count} nodes)"
   end
 
   defp format_node_id_string(node) do

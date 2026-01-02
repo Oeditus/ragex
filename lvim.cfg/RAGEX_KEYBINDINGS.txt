@@ -22,6 +22,16 @@
 └──────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────┐
+│ GRAPH ALGORITHMS (Advanced Analysis)                             │
+├──────────────────────────────────────────────────────────────────┤
+│ <space>rb    Betweenness Centrality     Bridge/bottleneck funcs  │
+│ <space>ro    Closeness Centrality       Central functions        │
+│ <space>rn    Communities (Louvain)      Architectural modules    │
+│ <space>rl    Communities (Label Prop)   Fast alternative         │
+│ <space>re    Export Graph               Save visualization       │
+└──────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
 │ REFACTORING (Project-Wide)                                       │
 ├──────────────────────────────────────────────────────────────────┤
 │ <space>rr    Rename Function            Safe, atomic rename      │

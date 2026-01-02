@@ -166,6 +166,31 @@ lvim.builtin.which_key.mappings["r"] = {
   },
   W = { function() ragex.watch_directory(vim.fn.getcwd()) end, "Watch Directory" },
   t = { function() ragex.toggle_auto_analyze() end, "Toggle Auto-Analysis" },
+  -- Phase 8: Advanced Graph Algorithms
+  b = { function() ragex.show_betweenness_centrality() end, "Betweenness Centrality" },
+  o = { function() ragex.show_closeness_centrality() end, "Closeness Centrality" },
+  n = { function() ragex.show_communities("louvain") end, "Detect Communities (Louvain)" },
+  l = { function() ragex.show_communities("label_propagation") end, "Detect Communities (Label Prop)" },
+  e = { 
+    function()
+      vim.ui.select({ "graphviz", "d3" }, {
+        prompt = "Export format:",
+      }, function(format)
+        if format then
+          local ext = format == "graphviz" and "dot" or "json"
+          vim.ui.input({
+            prompt = "Save as: ",
+            default = vim.fn.getcwd() .. "/graph." .. ext,
+          }, function(filepath)
+            if filepath then
+              ragex.export_graph_to_file(format, filepath)
+            end
+          end)
+        end
+      end)
+    end,
+    "Export Graph"
+  },
 }
 
 -- Register Telescope commands for Ragex

@@ -363,6 +363,277 @@ function M.graph_stats()
   return M.execute("graph_stats", {})
 end
 
+-- Phase 8: Advanced Graph Algorithms
+
+-- Compute betweenness centrality
+function M.betweenness_centrality(opts)
+  opts = opts or {}
+  local params = {
+    max_nodes = opts.max_nodes or 1000,
+    normalize = opts.normalize ~= false,
+  }
+  
+  return M.execute("betweenness_centrality", params)
+end
+
+-- Compute closeness centrality
+function M.closeness_centrality(opts)
+  opts = opts or {}
+  local params = {
+    normalize = opts.normalize ~= false,
+  }
+  
+  return M.execute("closeness_centrality", params)
+end
+
+-- Detect communities in the call graph
+function M.detect_communities(opts)
+  opts = opts or {}
+  local params = {
+    algorithm = opts.algorithm or "louvain",
+    max_iterations = opts.max_iterations or 10,
+    resolution = opts.resolution or 1.0,
+    hierarchical = opts.hierarchical or false,
+    seed = opts.seed,
+  }
+  
+  return M.execute("detect_communities", params)
+end
+
+-- Export graph visualization
+function M.export_graph(opts)
+  opts = opts or {}
+  local params = {
+    format = opts.format or "graphviz",
+    include_communities = opts.include_communities ~= false,
+    color_by = opts.color_by or "pagerank",
+    max_nodes = opts.max_nodes or 500,
+  }
+  
+  return M.execute("export_graph", params)
+end
+
+-- Show betweenness centrality in floating window
+function M.show_betweenness_centrality()
+  vim.notify("Computing betweenness centrality...", vim.log.levels.INFO)
+  
+  M.execute("betweenness_centrality", { max_nodes = 100, normalize = true }, function(result)
+    if not result or not result.result then
+      vim.notify("Failed to compute betweenness centrality", vim.log.levels.ERROR)
+      return
+    end
+    
+    -- Unwrap MCP response
+    local data = result.result
+    if data.content and data.content[1] and data.content[1].text then
+      local ok, parsed = pcall(vim.fn.json_decode, data.content[1].text)
+      if ok then
+        data = parsed
+      end
+    end
+    
+    if not data.top_nodes or #data.top_nodes == 0 then
+      vim.notify("No betweenness scores computed", vim.log.levels.WARN)
+      return
+    end
+    
+    local lines = { 
+      "# Betweenness Centrality (Top Bridge Functions)", 
+      "",
+      "Higher scores indicate functions that connect different parts of the codebase.",
+      ""
+    }
+    
+    for i, node in ipairs(data.top_nodes) do
+      if i <= 20 then  -- Show top 20
+        table.insert(lines, string.format("%2d. %s  (%.6f)", i, node.node_id, node.betweenness_score))
+      end
+    end
+    
+    table.insert(lines, "")
+    table.insert(lines, string.format("Total nodes analyzed: %d", data.total_nodes or 0))
+    
+    M.show_in_float("Betweenness Centrality", lines)
+  end)
+end
+
+-- Show closeness centrality in floating window
+function M.show_closeness_centrality()
+  vim.notify("Computing closeness centrality...", vim.log.levels.INFO)
+  
+  M.execute("closeness_centrality", { normalize = true }, function(result)
+    if not result or not result.result then
+      vim.notify("Failed to compute closeness centrality", vim.log.levels.ERROR)
+      return
+    end
+    
+    -- Unwrap MCP response
+    local data = result.result
+    if data.content and data.content[1] and data.content[1].text then
+      local ok, parsed = pcall(vim.fn.json_decode, data.content[1].text)
+      if ok then
+        data = parsed
+      end
+    end
+    
+    if not data.top_nodes or #data.top_nodes == 0 then
+      vim.notify("No closeness scores computed", vim.log.levels.WARN)
+      return
+    end
+    
+    local lines = { 
+      "# Closeness Centrality (Top Central Functions)", 
+      "",
+      "Higher scores indicate functions closer to all other functions in the call graph.",
+      ""
+    }
+    
+    for i, node in ipairs(data.top_nodes) do
+      if i <= 20 then  -- Show top 20
+        table.insert(lines, string.format("%2d. %s  (%.6f)", i, node.node_id, node.closeness_score))
+      end
+    end
+    
+    table.insert(lines, "")
+    table.insert(lines, string.format("Total nodes analyzed: %d", data.total_nodes or 0))
+    
+    M.show_in_float("Closeness Centrality", lines)
+  end)
+end
+
+-- Show communities in floating window
+function M.show_communities(algorithm)
+  algorithm = algorithm or "louvain"
+  vim.notify(string.format("Detecting communities (%s)...", algorithm), vim.log.levels.INFO)
+  
+  local params = {
+    algorithm = algorithm,
+    max_iterations = 10,
+    resolution = 1.0,
+    hierarchical = false,
+  }
+  
+  M.execute("detect_communities", params, function(result)
+    if not result or not result.result then
+      vim.notify("Failed to detect communities", vim.log.levels.ERROR)
+      return
+    end
+    
+    -- Unwrap MCP response
+    local data = result.result
+    if data.content and data.content[1] and data.content[1].text then
+      local ok, parsed = pcall(vim.fn.json_decode, data.content[1].text)
+      if ok then
+        data = parsed
+      end
+    end
+    
+    if not data or #data == 0 then
+      vim.notify("No communities detected", vim.log.levels.WARN)
+      return
+    end
+    
+    -- Sort communities by size (descending)
+    table.sort(data, function(a, b) return a.size > b.size end)
+    
+    local lines = { 
+      string.format("# Communities Detected (%s algorithm)", algorithm), 
+      "",
+      string.format("Found %d communities - potential architectural modules:", #data),
+      ""
+    }
+    
+    for i, community in ipairs(data) do
+      if i <= 10 then  -- Show top 10 communities
+        table.insert(lines, string.format("Community %d: %d members", i, community.size))
+        
+        -- Show first few members
+        local member_count = math.min(5, #community.members)
+        for j = 1, member_count do
+          table.insert(lines, string.format("  - %s", community.members[j]))
+        end
+        
+        if #community.members > member_count then
+          table.insert(lines, string.format("  ... and %d more", #community.members - member_count))
+        end
+        
+        table.insert(lines, "")
+      end
+    end
+    
+    if #data > 10 then
+      table.insert(lines, string.format("... and %d more communities", #data - 10))
+    end
+    
+    M.show_in_float("Community Detection", lines)
+  end)
+end
+
+-- Export graph and save to file
+function M.export_graph_to_file(format, filepath)
+  format = format or "graphviz"
+  filepath = filepath or vim.fn.expand("%:p:h") .. "/graph." .. (format == "graphviz" and "dot" or "json")
+  
+  vim.notify(string.format("Exporting graph to %s...", format), vim.log.levels.INFO)
+  
+  local params = {
+    format = format,
+    include_communities = true,
+    color_by = "betweenness",
+    max_nodes = 500,
+  }
+  
+  M.execute("export_graph", params, function(result)
+    if not result or not result.result then
+      vim.notify("Failed to export graph", vim.log.levels.ERROR)
+      return
+    end
+    
+    -- Unwrap MCP response
+    local data = result.result
+    if data.content and data.content[1] and data.content[1].text then
+      -- For export_graph, the response is the graph data itself
+      local content = data.content[1].text
+      
+      -- Handle format-specific processing
+      if format == "d3" then
+        -- D3 format: content is JSON string, parse and re-encode for formatting
+        local ok, parsed = pcall(vim.fn.json_decode, content)
+        if ok then
+          content = vim.fn.json_encode(parsed)
+        end
+      else
+        -- Graphviz format: content might be JSON-encoded string, decode if needed
+        -- Check if it starts with a quote (indicating it's JSON-encoded)
+        if content:sub(1, 1) == '"' then
+          local ok, decoded = pcall(vim.fn.json_decode, content)
+          if ok and type(decoded) == "string" then
+            content = decoded
+          end
+        end
+      end
+      
+      -- Write to file
+      local file = io.open(filepath, "w")
+      if file then
+        file:write(content)
+        file:close()
+        vim.notify(string.format("Graph exported to: %s", filepath), vim.log.levels.INFO)
+        
+        -- Offer to open the file
+        vim.defer_fn(function()
+          local choice = vim.fn.confirm("Open exported file?", "&Yes\n&No", 2)
+          if choice == 1 then
+            vim.cmd("edit " .. filepath)
+          end
+        end, 100)
+      else
+        vim.notify("Failed to write file: " .. filepath, vim.log.levels.ERROR)
+      end
+    end
+  end)
+end
+
 -- Helper: Get current module name
 function M.get_current_module()
   local lines = vim.api.nvim_buf_get_lines(0, 0, 100, false)

@@ -9,6 +9,8 @@ This integration provides:
 - **Hybrid search** (symbolic + semantic)
 - **Safe refactoring** (rename functions/modules project-wide)
 - **Call graph analysis** (find callers, call chains)
+- **Advanced graph algorithms** (centrality metrics, community detection)
+- **Graph visualization** (Graphviz, D3.js export)
 - **Auto-analysis** on save for Elixir files
 - **Beautiful Telescope UI** for search results
 - **Status line indicator**
@@ -52,6 +54,13 @@ All Ragex commands are under the `<leader>r` prefix (space + r by default):
 ### Refactoring
 - `<leader>rr` - **Rename Function**: Rename function under cursor (project-wide)
 - `<leader>rR` - **Rename Module**: Rename module (project-wide)
+
+### Graph Algorithms (Phase 8)
+- `<leader>rb` - **Betweenness Centrality**: Find bridge/bottleneck functions
+- `<leader>ro` - **Closeness Centrality**: Find central functions in call graph
+- `<leader>rn` - **Detect Communities (Louvain)**: Discover architectural modules
+- `<leader>rl` - **Detect Communities (Label Propagation)**: Fast community detection
+- `<leader>re` - **Export Graph**: Save visualization (Graphviz or D3.js)
 
 ## Commands
 
@@ -110,6 +119,60 @@ Alternative to keybindings, you can use these commands:
 3. Wait for analysis to complete
 4. Press `<leader>rW` to enable watching (auto-reindex on save)
 5. Start coding! Files are analyzed automatically on save
+
+### 5. Find Bridge Functions (Betweenness Centrality)
+
+**Scenario**: Identify critical functions that connect different parts of your codebase
+
+1. Press `<leader>rb`
+2. View top 20 functions with highest betweenness scores
+3. Higher scores = more important "bridge" functions
+4. These are often good refactoring targets or critical paths
+
+**Use case**: Find bottlenecks, identify functions to optimize, understand data flow
+
+### 6. Find Central Functions (Closeness Centrality)
+
+**Scenario**: Find functions that are "close" to all other functions in the call graph
+
+1. Press `<leader>ro`
+2. View top 20 functions with highest closeness scores
+3. These are well-connected, often core utility functions
+
+**Use case**: Find core APIs, identify reusable utilities, understand architecture
+
+### 7. Discover Architectural Modules (Community Detection)
+
+**Scenario**: Automatically discover cohesive groups of functions (potential modules)
+
+1. Press `<leader>rn` for Louvain algorithm (more accurate)
+2. Or press `<leader>rl` for Label Propagation (faster)
+3. View detected communities with member counts
+4. Each community represents a potential architectural module
+
+**Use case**: Refactor large modules, discover hidden structure, plan microservices
+
+### 8. Export Graph Visualization
+
+**Scenario**: Create a visual representation of your call graph
+
+1. Press `<leader>re`
+2. Choose format: Graphviz (DOT) or D3.js (JSON)
+3. Specify output path (default: current directory)
+4. Open exported file or process with visualization tool
+
+**Graphviz example**:
+```bash
+# After exporting to graph.dot
+dot -Tpng graph.dot -o graph.png
+open graph.png
+```
+
+**D3.js example**:
+```javascript
+// Load graph.json into a D3 force-directed graph visualization
+// Nodes include centrality scores and community assignments
+```
 
 ## Auto-Analysis
 
@@ -239,6 +302,9 @@ Find test files for current module:
 - **Search**: <100ms typical
 - **Analysis**: ~100 files/second
 - **Refactoring**: Depends on number of affected files
+- **Betweenness Centrality**: <200ms for 1000 nodes
+- **Closeness Centrality**: <300ms for 1000 nodes
+- **Community Detection**: <1s for 10000 nodes
 
 ## API Reference
 
@@ -263,6 +329,18 @@ ragex.show_callers()                 -- Shows in floating window
 -- Refactoring
 ragex.rename_function(new_name, scope)  -- scope: "project" or "module"
 ragex.rename_module(old_name, new_name)
+
+-- Graph Algorithms (Phase 8)
+ragex.betweenness_centrality(opts)      -- opts: { max_nodes, normalize }
+ragex.closeness_centrality(opts)        -- opts: { normalize }
+ragex.detect_communities(opts)          -- opts: { algorithm, max_iterations, resolution, hierarchical, seed }
+ragex.export_graph(opts)                -- opts: { format, include_communities, color_by, max_nodes }
+
+-- Phase 8 UI Functions
+ragex.show_betweenness_centrality()     -- Show in floating window
+ragex.show_closeness_centrality()       -- Show in floating window
+ragex.show_communities(algorithm)       -- algorithm: "louvain" or "label_propagation"
+ragex.export_graph_to_file(format, filepath)  -- format: "graphviz" or "d3"
 
 -- Utilities
 ragex.graph_stats()
@@ -289,6 +367,9 @@ ragex_telescope.ragex_modules()      -- Search modules
 4. **Test refactoring** with module scope first: `:lua require("user.ragex").rename_function("new_name", "module")`
 5. **Check graph stats** periodically: `<leader>rg`
 6. **Analyze after large changes**: `<leader>rd`
+7. **Find bottlenecks** with betweenness centrality: `<leader>rb`
+8. **Discover architecture** with community detection: `<leader>rn`
+9. **Export visualizations** for documentation: `<leader>re`
 
 ## Future Enhancements
 
@@ -307,6 +388,6 @@ Planned features:
 
 ---
 
-**Last Updated**: December 30, 2025  
-**Ragex Version**: 0.2.0  
+**Last Updated**: January 1, 2026  
+**Ragex Version**: 0.2.0 (with Phase 8: Advanced Graph Algorithms)  
 **LunarVim Compatibility**: Latest
