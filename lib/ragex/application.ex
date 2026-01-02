@@ -4,6 +4,7 @@ defmodule Ragex.Application do
   @moduledoc false
 
   use Application
+  alias Ragex.Analyzers.Directory
 
   require Logger
 
@@ -40,7 +41,7 @@ defmodule Ragex.Application do
       Enum.each(auto_analyze_dirs, fn dir ->
         Logger.info("Analyzing directory: #{dir}")
 
-        case Ragex.Analyzers.Directory.analyze_directory(dir) do
+        case Directory.analyze_directory(dir) do
           {:ok, result} ->
             Logger.info(
               "Successfully analyzed #{dir}: #{result.success} files (#{result.skipped} skipped, #{result.errors} errors)"

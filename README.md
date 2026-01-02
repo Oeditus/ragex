@@ -16,156 +16,157 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ `analyze_file`: Parse and index source files  
       ▹ `query_graph`: Search for modules, functions, and relationships  
       ▹ `list_nodes`: Browse indexed code entities
-</details><details>
+</details>
+<details>
   <summary>Multi-Language Support</summary>
 
-    ▸ Erlang Analyzer: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing
-    ▸ Python Analyzer: Shells out to Python's `ast` module for comprehensive analysis
-    ▸ JavaScript/TypeScript Analyzer: Regex-based parsing for common JS/TS patterns
-    ▸ Auto-detection: Automatically detects language from file extension
-    ▸ Directory Analysis: Batch analyze entire projects with parallel processing
-    ▸ File Watching: Auto-reindex on file changes
+    ▸ Erlang Analyzer: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing  
+    ▸ Python Analyzer: Shells out to Python's `ast` module for comprehensive analysis  
+    ▸ JavaScript/TypeScript Analyzer: Regex-based parsing for common JS/TS patterns  
+    ▸ Auto-detection: Automatically detects language from file extension  
+    ▸ Directory Analysis: Batch analyze entire projects with parallel processing  
+    ▸ File Watching: Auto-reindex on file changes  
     ▸ Supported Extensions: `.ex`, `.exs`, `.erl`, `.hrl`, `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`
 </details>
 <details>
   <summary>Semantic Search & Hybrid Retrieval</summary>
 
-    ▸ Embeddings Foundation
-      ▹ Local ML Model: Bumblebee integration with sentence-transformers/all-MiniLM-L6-v2
-      ▹ Vector Embeddings: 384-dimensional embeddings for code entities
-      ▹ Automatic Generation: Embeddings created during code analysis
-      ▹ Text Descriptions: Natural language descriptions for modules and functions
-      ▹ ETS Storage: Embeddings stored alongside graph entities
+    ▸ Embeddings Foundation  
+      ▹ Local ML Model: Bumblebee integration with sentence-transformers/all-MiniLM-L6-v2  
+      ▹ Vector Embeddings: 384-dimensional embeddings for code entities  
+      ▹ Automatic Generation: Embeddings created during code analysis  
+      ▹ Text Descriptions: Natural language descriptions for modules and functions  
+      ▹ ETS Storage: Embeddings stored alongside graph entities  
       ▹ No External APIs: Fully local model inference (~400MB memory)
 
-    ▸ Vector Store
-      ▹ Cosine Similarity: Fast vector similarity search (<50ms for 100 entities)
-      ▹ Parallel Search: Concurrent similarity calculations
-      ▹ Filtering: By node type, similarity threshold, and result limit
-      ▹ k-NN Search: Nearest neighbor queries
+    ▸ Vector Store  
+      ▹ Cosine Similarity: Fast vector similarity search (<50ms for 100 entities)  
+      ▹ Parallel Search: Concurrent similarity calculations  
+      ▹ Filtering: By node type, similarity threshold, and result limit  
+      ▹ k-NN Search: Nearest neighbor queries  
       ▹ Statistics API: Vector store metrics and monitoring
 
-    ▸ Semantic Search Tools
-      ▹ Semantic Search: Natural language code queries ("function to parse JSON")
-      ▹ Getting Embeddings Stats: ML model and vector store statistics
-      ▹ Result Enrichment: Context with callers, callees, file locations
+    ▸ Semantic Search Tools  
+      ▹ Semantic Search: Natural language code queries ("function to parse JSON")  
+      ▹ Getting Embeddings Stats: ML model and vector store statistics  
+      ▹ Result Enrichment: Context with callers, callees, file locations  
       ▹ Flexible Filtering: By type, threshold, limit, with context inclusion
 
-    ▸ Hybrid Retrieval
-      ▹ Hybrid Search: Combines symbolic and semantic approaches
-      ▹ Three Strategies: Fusion (RRF), semantic-first, graph-first
-      ▹ Reciprocal Rank Fusion: Intelligent ranking combination (k=60)
-      ▹ Graph Constraints: Optional symbolic filtering
+    ▸ Hybrid Retrieval  
+      ▹ Hybrid Search: Combines symbolic and semantic approaches  
+      ▹ Three Strategies: Fusion (RRF), semantic-first, graph-first  
+      ▹ Reciprocal Rank Fusion: Intelligent ranking combination (k=60)  
+      ▹ Graph Constraints: Optional symbolic filtering  
       ▹ Performance: <100ms for typical queries
 
-    ▸ Enhanced Graph Queries
-      ▹ PageRank: Importance scoring based on call relationships
-      ▹ Path Finding: Discover call chains between functions (with Phase 4D limits)
-      ▹ Degree Centrality: In-degree, out-degree, and total degree metrics
-      ▹ Graph Statistics: Comprehensive codebase analysis
+    ▸ Enhanced Graph Queries  
+      ▹ PageRank: Importance scoring based on call relationships  
+      ▹ Path Finding: Discover call chains between functions (with Phase 4D limits)  
+      ▹ Degree Centrality: In-degree, out-degree, and total degree metrics  
+      ▹ Graph Statistics: Comprehensive codebase analysis  
       ▹ MCP Tools: `find_paths` and `graph_stats` tools
 </details>
 <details>
   <summary>Production Features</summary>
 
-    ▸ Custom Embedding Models
-      ▹ Model Registry: 4 pre-configured embedding models
-      ▹ Flexible Configuration: Config file, environment variable, or default
-      ▹ Model Compatibility: Automatic detection of compatible models (same dimensions)
-      ▹ Migration Tool: `mix ragex.embeddings.migrate` for model changes
+    ▸ Custom Embedding Models  
+      ▹ Model Registry: 4 pre-configured embedding models  
+      ▹ Flexible Configuration: Config file, environment variable, or default  
+      ▹ Model Compatibility: Automatic detection of compatible models (same dimensions)  
+      ▹ Migration Tool: `mix ragex.embeddings.migrate` for model changes  
       ▹ Validation: Startup checks for model compatibility
 
-    ▸ Embedding Persistence
-      ▹ Automatic Cache: Save on shutdown, load on startup
-      ▹ Model Validation: Ensures cache matches current model
-      ▹ Project-Specific: Isolated caches per project directory
-      ▹ Cache Management: Mix tasks for stats and cleanup (`mix ragex.cache.*`)
-      ▹ Performance: Cold start <5s vs 50s without cache
+    ▸ Embedding Persistence  
+      ▹ Automatic Cache: Save on shutdown, load on startup  
+      ▹ Model Validation: Ensures cache matches current model  
+      ▹ Project-Specific: Isolated caches per project directory  
+      ▹ Cache Management: Mix tasks for stats and cleanup (`mix ragex.cache.*`)  
+      ▹ Performance: Cold start <5s vs 50s without cache  
       ▹ Storage: ~15MB per 1,000 entities (ETS binary format)
 
-    ▸ Incremental Embedding Updates
-      ▹ File Tracking: SHA256 content hashing for change detection
-      ▹ Smart Diff: Only re-analyzes changed files
-      ▹ Selective Regeneration: Updates embeddings for modified entities only
-      ▹ Performance: <5% regeneration on single-file changes
+    ▸ Incremental Embedding Updates  
+      ▹ File Tracking: SHA256 content hashing for change detection  
+      ▹ Smart Diff: Only re-analyzes changed files  
+      ▹ Selective Regeneration: Updates embeddings for modified entities only  
+      ▹ Performance: <5% regeneration on single-file changes  
       ▹ Mix Task: `mix ragex.cache.refresh` for incremental/full updates
 
-    ▸ Path Finding Limits
-      ▹ `max_paths` Parametrization: Limits returned paths (default: 100) to prevent hangs
-      ▹ Early Stopping: DFS traversal stops when max_paths reached
-      ▹ Dense Graph Detection: Automatic warnings for highly-connected nodes (≥10 edges)
-      ▹ Configurable Options: max_depth, max_paths, warn_dense flags
+    ▸ Path Finding Limits  
+      ▹ `max_paths` Parametrization: Limits returned paths (default: 100) to prevent hangs  
+      ▹ Early Stopping: DFS traversal stops when max_paths reached  
+      ▹ Dense Graph Detection: Automatic warnings for highly-connected nodes (≥10 edges)  
+      ▹ Configurable Options: max_depth, max_paths, warn_dense flags  
       ▹ Performance: Prevents exponential explosion on dense graphs
 </details>
 <details>
   <summary>Code Editing Capabilities</summary>
 
-    ▸ Core Editor Infrastructure
-      ▹ Editor Types: Change types (replace, insert, delete) with validation
-      ▹ Backup Management: Automatic backups with timestamps and project-specific directories
-      ▹ Core Editor: Atomic operations with concurrent modification detection
-      ▹ Rollback Support: Restore previous versions from backup history
+    ▸ Core Editor Infrastructure  
+      ▹ Editor Types: Change types (replace, insert, delete) with validation  
+      ▹ Backup Management: Automatic backups with timestamps and project-specific directories  
+      ▹ Core Editor: Atomic operations with concurrent modification detection  
+      ▹ Rollback Support: Restore previous versions from backup history  
       ▹ Configuration: Backup retention, compression, and directory settings
 
-    ▸ Validation Pipeline
-      ▹ Validator Behavior: Behavior definition with callbacks and orchestration
-      ▹ Elixir Validator: Syntax validation using `Code.string_to_quoted/2`
-      ▹ Erlang Validator: Validation using `:erl_scan` and `:erl_parse`
-      ▹ Python Validator: Shell-out to Python's `ast.parse()` for syntax checking
-      ▹ JavaScript Validator: Node.js `vm.Script` for JS/TS validation
-      ▹ Automatic Detection: Language detection from file extension
+    ▸ Validation Pipeline  
+      ▹ Validator Behavior: Behavior definition with callbacks and orchestration  
+      ▹ Elixir Validator: Syntax validation using `Code.string_to_quoted/2`  
+      ▹ Erlang Validator: Validation using `:erl_scan` and `:erl_parse`  
+      ▹ Python Validator: Shell-out to Python's `ast.parse()` for syntax checking  
+      ▹ JavaScript Validator: Node.js `vm.Script` for JS/TS validation  
+      ▹ Automatic Detection: Language detection from file extension  
       ▹ Core Integration: Validators integrated with `Core.edit_file`
 
-    ▸ MCP Edit Tools
-      ▹ edit_file: MCP tool for safe file editing with validation
-      ▹ validate_edit: Preview validation before applying changes
-      ▹ rollback_edit: Undo recent edits via MCP
-      ▹ edit_history: Query backup history
+    ▸ MCP Edit Tools  
+      ▹ edit_file: MCP tool for safe file editing with validation  
+      ▹ validate_edit: Preview validation before applying changes  
+      ▹ rollback_edit: Undo recent edits via MCP  
+      ▹ edit_history: Query backup history  
 
-    ▸ Advanced Editing
-      ▹ Format Integration: Auto-format after edits with language-specific formatters
-      ▹ Formatter Detection: Automatic formatter discovery (mix, rebar3, black, prettier)
-      ▹ Core Integration: `:format` option in `Core.edit_file`
-      ▹ Multi-file Transactions: Atomic cross-file changes with automatic rollback
-      ▹ Transaction Validation: Pre-validate all files before applying changes
+    ▸ Advanced Editing  
+      ▹ Format Integration: Auto-format after edits with language-specific formatters  
+      ▹ Formatter Detection: Automatic formatter discovery (mix, rebar3, black, prettier)  
+      ▹ Core Integration: `:format` option in `Core.edit_file`  
+      ▹ Multi-file Transactions: Atomic cross-file changes with automatic rollback  
+      ▹ Transaction Validation: Pre-validate all files before applying changes  
       ▹ MCP Integration: `edit_files` tool for coordinated multi-file edits
 
-    ▸ Semantic Refactoring
-      ▹ AST Manipulation: Elixir-specific AST parsing and transformation
-      ▹ Rename Function: Rename functions with automatic call site updates
-      ▹ Rename Module: Rename modules with reference updates
-      ▹ Graph Integration: Use knowledge graph to find all affected files
-      ▹ Arity Support: Handle functions with multiple arities correctly
-      ▹ Scope Control: Module-level or project-wide refactoring
+    ▸ Semantic Refactoring  
+      ▹ AST Manipulation: Elixir-specific AST parsing and transformation  
+      ▹ Rename Function: Rename functions with automatic call site updates  
+      ▹ Rename Module: Rename modules with reference updates  
+      ▹ Graph Integration: Use knowledge graph to find all affected files  
+      ▹ Arity Support: Handle functions with multiple arities correctly  
+      ▹ Scope Control: Module-level or project-wide refactoring  
       ▹ MCP Integration: `refactor_code` tool for semantic refactoring
 </details>
 <details>
   <summary>Advanced Graph Algorithms</summary>
 
-    ▸ Centrality Metrics
-      ▹ Betweenness Centrality: Identify bridge/bottleneck functions using Brandes’ algorithm
-      ▹ Closeness Centrality: Identify central functions based on average distance
-      ▹ Normalized Scores: Configurable 0-1 normalization
-      ▹ Performance Limits: `max_nodes` parameter for large graphs
+    ▸ Centrality Metrics  
+      ▹ Betweenness Centrality: Identify bridge/bottleneck functions using Brandes’ algorithm  
+      ▹ Closeness Centrality: Identify central functions based on average distance  
+      ▹ Normalized Scores: Configurable 0-1 normalization  
+      ▹ Performance Limits: `max_nodes` parameter for large graphs  
       ▹ MCP Tools: `betweenness_centrality` and `closeness_centrality`
 
-    ▸ Community Detection
-      ▹ Louvain Method: Modularity optimization for discovering architectural modules
-      ▹ Label Propagation: Fast alternative algorithm (O(m) per iteration)
-      ▹ Hierarchical Structure: Multi-level community detection support
-      ▹ Weighted Edges: Support for edge weights (call frequency)
+    ▸ Community Detection  
+      ▹ Louvain Method: Modularity optimization for discovering architectural modules  
+      ▹ Label Propagation: Fast alternative algorithm (O(m) per iteration)  
+      ▹ Hierarchical Structure: Multi-level community detection support  
+      ▹ Weighted Edges: Support for edge weights (call frequency)  
       ▹ MCP Tool: `detect_communities` with algorithm selection
 
-    ▸ Weighted Graph Support
-      ▹ Edge Weights: Store call frequency in edge metadata (default: 1.0)
-      ▹ Weighted Algorithms: Modularity computation with weights
+    ▸ Weighted Graph Support  
+      ▹ Edge Weights: Store call frequency in edge metadata (default: 1.0)  
+      ▹ Weighted Algorithms: Modularity computation with weights  
       ▹ Store Integration: `get_edge_weight` helper function
 
-    ▸ Graph Visualization
-      ▹ Graphviz DOT Export: Community clustering, colored nodes, weighted edges
-      ▹ D3.js JSON Export: Force-directed graph format with metadata
-      ▹ Node Coloring: By PageRank, betweenness, or degree centrality
-      ▹ Edge Thickness: Proportional to edge weight
+    ▸ Graph Visualization  
+      ▹ Graphviz DOT Export: Community clustering, colored nodes, weighted edges  
+      ▹ D3.js JSON Export: Force-directed graph format with metadata  
+      ▹ Node Coloring: By PageRank, betweenness, or degree centrality  
+      ▹ Edge Thickness: Proportional to edge weight  
       ▹ MCP Tool: `export_graph` with format selection
 </details>
 
