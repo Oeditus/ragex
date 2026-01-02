@@ -428,7 +428,7 @@ end
 function M.show_betweenness_centrality()
   vim.notify("Computing betweenness centrality...", vim.log.levels.INFO)
   
-  M.execute("betweenness_centrality", { max_nodes = 100, normalize = true }, function(result)
+  M.execute("betweenness_centrality", { normalize = true }, function(result)
     if not result or not result.result then
       vim.notify("Failed to compute betweenness centrality", vim.log.levels.ERROR)
       return
