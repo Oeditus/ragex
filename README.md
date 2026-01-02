@@ -7,13 +7,13 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 ## Features
 
   - <details>
-      <summary>**Foundation**</summary>
+      <summary><b>Foundation</b></summary>
 
-        - **MCP Server Protocol**: Full JSON-RPC 2.0 implementation over stdio
+        - <b>MCP Server Protocol</b>: Full JSON-RPC 2.0 implementation over stdio
         - **Elixir Code Analyzer**: AST-based parser extracting modules, functions, calls, and dependencies
         - **Knowledge Graph**: ETS-based storage for code entities and relationships
         - **MCP Tools**:
-          - `analyze_file`: Parse and index source files
+          - <code>analyze_file</code>: Parse and index source files
           - `query_graph`: Search for modules, functions, and relationships
           - `list_nodes`: Browse indexed code entities
     </details>
