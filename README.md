@@ -172,8 +172,8 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 
 ### Planned Features
 
-- Production optimizations (performance tuning, caching strategies)
-- Additional language support (Go, Rust, Java)
+- [ ] Production optimizations (performance tuning, caching strategies)
+- [ ] Additional language support (Go, Rust, Java, …)
 
 ## Architecture
 
@@ -200,6 +200,159 @@ graph TD
     style Vector fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
     style Bumblebee fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
 ```
+
+## Use as MCP Server
+
+The only MCP client currently supported is `LunarVim` (technically, any `NeoVim`,
+but I never tested it.)
+
+To enable `Ragex` support in `LunarVim`, copy files from `lvim.cfg/lua/user/` to
+where your `LunarVim` configs are (typically, it’s `~/.config/lvim/lua/user/`) and
+amend your `config.lua` as shown below.
+
+```lua
+-- Ragex integration
+local ragex = require("user.ragex")
+local ragex_telescope = require("user.ragex_telescope")
+
+-- Setup Ragex with configuration
+ragex.setup({
+  ragex_path = vim.fn.expand("~/Proyectos/Ammotion/ragex"),
+  enabled = true,
+  debug = false,
+})
+
+-- Ragex keybindings (using "r" prefix for Ragex)
+lvim.builtin.which_key.mappings["r"] = {
+  name = "Ragex",
+  s = { function() ragex_telescope.ragex_search() end, "Semantic Search" },
+  w = { function() ragex_telescope.ragex_search_word() end, "Search Word" },
+  f = { function() ragex_telescope.ragex_functions() end, "Find Functions" },
+  m = { function() ragex_telescope.ragex_modules() end, "Find Modules" },
+  a = { function() ragex.analyze_current_file() end, "Analyze File" },
+  d = { function() ragex.analyze_directory(vim.fn.getcwd()) end, "Analyze Directory" },
+  c = { function() ragex.show_callers() end, "Find Callers" },
+  r = {
+    function()
+      vim.ui.input({ prompt = "New name: " }, function(name)
+        if name then
+          ragex.rename_function(name)
+        end
+      end)
+    end,
+    "Rename Function",
+  },
+  R = {
+    function()
+      vim.ui.input({ prompt = "Old module: " }, function(old_name)
+        if old_name then
+          vim.ui.input({ prompt = "New module: " }, function(new_name)
+            if new_name then
+              ragex.rename_module(old_name, new_name)
+            end
+          end)
+        end
+      end)
+    end,
+    "Rename Module",
+  },
+  g = { 
+    function()
+      local result = ragex.graph_stats()
+      if result and result.result then
+        -- Unwrap MCP response
+        local stats = result.result
+        if stats.content and stats.content[1] and stats.content[1].text then
+          local ok, parsed = pcall(vim.fn.json_decode, stats.content[1].text)
+          if ok then
+            stats = parsed
+          end
+        end
+        
+        -- Format stats for display
+        local lines = {
+          "# Graph Statistics",
+          "",
+          string.format("**Nodes**: %d", stats.node_count or 0),
+          string.format("**Edges**: %d", stats.edge_count or 0),
+          string.format("**Average Degree**: %.2f", stats.average_degree or 0),
+          string.format("**Density**: %.4f", stats.density or 0),
+          "",
+          "## Node Types",
+        }
+        
+        if stats.node_counts_by_type then
+          for node_type, count in pairs(stats.node_counts_by_type) do
+            table.insert(lines, string.format("- %s: %d", node_type, count))
+          end
+        end
+        
+        if stats.top_by_degree and #stats.top_by_degree > 0 then
+          table.insert(lines, "")
+          table.insert(lines, "## Top by Degree")
+          for i, node in ipairs(stats.top_by_degree) do
+            if i > 10 then break end
+            table.insert(lines, string.format("- %s (in:%d, out:%d, total:%d)",
+              node.node_id or "unknown",
+              node.in_degree or 0,
+              node.out_degree or 0,
+              node.total_degree or 0))
+          end
+        end
+        
+        ragex.show_in_float("Ragex Graph Statistics", lines)
+      else
+        vim.notify("No graph statistics available", vim.log.levels.WARN)
+      end
+    end,
+    "Graph Stats"
+  },
+  W = { function() ragex.watch_directory(vim.fn.getcwd()) end, "Watch Directory" },
+  t = { function() ragex.toggle_auto_analyze() end, "Toggle Auto-Analysis" },
+  -- Phase 8: Advanced Graph Algorithms
+  b = { function() ragex.show_betweenness_centrality() end, "Betweenness Centrality" },
+  o = { function() ragex.show_closeness_centrality() end, "Closeness Centrality" },
+  n = { function() ragex.show_communities("louvain") end, "Detect Communities (Louvain)" },
+  l = { function() ragex.show_communities("label_propagation") end, "Detect Communities (Label Prop)" },
+  e = { 
+    function()
+      vim.ui.select({ "graphviz", "d3" }, {
+        prompt = "Export format:",
+      }, function(format)
+        if format then
+          local ext = format == "graphviz" and "dot" or "json"
+          vim.ui.input({
+            prompt = "Save as: ",
+            default = vim.fn.getcwd() .. "/graph." .. ext,
+          }, function(filepath)
+            if filepath then
+              ragex.export_graph_to_file(format, filepath)
+            end
+          end)
+        end
+      end)
+    end,
+    "Export Graph"
+  },
+}
+
+-- Register Telescope commands for Ragex
+vim.api.nvim_create_user_command("RagexSearch", ragex_telescope.ragex_search, {})
+vim.api.nvim_create_user_command("RagexFunctions", ragex_telescope.ragex_functions, {})
+vim.api.nvim_create_user_command("RagexModules", ragex_telescope.ragex_modules, {})
+vim.api.nvim_create_user_command("RagexSearchWord", ragex_telescope.ragex_search_word, {})
+vim.api.nvim_create_user_command("RagexToggleAuto", function() ragex.toggle_auto_analyze() end, {})
+
+-- Add Ragex status to lualine
+local function ragex_status()
+  if ragex.config.enabled then
+    return "  Ragex"
+  end
+  return ""
+end
+```
+
+This should result in the following `<leader>r` update:
 
 ## Installation
 
