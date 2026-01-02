@@ -10,6 +10,8 @@ M.config = {
   enabled = true,
   debug = true,  -- Enable to see request/response logs
   auto_analyze = false,  -- Disabled by default, enable with :lua require('user.ragex').config.auto_analyze = true
+  auto_analyze_on_start = true,  -- Analyze current directory on startup
+  auto_analyze_dirs = {},  -- List of directories to analyze on startup, e.g. {"/path/to/project1", "/path/to/project2"}
 }
 
 -- Log debug messages
@@ -179,7 +181,10 @@ function M.analyze_directory(path, opts)
     extensions = opts.extensions or { ".ex", ".exs" },
   }
 
-  vim.notify("Analyzing directory: " .. path .. "...", vim.log.levels.INFO)
+  -- Only show initial notification if not silent
+  if not opts.silent then
+    vim.notify("Analyzing directory: " .. path .. "...", vim.log.levels.INFO)
+  end
   
   M.execute("analyze_directory", params, function(result)
     debug_log("analyze_directory result: " .. vim.inspect(result))
@@ -198,9 +203,15 @@ function M.analyze_directory(path, opts)
       
       local count = actual_result.analyzed or actual_result.success or 0
       local total = actual_result.total or 0
-      vim.notify(string.format("✓ Analysis complete: %d/%d files indexed", count, total), vim.log.levels.INFO)
+      
+      -- Show completion notification (replaces "Analyzing..." message)
+      if not opts.silent then
+        vim.notify(string.format("✓ Ragex: %d/%d files indexed in %s", count, total, vim.fn.fnamemodify(path, ":~")), vim.log.levels.INFO)
+      end
     else
-      vim.notify("✗ Failed to analyze directory", vim.log.levels.ERROR)
+      if not opts.silent then
+        vim.notify("✗ Ragex: Failed to analyze directory", vim.log.levels.ERROR)
+      end
     end
   end)
 end
@@ -812,7 +823,37 @@ function M.setup(opts)
         M.analyze_current_file()
       end,
     })
-    debug_log("Auto-analysis enabled")
+    debug_log("Auto-analysis on save enabled")
+  end
+  
+  -- Auto-analyze directories on startup (deferred to avoid blocking)
+  if M.config.auto_analyze_on_start or (M.config.auto_analyze_dirs and #M.config.auto_analyze_dirs > 0) then
+    vim.defer_fn(function()
+      -- Check if current directory has Elixir files
+      local has_elixir_files = vim.fn.glob("*.ex") ~= "" or vim.fn.glob("*.exs") ~= "" or 
+                                vim.fn.glob("lib/**/*.ex") ~= "" or vim.fn.glob("test/**/*.exs") ~= ""
+      
+      -- Analyze current project directory if it has Elixir files
+      if M.config.auto_analyze_on_start and has_elixir_files then
+        local cwd = vim.fn.getcwd()
+        debug_log("Auto-analyzing current directory on startup: " .. cwd)
+        M.analyze_directory(cwd, { silent = false })
+      end
+      
+      -- Analyze configured directories
+      if M.config.auto_analyze_dirs and #M.config.auto_analyze_dirs > 0 then
+        for _, dir in ipairs(M.config.auto_analyze_dirs) do
+          local expanded_dir = vim.fn.expand(dir)
+          if vim.fn.isdirectory(expanded_dir) == 1 then
+            debug_log("Auto-analyzing configured directory: " .. expanded_dir)
+            -- Use silent = true for background directories to avoid notification spam
+            M.analyze_directory(expanded_dir, { silent = true })
+          else
+            debug_log("Skipping non-existent directory: " .. expanded_dir)
+          end
+        end
+      end
+    end, 1000)  -- Wait 1 second after startup to avoid blocking
   end
   
   debug_log("Ragex integration loaded")
