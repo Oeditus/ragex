@@ -10,14 +10,9 @@ import Config
 #     "/path/to/project1",
 #     "/path/to/project2"
 #   ]
-config :ragex,
-       :auto_analyze_dirs,
-       System.get_env("RAGEX_AUTO_ANALYZE_DIRS", "")
-       |> String.split(":", trim: true)
-       |> case do
-  [] -> []
-  dirs -> dirs
-end
+dirs = "RAGEX_AUTO_ANALYZE_DIRS" |> System.get_env("") |> String.split(":", trim: true)
+
+config :ragex, :auto_analyze_dirs, dirs
 
 # You can also set this via config files in specific environments:
 # config :ragex, :auto_analyze_dirs, [
