@@ -1383,11 +1383,19 @@ defmodule Ragex.Graph.Algorithms do
 
   defp format_node_id_string(node) do
     case node do
-      {:function, module, name, arity} -> "#{module}.#{name}/#{arity}"
-      {:module, id} -> "#{id}"
+      {:function, module, name, arity} -> "#{trim_elixir_prefix(module)}.#{name}/#{arity}"
+      {:module, id} -> trim_elixir_prefix(id)
       _ -> inspect(node)
     end
   end
+
+  defp trim_elixir_prefix(atom) when is_atom(atom) do
+    atom
+    |> Atom.to_string()
+    |> String.replace_prefix("Elixir.", "")
+  end
+
+  defp trim_elixir_prefix(other), do: to_string(other)
 
   defp get_node_type(node) do
     case node do

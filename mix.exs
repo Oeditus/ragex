@@ -29,7 +29,8 @@ defmodule Ragex.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Ragex.Application, []}
+      mod: {Ragex.Application, []},
+      start_phases: [auto_analyze: []]
     ]
   end
 
