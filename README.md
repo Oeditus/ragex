@@ -6,25 +6,29 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 
 ## Features
 
-### Phase 1 - Foundation ✅
+  - <details>
+      <summary>**Foundation**</summary>
 
-- ✅ **MCP Server Protocol**: Full JSON-RPC 2.0 implementation over stdio
-- ✅ **Elixir Code Analyzer**: AST-based parser extracting modules, functions, calls, and dependencies
-- ✅ **Knowledge Graph**: ETS-based storage for code entities and relationships
-- ✅ **MCP Tools**:
-  - `analyze_file`: Parse and index source files
-  - `query_graph`: Search for modules, functions, and relationships
-  - `list_nodes`: Browse indexed code entities
+        - **MCP Server Protocol**: Full JSON-RPC 2.0 implementation over stdio
+        - **Elixir Code Analyzer**: AST-based parser extracting modules, functions, calls, and dependencies
+        - **Knowledge Graph**: ETS-based storage for code entities and relationships
+        - **MCP Tools**:
+          - `analyze_file`: Parse and index source files
+          - `query_graph`: Search for modules, functions, and relationships
+          - `list_nodes`: Browse indexed code entities
+    </details>
 
-### Phase 2 - Multi-Language Support ✅
+  - <details>
+      <summary>Multi-Language Support</summary>
 
-- ✅ **Erlang Analyzer**: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing
-- ✅ **Python Analyzer**: Shells out to Python's `ast` module for comprehensive analysis
-- ✅ **JavaScript/TypeScript Analyzer**: Regex-based parsing for common JS/TS patterns
-- ✅ **Auto-detection**: Automatically detects language from file extension
-- ✅ **Directory Analysis**: Batch analyze entire projects with parallel processing
-- ✅ **File Watching**: Auto-reindex on file changes
-- ✅ **Supported Extensions**: `.ex`, `.exs`, `.erl`, `.hrl`, `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`
+        - **Erlang Analyzer**: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing
+        - **Python Analyzer**: Shells out to Python's `ast` module for comprehensive analysis
+        - **JavaScript/TypeScript Analyzer**: Regex-based parsing for common JS/TS patterns
+        - **Auto-detection**: Automatically detects language from file extension
+        - **Directory Analysis**: Batch analyze entire projects with parallel processing
+        - **File Watching**: Auto-reindex on file changes
+        - **Supported Extensions**: `.ex`, `.exs`, `.erl`, `.hrl`, `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`
+    </details>
 
 ### Phase 3 - Semantic Search & Hybrid Retrieval ✅
 
