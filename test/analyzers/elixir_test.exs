@@ -395,6 +395,78 @@ defmodule Ragex.Analyzers.ElixirTest do
     end
   end
 
+  describe "macro expansion" do
+    test "expands defdelegate to create function with call graph" do
+      source = """
+      defmodule TestModule do
+        defdelegate add(a, b), to: Math
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+      assert [func] = result.functions
+      assert func.name == :add
+      assert func.arity == 2
+
+      # Should create a call to Math.add/2
+      assert [call] = result.calls
+      assert call.to_module == Math
+      assert call.to_function == :add
+      assert call.from_function == :add
+    end
+
+    test "expands defdelegate with :as option" do
+      source = """
+      defmodule TestModule do
+        defdelegate process(data), to: Worker, as: :run
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+      assert [func] = result.functions
+      assert func.name == :process
+
+      # Should call Worker.run/1 instead of Worker.process/1
+      assert [call] = result.calls
+      assert call.to_module == Worker
+      assert call.to_function == :run
+    end
+
+    test "extracts struct field information" do
+      source = """
+      defmodule User do
+        defstruct [:name, :email, age: 0]
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex")
+      assert [module] = result.modules
+      assert is_map(module.metadata[:struct])
+      fields = module.metadata[:struct].fields
+      assert length(fields) == 3
+
+      name_field = Enum.find(fields, fn f -> f.name == :name end)
+      assert name_field.default == nil
+
+      age_field = Enum.find(fields, fn f -> f.name == :age end)
+      assert age_field.default == "0"
+    end
+
+    test "can disable macro expansion" do
+      source = """
+      defmodule TestModule do
+        defdelegate add(a, b), to: Math
+      end
+      """
+
+      # With expansion disabled, no function or calls should be created
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :none)
+      # defdelegate won't expand, so it won't create a def
+      assert result.functions == []
+      assert result.calls == []
+    end
+  end
+
   describe "documentation reference extraction" do
     test "extracts module references from documentation" do
       source = """

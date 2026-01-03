@@ -9,12 +9,22 @@ defmodule Ragex.Analyzers.Elixir do
   @behaviour Ragex.Analyzers.Behaviour
 
   @impl true
-  def analyze(source, file_path) do
+  def analyze(source, file_path, opts \\ []) do
+    expand_macros = Keyword.get(opts, :expand_macros, :partial)
+
     # Extract comments from source
     comments = extract_comments(source)
 
     case Code.string_to_quoted(source, file: file_path, columns: true) do
       {:ok, ast} ->
+        # Expand macros based on configuration
+        ast =
+          case expand_macros do
+            :none -> ast
+            :partial -> expand_common_macros(ast)
+            :full -> expand_with_compilation(ast, file_path)
+          end
+
         context = %{
           file: file_path,
           current_module: nil,
@@ -32,7 +42,9 @@ defmodule Ragex.Analyzers.Elixir do
           pending_typedoc: nil,
           pending_spec: nil,
           # Store comments for association
-          comments: comments
+          comments: comments,
+          # Track macro expansion mode
+          expand_macros: expand_macros
         }
 
         context = traverse_ast(ast, context)
@@ -186,6 +198,29 @@ defmodule Ragex.Analyzers.Elixir do
 
   defp traverse_ast({:use, _meta, [module_alias | _]}, context) do
     add_import(context, module_alias, :use)
+  end
+
+  # Handle defstruct - extract struct field information
+  defp traverse_ast({:defstruct, meta, [fields]}, context) do
+    if context.current_module do
+      line = Keyword.get(meta, :line, 0)
+      field_list = extract_struct_fields(fields)
+
+      # Store struct info in module metadata (we'll update the current module)
+      updated_modules =
+        Enum.map(context.modules, fn mod ->
+          if mod.name == context.current_module do
+            struct_info = %{fields: field_list, line: line}
+            %{mod | metadata: Map.put(mod.metadata, :struct, struct_info)}
+          else
+            mod
+          end
+        end)
+
+      %{context | modules: updated_modules}
+    else
+      context
+    end
   end
 
   defp traverse_ast({:alias, _meta, [module_alias | rest]}, context) do
@@ -401,6 +436,103 @@ defmodule Ragex.Analyzers.Elixir do
     end
   rescue
     _ -> inspect(spec_args)
+  end
+
+  # Extract struct field names and default values
+  defp extract_struct_fields(fields) when is_list(fields) do
+    Enum.map(fields, fn
+      # Field with default value: field: value
+      {field, default} when is_atom(field) ->
+        %{name: field, default: inspect(default)}
+
+      # Field without default value: just :field
+      field when is_atom(field) ->
+        %{name: field, default: nil}
+
+      _ ->
+        %{name: :unknown, default: nil}
+    end)
+  end
+
+  defp extract_struct_fields(_), do: []
+
+  # Macro Expansion
+
+  # Expand common macros that don't require compilation context
+  defp expand_common_macros(ast) do
+    Macro.prewalk(ast, fn node ->
+      case node do
+        # Handle defdelegate
+        {:defdelegate, meta, [signature, opts]} ->
+          expand_defdelegate(signature, opts, meta)
+
+        # Handle defstruct (extract struct definition)
+        {:defstruct, meta, [fields]} ->
+          # Keep defstruct as-is but we'll extract info during traversal
+          {:defstruct, meta, [fields]}
+
+        # Keep other nodes as-is
+        other ->
+          other
+      end
+    end)
+  end
+
+  # Expand defdelegate into actual function definition with call
+  defp expand_defdelegate(signature, opts, meta) do
+    {func_name, func_meta, args} = signature
+    target_module = Keyword.get(opts, :to)
+    target_func = Keyword.get(opts, :as, func_name)
+
+    # Build argument list for the delegated call
+    arg_names =
+      case args do
+        nil -> []
+        args when is_list(args) -> Enum.map(args, fn {name, _, _} -> {name, [], nil} end)
+        _ -> []
+      end
+
+    # Create a def with a call to the target module
+    body =
+      if target_module do
+        # Generate: TargetModule.target_func(args...)
+        {{:., [], [target_module, target_func]}, [], arg_names}
+      else
+        # If no :to option, just return nil (shouldn't happen in valid code)
+        nil
+      end
+
+    # Return a def node
+    {:def, meta, [{func_name, func_meta, args}, [do: body]]}
+  end
+
+  # Expand macros using full compilation (requires compilation environment)
+  defp expand_with_compilation(ast, file_path) do
+    # Try to expand using Macro.expand/2 in a safe environment
+    try do
+      # Create a minimal environment for expansion
+      env = %Macro.Env{
+        file: file_path,
+        line: 1,
+        module: nil,
+        function: nil,
+        context: nil,
+        requires: [],
+        aliases: [],
+        functions: [],
+        macros: [],
+        macro_aliases: [],
+        context_modules: [],
+        lexical_tracker: nil,
+        tracers: []
+      }
+
+      # Attempt to expand the entire AST
+      Macro.expand(ast, env)
+    rescue
+      # If expansion fails, fall back to partial expansion
+      _ -> expand_common_macros(ast)
+    end
   end
 
   # Extract comments from source code
