@@ -12,6 +12,10 @@ defmodule Ragex.VectorStore do
 
   alias Ragex.Graph.Store
 
+  @timeout :ragex
+           |> Application.compile_env(:timeouts, [])
+           |> Keyword.get(:store, :infinity)
+
   # Client API
 
   def start_link(opts \\ []) do
@@ -44,7 +48,10 @@ defmodule Ragex.VectorStore do
       results = VectorStore.search(query_emb, limit: 5, threshold: 0.7)
   """
   def search(query_embedding, opts \\ []) do
-    GenServer.call(__MODULE__, {:search, query_embedding, opts}, :infinity)
+    GenServer.call(__MODULE__, {:search, query_embedding, opts}, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, {:search, ^query_embedding, ^opts}, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
@@ -80,7 +87,10 @@ defmodule Ragex.VectorStore do
   Returns statistics about the vector store.
   """
   def stats do
-    GenServer.call(__MODULE__, :stats)
+    GenServer.call(__MODULE__, :stats, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, :stats, @timeout]}} ->
+      {:error, :timeout}
   end
 
   # Server Callbacks

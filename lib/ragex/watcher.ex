@@ -20,6 +20,10 @@ defmodule Ragex.Watcher do
     ]
   end
 
+  @timeout :ragex
+           |> Application.compile_env(:timeouts, [])
+           |> Keyword.get(:watcher, :infinity)
+
   # Client API
 
   def start_link(opts \\ []) do
@@ -30,21 +34,30 @@ defmodule Ragex.Watcher do
   Starts watching a directory for changes.
   """
   def watch_directory(path) do
-    GenServer.call(__MODULE__, {:watch, path})
+    GenServer.call(__MODULE__, {:watch, path}, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, {:watch, ^path}, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
   Stops watching a directory.
   """
   def unwatch_directory(path) do
-    GenServer.call(__MODULE__, {:unwatch, path})
+    GenServer.call(__MODULE__, {:unwatch, path}, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, {:unwatch, ^path}, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
   Lists all currently watched directories.
   """
   def list_watched do
-    GenServer.call(__MODULE__, :list_watched)
+    GenServer.call(__MODULE__, :list_watched, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, :list_watched, @timeout]}} ->
+      {:error, :timeout}
   end
 
   # Server Callbacks

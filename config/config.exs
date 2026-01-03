@@ -35,6 +35,11 @@ config :ragex, :cache,
   dir: Path.expand("~/.cache/ragex"),
   max_age_days: 30
 
+config :ragex, :timeouts,
+  bumblebee: :infinity,
+  store: :infinity,
+  watcher: :infinity
+
 # Editor Configuration (Phase 5)
 config :ragex, :editor,
   backup_dir: Path.expand("~/.ragex/backups"),

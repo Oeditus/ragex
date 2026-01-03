@@ -25,6 +25,10 @@ defmodule Ragex.Embeddings.Bumblebee do
     defstruct [:serving, :tokenizer, :model, :model_info, ready: false]
   end
 
+  @timeout :ragex
+           |> Application.compile_env(:timeouts, [])
+           |> Keyword.get(:bumblebee, :infinity)
+
   # Client API
 
   def start_link(opts \\ []) do
@@ -33,31 +37,46 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   @impl Ragex.Embeddings.Behaviour
   def embed(text) when is_binary(text) do
-    GenServer.call(__MODULE__, {:embed, text}, :infinity)
+    GenServer.call(__MODULE__, {:embed, text}, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, {:embed, ^text}, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @impl Ragex.Embeddings.Behaviour
   def embed_batch(texts) when is_list(texts) do
-    GenServer.call(__MODULE__, {:embed_batch, texts}, :infinity)
+    GenServer.call(__MODULE__, {:embed_batch, texts}, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, {:embed_batch, ^texts}, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @impl Ragex.Embeddings.Behaviour
   def dimensions do
-    GenServer.call(__MODULE__, :dimensions)
+    GenServer.call(__MODULE__, :dimensions, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, :dimensions, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
   Returns the current model information.
   """
   def model_info do
-    GenServer.call(__MODULE__, :model_info)
+    GenServer.call(__MODULE__, :model_info, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, :model_info, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
   Returns true if the model is loaded and ready.
   """
   def ready? do
-    GenServer.call(__MODULE__, :ready?)
+    GenServer.call(__MODULE__, :ready?, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, :ready?, @timeout]}} ->
+      {:error, :timeout}
   end
 
   # Server Callbacks

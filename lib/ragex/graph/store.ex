@@ -15,6 +15,10 @@ defmodule Ragex.Graph.Store do
   @edges_table :ragex_edges
   @embeddings_table :ragex_embeddings
 
+  @timeout :ragex
+           |> Application.compile_env(:timeouts, [])
+           |> Keyword.get(:store, :infinity)
+
   # Client API
 
   def start_link(opts \\ []) do
@@ -27,7 +31,11 @@ defmodule Ragex.Graph.Store do
   Node types: :module, :function, :type, :variable, :file
   """
   def add_node(node_type, node_id, data) do
-    GenServer.call(__MODULE__, {:add_node, node_type, node_id, data})
+    GenServer.call(__MODULE__, {:add_node, node_type, node_id, data}, @timeout)
+  catch
+    :exit,
+    {:timeout, {GenServer, :call, [_pid, {:add_node, ^node_type, ^node_id, ^data}, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
@@ -96,7 +104,12 @@ defmodule Ragex.Graph.Store do
   - `:metadata` - Additional metadata map
   """
   def add_edge(from_node, to_node, edge_type, opts \\ []) do
-    GenServer.call(__MODULE__, {:add_edge, from_node, to_node, edge_type, opts})
+    GenServer.call(__MODULE__, {:add_edge, from_node, to_node, edge_type, opts}, @timeout)
+  catch
+    :exit,
+    {:timeout,
+     {GenServer, :call, [_pid, {:add_edge, ^from_node, ^to_node, ^edge_type, ^opts}, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
@@ -139,14 +152,23 @@ defmodule Ragex.Graph.Store do
   Clears all data from the graph.
   """
   def clear do
-    GenServer.call(__MODULE__, :clear)
+    GenServer.call(__MODULE__, :clear, @timeout)
+  catch
+    :exit, {:timeout, {GenServer, :call, [_pid, :clear, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
   Stores an embedding vector for a node.
   """
   def store_embedding(node_type, node_id, embedding, text) do
-    GenServer.call(__MODULE__, {:store_embedding, node_type, node_id, embedding, text})
+    GenServer.call(__MODULE__, {:store_embedding, node_type, node_id, embedding, text}, @timeout)
+  catch
+    :exit,
+    {:timeout,
+     {GenServer, :call,
+      [_pid, {:store_embedding, ^node_type, ^node_id, ^embedding, ^text}, @timeout]}} ->
+      {:error, :timeout}
   end
 
   @doc """
