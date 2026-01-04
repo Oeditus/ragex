@@ -8,7 +8,7 @@ defmodule Ragex.MCP.Server do
   use GenServer
   require Logger
 
-  alias Ragex.MCP.Handlers.Tools
+  alias Ragex.MCP.Handlers.{Prompts, Resources, Tools}
   alias Ragex.MCP.Protocol
 
   defmodule State do
@@ -98,6 +98,18 @@ defmodule Ragex.MCP.Server do
         "tools/call" ->
           handle_tools_call(params, id)
 
+        "resources/list" ->
+          handle_resources_list(id)
+
+        "resources/read" ->
+          handle_resources_read(params, id)
+
+        "prompts/list" ->
+          handle_prompts_list(id)
+
+        "prompts/get" ->
+          handle_prompts_get(params, id)
+
         "ping" ->
           Protocol.success_response(%{}, id)
 
@@ -132,7 +144,9 @@ defmodule Ragex.MCP.Server do
       protocolVersion: "2024-11-05",
       serverInfo: state.server_info,
       capabilities: %{
-        tools: %{}
+        tools: %{},
+        resources: %{},
+        prompts: %{}
       }
     }
 
@@ -154,6 +168,55 @@ defmodule Ragex.MCP.Server do
         json_safe_result = result_to_json(result)
         text = :json.encode(json_safe_result) |> IO.iodata_to_binary()
         Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
+
+      {:error, reason} ->
+        Protocol.internal_error(reason, id)
+    end
+  end
+
+  defp handle_resources_list(id) do
+    result = Resources.list_resources()
+    Protocol.success_response(result, id)
+  end
+
+  defp handle_resources_read(params, id) do
+    uri = Map.get(params, "uri")
+
+    case Resources.read_resource(uri) do
+      {:ok, contents} ->
+        # Convert contents to JSON and wrap in MCP resource format
+        json_text = :json.encode(contents) |> IO.iodata_to_binary()
+
+        Protocol.success_response(
+          %{
+            contents: [
+              %{
+                uri: uri,
+                mimeType: "application/json",
+                text: json_text
+              }
+            ]
+          },
+          id
+        )
+
+      {:error, reason} ->
+        Protocol.internal_error(reason, id)
+    end
+  end
+
+  defp handle_prompts_list(id) do
+    result = Prompts.list_prompts()
+    Protocol.success_response(result, id)
+  end
+
+  defp handle_prompts_get(params, id) do
+    name = Map.get(params, "name")
+    arguments = Map.get(params, "arguments", %{})
+
+    case Prompts.get_prompt(name, arguments) do
+      {:ok, prompt} ->
+        Protocol.success_response(prompt, id)
 
       {:error, reason} ->
         Protocol.internal_error(reason, id)

@@ -162,12 +162,35 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ Weighted Algorithms: Modularity computation with weights  
       ▹ Store Integration: `get_edge_weight` helper function
 
-    ▸ Graph Visualization  
-      ▹ Graphviz DOT Export: Community clustering, colored nodes, weighted edges  
-      ▹ D3.js JSON Export: Force-directed graph format with metadata  
-      ▹ Node Coloring: By PageRank, betweenness, or degree centrality  
-      ▹ Edge Thickness: Proportional to edge weight  
-      ▹ MCP Tool: `export_graph` with format selection
+    ▸ Graph Visualization  
+      ▹ Graphviz DOT Export: Community clustering, colored nodes, weighted edges  
+      ▹ D3.js JSON Export: Force-directed graph format with metadata  
+      ▹ Node Coloring: By PageRank, betweenness, or degree centrality  
+      ▹ Edge Thickness: Proportional to edge weight  
+      ▹ MCP Tool: `export_graph` with format selection
+</details>
+<details>
+  <summary>MCP Resources & Prompts</summary>
+
+    ▸ Resources (Read-only State Access)  
+      ▹ Graph Statistics: Node/edge counts, PageRank scores, centrality metrics  
+      ▹ Cache Status: Embedding cache health, file tracking, stale entities  
+      ▹ Model Configuration: Active model details, capabilities, readiness  
+      ▹ Project Index: Tracked files, language distribution, entity counts  
+      ▹ Algorithm Catalog: Available algorithms with parameters and complexity  
+      ▹ Analysis Summary: Pre-computed architectural insights and communities  
+      ▹ URI Format: `ragex://<category>/<resource>`  
+      ▹ Documentation: See [RESOURCES.md](RESOURCES.md)
+
+    ▸ Prompts (High-level Workflows)  
+      ▹ Analyze Architecture: Comprehensive architectural analysis (shallow/deep)  
+      ▹ Find Impact: Function importance and refactoring risk assessment  
+      ▹ Explain Code Flow: Narrative execution flow between functions  
+      ▹ Find Similar Code: Hybrid search with natural language descriptions  
+      ▹ Suggest Refactoring: Modularity, coupling, and complexity analysis  
+      ▹ Safe Rename: Impact preview for semantic refactoring operations  
+      ▹ Tool Composition: Each prompt suggests sequence of tools to use  
+      ▹ Documentation: See [PROMPTS.md](PROMPTS.md)
 </details>
 
 ### Planned Features
@@ -179,9 +202,11 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 
 ```mermaid
 graph TD
-    MCP["MCP Server (stdio)<br/>19 MCP Tools Available"]
+    MCP["MCP Server (stdio)<br/>19 Tools + 6 Resources + 6 Prompts"]
     
     MCP --> Tools["Tools Handler"]
+    MCP --> Resources["Resources Handler"]
+    MCP --> Prompts["Prompts Handler"]
     MCP --> Analyzers["Analyzers<br/>(Elixir, Erlang, …)"]
     MCP --> Graph["Graph Store<br/>(ETS Knowledge Graph)"]
     MCP --> Vector["Vector Store<br/>(Cosine Similarity)"]
@@ -189,6 +214,10 @@ graph TD
     
     Tools <--> Analyzers
     Analyzers <--> Graph
+    Resources --> Graph
+    Resources --> Vector
+    Resources --> Bumblebee
+    Prompts --> Tools
     
     Tools --> Hybrid["Hybrid Retrieval (RRF)<br/>Semantic + Graph + Fusion"]
     Graph --> Hybrid
@@ -199,6 +228,8 @@ graph TD
     style Graph fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
     style Vector fill:#fff3e0,color:#e65100,stroke:#e65100,stroke-width:2px
     style Bumblebee fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
+    style Resources fill:#e0f2f1,color:#004d40,stroke:#004d40,stroke-width:2px
+    style Prompts fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
 ```
 
 ## Use as MCP Server
