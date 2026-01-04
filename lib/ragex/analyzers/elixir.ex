@@ -508,31 +508,28 @@ defmodule Ragex.Analyzers.Elixir do
 
   # Expand macros using full compilation (requires compilation environment)
   defp expand_with_compilation(ast, file_path) do
-    # Try to expand using Macro.expand/2 in a safe environment
-    try do
-      # Create a minimal environment for expansion
-      env = %Macro.Env{
-        file: file_path,
-        line: 1,
-        module: nil,
-        function: nil,
-        context: nil,
-        requires: [],
-        aliases: [],
-        functions: [],
-        macros: [],
-        macro_aliases: [],
-        context_modules: [],
-        lexical_tracker: nil,
-        tracers: []
-      }
+    # Create a minimal environment for expansion
+    env = %Macro.Env{
+      file: file_path,
+      line: 1,
+      module: nil,
+      function: nil,
+      context: nil,
+      requires: [],
+      aliases: [],
+      functions: [],
+      macros: [],
+      macro_aliases: [],
+      context_modules: [],
+      lexical_tracker: nil,
+      tracers: []
+    }
 
-      # Attempt to expand the entire AST
-      Macro.expand(ast, env)
-    rescue
-      # If expansion fails, fall back to partial expansion
-      _ -> expand_common_macros(ast)
-    end
+    # Attempt to expand the entire AST
+    Macro.expand(ast, env)
+  rescue
+    # If expansion fails, fall back to partial expansion
+    _ -> expand_common_macros(ast)
   end
 
   # Extract comments from source code
