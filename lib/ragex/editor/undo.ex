@@ -119,7 +119,7 @@ defmodule Ragex.Editor.Undo do
          %{
            operation: entry.operation,
            description: entry.description,
-           files_restored: length(entry.file_states)
+           files_restored: map_size(entry.file_states)
          }}
       else
         {:error, "Failed to restore some files: #{inspect(errors)}"}
