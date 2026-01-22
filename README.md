@@ -192,9 +192,40 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ Tool Composition: Each prompt suggests sequence of tools to use  
       ▹ Documentation: See [PROMPTS.md](PROMPTS.md)
 </details>
+<details>
+  <summary>RAG System (NEW - January 22, 2026)</summary>
+
+    ▸ AI Provider Abstraction  
+      ▹ Provider Behaviour: Clean interface for multiple AI providers  
+      ▹ DeepSeek R1: Full integration with deepseek-chat and deepseek-reasoner models  
+      ▹ Configuration System: Runtime API key management via environment variables  
+      ▹ Provider Registry: GenServer for runtime provider management  
+      ▹ Extensible: Easy to add OpenAI, Anthropic, Ollama, etc.
+
+    ▸ Metastatic Integration  
+      ▹ MetaAST Analyzer: Enhanced cross-language analysis via Metastatic library  
+      ▹ Supported Languages: Elixir, Erlang, Python, Ruby  
+      ▹ Fallback Strategy: Graceful degradation to native analyzers  
+      ▹ Feature Flags: Configurable `use_metastatic` option
+
+    ▸ RAG Pipeline  
+      ▹ Context Builder: Format retrieval results for AI consumption (8000 char max)  
+      ▹ Prompt Templates: Query, explain, and suggest operations  
+      ▹ Full Pipeline: Retrieval → Context → Prompting → Generation → Post-processing  
+      ▹ Hybrid Retrieval: Leverages semantic + graph-based search
+
+    ▸ MCP RAG Tools  
+      ▹ `rag_query`: Answer general codebase questions with AI  
+      ▹ `rag_explain`: Explain code with aspect focus (purpose, complexity, dependencies, all)  
+      ▹ `rag_suggest`: Suggest improvements (performance, readability, testing, security, all)  
+      ▹ Provider Override: Optional per-query AI provider selection  
+      ▹ Documentation: See [RAG_IMPLEMENTATION_SUMMARY.md](RAG_IMPLEMENTATION_SUMMARY.md)
+</details>
 
 ### Planned Features
 
+- [ ] Additional AI providers (OpenAI, Anthropic, Ollama)
+- [ ] Streaming RAG responses via MCP
 - [ ] Production optimizations (performance tuning, caching strategies)
 - [ ] Additional language support (Go, Rust, Java, …)
 
@@ -202,12 +233,12 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 
 ```mermaid
 graph TD
-    MCP["MCP Server (stdio)<br/>19 Tools + 6 Resources + 6 Prompts"]
+    MCP["MCP Server (stdio)<br/>22 Tools + 6 Resources + 6 Prompts"]
     
     MCP --> Tools["Tools Handler"]
     MCP --> Resources["Resources Handler"]
     MCP --> Prompts["Prompts Handler"]
-    MCP --> Analyzers["Analyzers<br/>(Elixir, Erlang, …)"]
+    MCP --> Analyzers["Analyzers<br/>(Elixir, Erlang, Metastatic)"]
     MCP --> Graph["Graph Store<br/>(ETS Knowledge Graph)"]
     MCP --> Vector["Vector Store<br/>(Cosine Similarity)"]
     MCP --> Bumblebee["Bumblebee Embedding<br/>(all-MiniLM-L6-v2)"]
@@ -223,6 +254,10 @@ graph TD
     Graph --> Hybrid
     Vector --> Hybrid
     
+    Tools --> RAG["RAG Pipeline<br/>Context → Prompts → AI"]
+    Hybrid --> RAG
+    RAG --> AIProvider["AI Providers<br/>(DeepSeek R1, …)"]
+    
     style MCP fill:#e1f5ff,color:#01579b,stroke:#01579b,stroke-width:2px
     style Hybrid fill:#f3e5f5,color:#4a148c,stroke:#4a148c,stroke-width:2px
     style Graph fill:#e8f5e9,color:#1b5e20,stroke:#1b5e20,stroke-width:2px
@@ -230,6 +265,8 @@ graph TD
     style Bumblebee fill:#fce4ec,color:#880e4f,stroke:#880e4f,stroke-width:2px
     style Resources fill:#e0f2f1,color:#004d40,stroke:#004d40,stroke-width:2px
     style Prompts fill:#fff9c4,color:#f57f17,stroke:#f57f17,stroke-width:2px
+    style RAG fill:#ffebee,color:#b71c1c,stroke:#b71c1c,stroke-width:2px
+    style AIProvider fill:#e8eaf6,color:#1a237e,stroke:#1a237e,stroke-width:2px
 ```
 
 ## Use as MCP Server
@@ -770,12 +807,88 @@ Semantic refactoring operations using AST analysis and knowledge graph.
 }
 ```
 
+### RAG (AI-Powered) Tools
+
+#### `rag_query`
+
+Query the codebase using Retrieval-Augmented Generation with AI assistance.
+
+**Parameters:**
+- `query` (string, required): Natural language query about the codebase
+- `limit` (integer, optional): Maximum number of code snippets to retrieve (default: 10)
+- `include_code` (boolean, optional): Include full code snippets in context (default: true)
+- `provider` (string, optional): AI provider override (`deepseek_r1`)
+
+**Example:**
+```json
+{
+  "query": "How does authentication work in this codebase?",
+  "limit": 15,
+  "include_code": true
+}
+```
+
+**Returns:**
+- AI-generated response based on retrieved code context
+- Sources count and model information
+
+#### `rag_explain`
+
+Explain code using RAG with AI assistance and aspect-focused analysis.
+
+**Parameters:**
+- `target` (string, required): File path or function identifier (e.g., `MyModule.function/2`)
+- `aspect` (string, optional): What to explain - `purpose`, `complexity`, `dependencies`, or `all` (default: `all`)
+
+**Example:**
+```json
+{
+  "target": "Ragex.Graph.Store.add_node/3",
+  "aspect": "complexity"
+}
+```
+
+**Returns:**
+- AI-generated explanation based on code analysis
+- Related code context and dependencies
+
+#### `rag_suggest`
+
+Suggest code improvements using RAG with AI analysis.
+
+**Parameters:**
+- `target` (string, required): File path or function identifier
+- `focus` (string, optional): Improvement focus - `performance`, `readability`, `testing`, `security`, or `all` (default: `all`)
+
+**Example:**
+```json
+{
+  "target": "lib/ragex/editor/core.ex",
+  "focus": "performance"
+}
+```
+
+**Returns:**
+- AI-generated improvement suggestions
+- Code context and rationale
+
+**Configuration:**
+
+RAG tools require the `DEEPSEEK_API_KEY` environment variable:
+
+```bash
+export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxx"
+```
+
+See [RAG_IMPLEMENTATION_SUMMARY.md](RAG_IMPLEMENTATION_SUMMARY.md) for detailed configuration and usage.
+
 ## Documentation
 
 - [Algorithms](stuff/docs/ALGORITHMS.md) - Algorithms used
 - [Usage](stuff/docs/USAGE.md) - Tips on how to use `Ragex`
 - [Configuration](stuff/docs/CONFIGURATION.md) - Embedding model configuration and migration
 - [Persistence](stuff/docs/PERSISTENCE.md) - Embedding cache management and performance
+- [RAG Implementation](RAG_IMPLEMENTATION_SUMMARY.md) - RAG system architecture and usage (NEW)
 
 ### Cache Management
 
