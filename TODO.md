@@ -98,25 +98,41 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 - All 343 tests passing
 - Zero breaking changes
 
-### Phase 5: Future RAG Enhancements (Planned)
+### Phase 5: Advanced RAG Enhancements (Next Priority)
 
-**Priority**: Medium  
-**Estimated Effort**: 2-3 weeks
+**Priority**: CRITICAL - Foundation for Phases 10-12  
+**Estimated Effort**: 3-4 weeks  
+**Dependencies**: None (enables Phases 10-12)
 
+**Strategic Importance**: Phase 5 is the critical foundation for Phases 10 (Enhanced Refactoring), 11 (Advanced Analysis), and 12 (Developer Experience). All features in Phase 5 should be designed to support the needs of Phases 10-12, though additional capabilities may be needed during those phases.
+
+#### 5A: Streaming Responses
 - [ ] Streaming responses via MCP protocol
-- [ ] MetaAST-enhanced retrieval strategies
+- [ ] Server-sent events support
+- [ ] Progressive UI updates
+- [ ] Cancellable streaming operations
+
+#### 5B: Enhanced Retrieval Strategies  
+- [ ] MetaAST-enhanced retrieval (leverage Metastatic metadata)
 - [ ] Cross-language semantic queries
-- [ ] Fine-tuned prompt engineering
+- [ ] Context-aware ranking
+- [ ] Query expansion and refinement
+
+#### 5C: Production AI Features
 - [ ] Provider health checks and auto-failover
 - [ ] Advanced cost analytics and budget alerts
-- [ ] Custom embedding model support
+- [ ] Custom embedding model support (via API)
+- [ ] Fine-tuned prompt engineering per operation
+
+**Note**: This phase provides essential infrastructure that Phases 10-12 will heavily depend on. Implementation should anticipate needs of refactoring (Phase 10), analysis (Phase 11), and UX improvements (Phase 12).
 
 ---
 
-## Phase 6: Production Optimizations (Planned)
+## Phase 6: Production Optimizations (Deferred)
 
-**Priority**: High  
-**Estimated Effort**: 3-4 weeks
+**Priority**: Medium (after Phases 10-12)  
+**Estimated Effort**: 3-4 weeks  
+**Dependencies**: Phases 5, 10, 11, 12 should be complete first
 
 ### 6A: Performance Profiling and Optimization
 - [ ] Profile hot paths with `:fprof` or Benchee
@@ -181,83 +197,73 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 
 ---
 
-## Phase 7: Additional Language Support (Planned)
+## Phase 7: Additional Language Support (Deferred)
 
-**Priority**: Medium  
-**Estimated Effort**: 4-6 weeks
+**Priority**: Low (after Phases 10-12)  
+**Estimated Effort**: 2-3 weeks per language  
+**Dependencies**: Phases 5, 10, 11, 12 should be complete first
+
+**IMPORTANT**: Ragex does NOT implement AST analyzers. All language analysis is delegated to the `metastatic` dependency. To add new language support:
+
+1. **Update Metastatic**: Add language support to the Metastatic library
+2. **Update Ragex**: Add language-specific validator, formatter integration, and tests
+3. **No AST Implementation**: Ragex only wraps Metastatic's analysis capabilities
 
 ### 7A: Go Language Support
-- [ ] Implement Go AST analyzer using `go/parser`
-- [ ] Add Go validator
+- [ ] Update Metastatic to support Go (MetaAST integration)
+- [ ] Add Go validator in Ragex
 - [ ] Integrate `gofmt` for formatting
-- [ ] Add Go-specific semantic refactoring
-- [ ] Support Go modules and imports
-- [ ] Handle Go interfaces and types
-- [ ] Add comprehensive Go tests
+- [ ] Add Go-specific refactoring support (via Metastatic)
+- [ ] Add comprehensive tests
 - [ ] Update documentation
 
 **Extensions**: `.go`  
-**Deliverables**: Full Go analysis, validation, formatting, refactoring
+**Implementation**: Via Metastatic library (not in Ragex)
 
-### 7B: Rust Language Support
-- [ ] Implement Rust analyzer using `syn` crate (via Port or NIFs)
-- [ ] Add Rust validator
+### 7B: Rust Language Support  
+- [ ] Update Metastatic to support Rust (MetaAST integration)
+- [ ] Add Rust validator in Ragex
 - [ ] Integrate `rustfmt` for formatting
-- [ ] Add Rust-specific semantic refactoring
-- [ ] Support Rust macros
-- [ ] Handle Rust traits and lifetimes
-- [ ] Add comprehensive Rust tests
+- [ ] Add Rust-specific refactoring support (via Metastatic)
+- [ ] Add comprehensive tests
 - [ ] Update documentation
 
 **Extensions**: `.rs`  
-**Deliverables**: Full Rust analysis, validation, formatting, refactoring
+**Implementation**: Via Metastatic library (not in Ragex)
 
 ### 7C: Java Language Support
-- [ ] Implement Java analyzer using JavaParser or ANTLR
-- [ ] Add Java validator (compile check)
-- [ ] Integrate formatter (Google Java Format or similar)
-- [ ] Add Java-specific semantic refactoring
-- [ ] Support Java packages and imports
-- [ ] Handle Java generics and annotations
-- [ ] Add comprehensive Java tests
+- [ ] Update Metastatic to support Java (MetaAST integration)
+- [ ] Add Java validator in Ragex
+- [ ] Integrate Java formatter
+- [ ] Add Java-specific refactoring support (via Metastatic)
+- [ ] Add comprehensive tests
 - [ ] Update documentation
 
 **Extensions**: `.java`  
-**Deliverables**: Full Java analysis, validation, formatting, refactoring
+**Implementation**: Via Metastatic library (not in Ragex)
 
-### 7D: Ruby Language Support
-- [ ] Implement Ruby analyzer using `parser` gem
-- [ ] Add Ruby validator
-- [ ] Integrate `rubocop` or `standard` for formatting
-- [ ] Add Ruby-specific semantic refactoring
-- [ ] Support Ruby gems and requires
-- [ ] Handle Ruby metaprogramming patterns
-- [ ] Add comprehensive Ruby tests
-- [ ] Update documentation
+### 7D: Improved JavaScript/TypeScript Support
+**Current State**: Basic regex-based parsing via native analyzer
 
-**Extensions**: `.rb`  
-**Deliverables**: Full Ruby analysis, validation, formatting, refactoring
-
-### 7E: Improved JavaScript/TypeScript Support
-**Current State**: Basic regex-based parsing
-
-- [ ] Replace regex parser with proper AST (Babel via Node.js)
-- [ ] Add TypeScript type information extraction
+- [ ] Update Metastatic to improve JS/TS support (MetaAST integration)
+- [ ] Add TypeScript type information extraction (via Metastatic)
 - [ ] Improve import/export tracking
 - [ ] Add JSX/TSX component analysis
-- [ ] Better handling of async/await patterns
-- [ ] Support ES modules and CommonJS
-- [ ] Add comprehensive JS/TS tests
+- [ ] Add comprehensive tests
 - [ ] Update documentation
 
-**Deliverables**: Full AST-based JS/TS analysis
+**Extensions**: `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`  
+**Implementation**: Via Metastatic library (not in Ragex)
+
+**Note**: Ruby support already exists in Metastatic. No additional work needed unless refactoring support is required.
 
 ---
 
-## Phase 10: Enhanced Refactoring Capabilities (Future)
+## Phase 10: Enhanced Refactoring Capabilities (High Priority)
 
-**Priority**: Medium  
-**Estimated Effort**: 4-5 weeks
+**Priority**: High (after Phase 5)  
+**Estimated Effort**: 4-5 weeks  
+**Dependencies**: Phase 5 (critical foundation)
 
 ### 10A: Additional Refactoring Operations
 - [ ] Extract function refactoring
@@ -299,10 +305,11 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 
 ---
 
-## Phase 11: Advanced Analysis and Insights (Future)
+## Phase 11: Advanced Analysis and Insights (High Priority)
 
-**Priority**: Medium-Low  
-**Estimated Effort**: 3-4 weeks
+**Priority**: High (after Phase 5)  
+**Estimated Effort**: 3-4 weeks  
+**Dependencies**: Phase 5 (critical foundation)
 
 ### 11A: Code Quality Metrics
 - [ ] Cyclomatic complexity calculation
@@ -347,10 +354,11 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 
 ---
 
-## Phase 12: Developer Experience Improvements (Future)
+## Phase 12: Developer Experience Improvements (High Priority)
 
-**Priority**: Medium  
-**Estimated Effort**: 2-3 weeks
+**Priority**: High (after Phase 5)  
+**Estimated Effort**: 2-3 weeks  
+**Dependencies**: Phase 5 (critical foundation)
 
 ### 12A: Enhanced Editor Integrations
 - [ ] Full NeoVim/LunarVim plugin distribution
@@ -443,49 +451,60 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 
 ---
 
-## Immediate Priorities (Next 1-2 Months)
+## Immediate Priorities (Next 2-3 Months)
 
-### Critical
+### CRITICAL PATH
 
-1. **Phase 6A: Performance Profiling** (1 week)
-   - Establish baseline benchmarks
-   - Identify and fix performance bottlenecks
-   - Add performance tests to CI
+**Phase 5 → Phase 10 → Phase 11 → Phase 12**
 
-2. **Phase 6D: Reliability** (1 week)
-   - Add circuit breakers for external processes
-   - Improve error messages
-   - Add health checks
+This is the strategic path forward. Phase 5 provides the foundation; Phases 10-12 deliver user value.
 
-3. **Documentation Improvements** (3 days)
-   - Create GETTING_STARTED.md
-   - Add video tutorials or screencasts
-   - Improve API documentation
-   - Add more usage examples
+### Phase 5: Advanced RAG Enhancements (NEXT - 3-4 weeks)
+**Why Critical**: Foundation for everything that follows
 
-### High Priority
+1. **Streaming Responses** (1 week)
+   - Essential for good UX in Phases 10-12
+   - Real-time feedback during refactoring
 
-4. **Phase 7E: Better JS/TS Support** (1-2 weeks)
-   - Replace regex parser with Babel AST
-   - Critical for broader adoption
+2. **Enhanced Retrieval** (1-2 weeks)
+   - MetaAST-enhanced strategies
+   - Cross-language semantic queries
+   - Better context for refactoring decisions
 
-5. **Phase 10C: Refactoring Previews** (1 week)
-   - Generate diffs before applying changes
-   - Improve user confidence in refactoring
+3. **Production AI Features** (1 week)
+   - Health checks and failover
+   - Cost analytics
+   - Reliability for production use
 
-6. **Phase 12A: VSCode Extension** (1-2 weeks)
-   - Widest editor adoption
-   - Showcase Ragex capabilities
+### Phase 10: Enhanced Refactoring (after Phase 5 - 4-5 weeks)
+**Depends on**: Phase 5 streaming and retrieval
 
-### Nice to Have
+- Extract/inline function refactoring
+- Refactoring previews with diffs
+- Cross-language refactoring support
+- Move function between modules
 
-7. **Phase 11A: Code Quality Metrics** (1 week)
-   - Add cyclomatic complexity
-   - Code smell detection
+### Phase 11: Advanced Analysis (after Phase 5 - 3-4 weeks)
+**Depends on**: Phase 5 retrieval enhancements
 
-8. **Phase 12B: CLI Improvements** (3-4 days)
-   - Better UX for command-line users
-   - Progress indicators
+- Code quality metrics
+- Dependency analysis
+- Change impact prediction
+- Technical debt scoring
+
+### Phase 12: Developer Experience (after Phase 5 - 2-3 weeks)
+**Depends on**: Phase 5 streaming
+
+- VSCode extension
+- Enhanced CLI with progress indicators
+- Web dashboard (Phoenix LiveView)
+- Better editor integrations
+
+### Lower Priority (after Phases 5, 10-12)
+
+- **Phase 6**: Production optimizations (performance tuning)
+- **Phase 7**: Additional languages (via Metastatic updates)
+- **Phase 13**: Ecosystem integration (CI/CD, VCS)
 
 ---
 
