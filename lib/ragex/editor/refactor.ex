@@ -8,7 +8,7 @@ defmodule Ragex.Editor.Refactor do
   """
 
   alias Ragex.Editor.Refactor.Elixir, as: ElixirRefactor
-  alias Ragex.Editor.{Transaction, Types}
+  alias Ragex.Editor.{Transaction, Types, Undo}
   alias Ragex.Graph.Store
   require Logger
 
@@ -69,6 +69,21 @@ defmodule Ragex.Editor.Refactor do
       case result do
         {:ok, txn_result} ->
           Logger.info("Refactor completed: #{txn_result.files_edited} files modified")
+
+          # Track undo history if enabled
+          if Keyword.get(opts, :track_undo, true) do
+            project_path = find_project_root(hd(affected_files))
+
+            params = %{
+              module: module_atom,
+              old_name: old_atom,
+              new_name: new_atom,
+              arity: arity,
+              scope: scope
+            }
+
+            Undo.push_undo(project_path, :rename_function, params, affected_files, :success)
+          end
 
           {:ok,
            %{
@@ -1288,6 +1303,20 @@ defmodule Ragex.Editor.Refactor do
 
     path_parts = ["lib" | dir_parts] ++ [filename]
     Path.join(path_parts)
+  end
+
+  # Find project root from a file path
+  defp find_project_root(file_path) do
+    # Walk up directory tree looking for mix.exs, rebar.config, or similar
+    dir = Path.dirname(file_path)
+
+    cond do
+      File.exists?(Path.join(dir, "mix.exs")) -> dir
+      File.exists?(Path.join(dir, "rebar.config")) -> dir
+      File.exists?(Path.join(dir, "package.json")) -> dir
+      dir == "/" -> file_path
+      true -> find_project_root(dir)
+    end
   end
 
   # Detect language from file extension
