@@ -617,6 +617,52 @@ defmodule Ragex.MCP.Handlers.Tools do
           }
         },
         %{
+          name: "advanced_refactor",
+          description:
+            "Advanced refactoring operations: extract_function, inline_function, convert_visibility, rename_parameter, modify_attributes, change_signature, move_function, extract_module",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              operation: %{
+                type: "string",
+                description: "Type of advanced refactoring operation",
+                enum: [
+                  "extract_function",
+                  "inline_function",
+                  "convert_visibility",
+                  "rename_parameter",
+                  "modify_attributes",
+                  "change_signature",
+                  "move_function",
+                  "extract_module"
+                ]
+              },
+              params: %{
+                type: "object",
+                description:
+                  "Operation-specific parameters. See documentation for each operation type."
+              },
+              validate: %{
+                type: "boolean",
+                description: "Validate before and after refactoring",
+                default: true
+              },
+              format: %{
+                type: "boolean",
+                description: "Format code after refactoring",
+                default: true
+              },
+              scope: %{
+                type: "string",
+                description: "Refactoring scope (for applicable operations)",
+                enum: ["module", "project"],
+                default: "project"
+              }
+            },
+            required: ["operation", "params"]
+          }
+        },
+        %{
           name: "betweenness_centrality",
           description:
             "Compute betweenness centrality to identify bridge/bottleneck functions in the call graph",
@@ -1039,6 +1085,9 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "refactor_code" ->
         refactor_code_tool(arguments)
+
+      "advanced_refactor" ->
+        advanced_refactor_tool(arguments)
 
       "betweenness_centrality" ->
         betweenness_centrality_tool(arguments)
@@ -2045,6 +2094,475 @@ defmodule Ragex.MCP.Handlers.Tools do
     else
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp advanced_refactor_tool(%{"operation" => operation, "params" => params} = arguments) do
+    validate = Map.get(arguments, "validate", true)
+    format = Map.get(arguments, "format", true)
+    scope = String.to_atom(Map.get(arguments, "scope", "project"))
+    opts = [validate: validate, format: format, scope: scope]
+
+    case operation do
+      "extract_function" ->
+        handle_extract_function(params, opts)
+
+      "inline_function" ->
+        handle_inline_function(params, opts)
+
+      "convert_visibility" ->
+        handle_convert_visibility(params, opts)
+
+      "rename_parameter" ->
+        handle_rename_parameter(params, opts)
+
+      "modify_attributes" ->
+        handle_modify_attributes(params, opts)
+
+      "change_signature" ->
+        handle_change_signature(params, opts)
+
+      "move_function" ->
+        handle_move_function(params, opts)
+
+      "extract_module" ->
+        handle_extract_module(params, opts)
+
+      _ ->
+        {:error, "Unknown advanced refactoring operation: #{operation}"}
+    end
+  end
+
+  defp advanced_refactor_tool(_), do: {:error, "Invalid parameters for advanced_refactor"}
+
+  defp handle_extract_function(params, opts) do
+    with {:ok, module} <- get_required_param(params, "module"),
+         {:ok, source_function} <- get_required_param(params, "source_function"),
+         {:ok, source_arity} <- get_required_param(params, "source_arity"),
+         {:ok, new_function} <- get_required_param(params, "new_function"),
+         {:ok, line_start} <- get_required_param(params, "line_start"),
+         {:ok, line_end} <- get_required_param(params, "line_end") do
+      module_atom = String.to_existing_atom("Elixir." <> module)
+      source_fn_atom = String.to_atom(source_function)
+      new_fn_atom = String.to_atom(new_function)
+      line_range = {line_start, line_end}
+
+      # Add optional parameters
+      opts =
+        opts
+        |> add_optional_atom_param(params, "placement", :placement)
+
+      case Refactor.extract_function(
+             module_atom,
+             source_fn_atom,
+             source_arity,
+             new_fn_atom,
+             line_range,
+             opts
+           ) do
+        {:ok, result} ->
+          format_refactor_success(
+            "extract_function",
+            result,
+            %{
+              module: module,
+              source_function: source_function,
+              new_function: new_function,
+              line_range: {line_start, line_end}
+            }
+          )
+
+        error ->
+          format_refactor_error("extract_function", error)
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_inline_function(params, opts) do
+    with {:ok, module} <- get_required_param(params, "module"),
+         {:ok, function} <- get_required_param(params, "function"),
+         {:ok, arity} <- get_required_param(params, "arity") do
+      module_atom = String.to_existing_atom("Elixir." <> module)
+      function_atom = String.to_atom(function)
+
+      case Refactor.inline_function(module_atom, function_atom, arity, opts) do
+        {:ok, result} ->
+          format_refactor_success(
+            "inline_function",
+            result,
+            %{module: module, function: function, arity: arity}
+          )
+
+        error ->
+          format_refactor_error("inline_function", error)
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_convert_visibility(params, opts) do
+    with {:ok, module} <- get_required_param(params, "module"),
+         {:ok, function} <- get_required_param(params, "function"),
+         {:ok, arity} <- get_required_param(params, "arity"),
+         {:ok, visibility} <- get_required_param(params, "visibility") do
+      module_atom = String.to_existing_atom("Elixir." <> module)
+      function_atom = String.to_atom(function)
+      visibility_atom = String.to_atom(visibility)
+
+      if visibility_atom in [:public, :private] do
+        case Refactor.convert_visibility(module_atom, function_atom, arity, visibility_atom, opts) do
+          {:ok, result} ->
+            format_refactor_success(
+              "convert_visibility",
+              result,
+              %{module: module, function: function, arity: arity, visibility: visibility}
+            )
+
+          error ->
+            format_refactor_error("convert_visibility", error)
+        end
+      else
+        {:error, "Visibility must be 'public' or 'private'"}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_rename_parameter(params, opts) do
+    with {:ok, module} <- get_required_param(params, "module"),
+         {:ok, function} <- get_required_param(params, "function"),
+         {:ok, arity} <- get_required_param(params, "arity"),
+         {:ok, old_param} <- get_required_param(params, "old_param"),
+         {:ok, new_param} <- get_required_param(params, "new_param") do
+      module_atom = String.to_existing_atom("Elixir." <> module)
+      function_atom = String.to_atom(function)
+
+      case Refactor.rename_parameter(
+             module_atom,
+             function_atom,
+             arity,
+             old_param,
+             new_param,
+             opts
+           ) do
+        {:ok, result} ->
+          format_refactor_success(
+            "rename_parameter",
+            result,
+            %{
+              module: module,
+              function: function,
+              arity: arity,
+              old_param: old_param,
+              new_param: new_param
+            }
+          )
+
+        error ->
+          format_refactor_error("rename_parameter", error)
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_modify_attributes(params, opts) do
+    with {:ok, module} <- get_required_param(params, "module"),
+         {:ok, changes} <- get_required_param(params, "changes") do
+      module_atom = String.to_existing_atom("Elixir." <> module)
+
+      # Parse attribute changes
+      case parse_attribute_changes(changes) do
+        {:ok, parsed_changes} ->
+          case Refactor.modify_attributes(module_atom, parsed_changes, opts) do
+            {:ok, result} ->
+              format_refactor_success(
+                "modify_attributes",
+                result,
+                %{module: module, changes_count: length(parsed_changes)}
+              )
+
+            error ->
+              format_refactor_error("modify_attributes", error)
+          end
+
+        {:error, reason} ->
+          {:error, "Failed to parse attribute changes: #{inspect(reason)}"}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_change_signature(params, opts) do
+    with {:ok, module} <- get_required_param(params, "module"),
+         {:ok, function} <- get_required_param(params, "function"),
+         {:ok, old_arity} <- get_required_param(params, "old_arity"),
+         {:ok, changes} <- get_required_param(params, "changes") do
+      module_atom = String.to_existing_atom("Elixir." <> module)
+      function_atom = String.to_atom(function)
+
+      # Parse signature changes
+      case parse_signature_changes(changes) do
+        {:ok, parsed_changes} ->
+          case Refactor.change_signature(
+                 module_atom,
+                 function_atom,
+                 old_arity,
+                 parsed_changes,
+                 opts
+               ) do
+            {:ok, result} ->
+              format_refactor_success(
+                "change_signature",
+                result,
+                %{
+                  module: module,
+                  function: function,
+                  old_arity: old_arity,
+                  changes_count: length(parsed_changes)
+                }
+              )
+
+            error ->
+              format_refactor_error("change_signature", error)
+          end
+
+        {:error, reason} ->
+          {:error, "Failed to parse signature changes: #{inspect(reason)}"}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_move_function(params, opts) do
+    with {:ok, source_module} <- get_required_param(params, "source_module"),
+         {:ok, target_module} <- get_required_param(params, "target_module"),
+         {:ok, function} <- get_required_param(params, "function"),
+         {:ok, arity} <- get_required_param(params, "arity") do
+      source_atom = String.to_existing_atom("Elixir." <> source_module)
+      target_atom = String.to_existing_atom("Elixir." <> target_module)
+      function_atom = String.to_atom(function)
+
+      case Refactor.move_function(source_atom, target_atom, function_atom, arity, opts) do
+        {:ok, result} ->
+          format_refactor_success(
+            "move_function",
+            result,
+            %{
+              source_module: source_module,
+              target_module: target_module,
+              function: function,
+              arity: arity
+            }
+          )
+
+        error ->
+          format_refactor_error("move_function", error)
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp handle_extract_module(params, opts) do
+    with {:ok, source_module} <- get_required_param(params, "source_module"),
+         {:ok, new_module} <- get_required_param(params, "new_module"),
+         {:ok, functions} <- get_required_param(params, "functions") do
+      source_atom = String.to_existing_atom("Elixir." <> source_module)
+      new_atom = String.to_existing_atom("Elixir." <> new_module)
+
+      # Parse function list: [{name, arity}, ...]
+      case parse_function_list(functions) do
+        {:ok, parsed_functions} ->
+          case Refactor.extract_module(source_atom, new_atom, parsed_functions, opts) do
+            {:ok, result} ->
+              format_refactor_success(
+                "extract_module",
+                result,
+                %{
+                  source_module: source_module,
+                  new_module: new_module,
+                  functions_count: length(parsed_functions)
+                }
+              )
+
+            error ->
+              format_refactor_error("extract_module", error)
+          end
+
+        {:error, reason} ->
+          {:error, "Failed to parse function list: #{inspect(reason)}"}
+      end
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Helper functions for advanced_refactor
+
+  defp parse_attribute_changes(changes) when is_list(changes) do
+    parsed =
+      Enum.reduce_while(changes, [], fn change, acc ->
+        case parse_single_attribute_change(change) do
+          {:ok, parsed} -> {:cont, [parsed | acc]}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+
+    case parsed do
+      {:error, _} = error -> error
+      list -> {:ok, Enum.reverse(list)}
+    end
+  end
+
+  defp parse_attribute_changes(_), do: {:error, "Changes must be a list"}
+
+  defp parse_single_attribute_change(%{"action" => "add", "name" => name, "value" => value}) do
+    {:ok, {:add, String.to_atom(name), value}}
+  end
+
+  defp parse_single_attribute_change(%{"action" => "remove", "name" => name}) do
+    {:ok, {:remove, String.to_atom(name)}}
+  end
+
+  defp parse_single_attribute_change(%{
+         "action" => "update",
+         "name" => name,
+         "value" => value
+       }) do
+    {:ok, {:update, String.to_atom(name), value}}
+  end
+
+  defp parse_single_attribute_change(_),
+    do: {:error, "Invalid attribute change structure"}
+
+  defp parse_signature_changes(changes) when is_list(changes) do
+    parsed =
+      Enum.reduce_while(changes, [], fn change, acc ->
+        case parse_single_signature_change(change) do
+          {:ok, parsed} -> {:cont, [parsed | acc]}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+
+    case parsed do
+      {:error, _} = error -> error
+      list -> {:ok, Enum.reverse(list)}
+    end
+  end
+
+  defp parse_signature_changes(_), do: {:error, "Changes must be a list"}
+
+  defp parse_single_signature_change(%{
+         "action" => "add",
+         "name" => name,
+         "position" => position,
+         "default" => default
+       }) do
+    {:ok, {:add, name, position, default}}
+  end
+
+  defp parse_single_signature_change(%{
+         "action" => "add",
+         "name" => name,
+         "position" => position
+       }) do
+    {:ok, {:add, name, position, nil}}
+  end
+
+  defp parse_single_signature_change(%{"action" => "remove", "position" => position}) do
+    {:ok, {:remove, position}}
+  end
+
+  defp parse_single_signature_change(%{
+         "action" => "reorder",
+         "from" => from,
+         "to" => to
+       }) do
+    {:ok, {:reorder, from, to}}
+  end
+
+  defp parse_single_signature_change(%{
+         "action" => "rename",
+         "position" => position,
+         "new_name" => new_name
+       }) do
+    {:ok, {:rename, position, new_name}}
+  end
+
+  defp parse_single_signature_change(_),
+    do: {:error, "Invalid signature change structure"}
+
+  defp parse_function_list(functions) when is_list(functions) do
+    parsed =
+      Enum.reduce_while(functions, [], fn func, acc ->
+        case parse_single_function(func) do
+          {:ok, parsed} -> {:cont, [parsed | acc]}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+      end)
+
+    case parsed do
+      {:error, _} = error -> error
+      list -> {:ok, Enum.reverse(list)}
+    end
+  end
+
+  defp parse_function_list(_), do: {:error, "Functions must be a list"}
+
+  defp parse_single_function(%{"name" => name, "arity" => arity})
+       when is_integer(arity) do
+    {:ok, {String.to_atom(name), arity}}
+  end
+
+  defp parse_single_function(_),
+    do: {:error, "Function must have 'name' and 'arity'"}
+
+  defp add_optional_atom_param(opts, params, key, opt_key) do
+    case Map.get(params, key) do
+      nil -> opts
+      value -> Keyword.put(opts, opt_key, String.to_atom(value))
+    end
+  end
+
+  defp format_refactor_success(operation, result, details) do
+    {:ok,
+     %{
+       status: "success",
+       operation: operation,
+       files_modified: result.files_modified,
+       details: details
+     }}
+  end
+
+  defp format_refactor_error(operation, {:error, error_result}) when is_map(error_result) do
+    {:error,
+     %{
+       "type" => "refactor_error",
+       "operation" => operation,
+       "message" => "Refactoring failed",
+       "files_modified" => error_result.files_modified,
+       "rolled_back" => error_result.rolled_back,
+       "errors" =>
+         Enum.map(error_result.errors || [], fn
+           {path, reason} -> %{path: path, reason: inspect(reason)}
+           error -> %{error: inspect(error)}
+         end)
+     }}
+  end
+
+  defp format_refactor_error(operation, {:error, message}) when is_binary(message) do
+    {:error,
+     %{
+       "type" => "refactor_error",
+       "operation" => operation,
+       "message" => message
+     }}
   end
 
   defp get_required_param(params, key) do

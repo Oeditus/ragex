@@ -188,11 +188,14 @@ end
 - **Phase 5D**: Advanced editing (format integration, multi-file transactions)
 - **Phase 5E**: Semantic refactoring (rename_function, rename_module via AST)
 - **Phase 8**: Advanced graph algorithms (betweenness centrality, closeness centrality, community detection, visualization)
+- **Phase 10A**: Enhanced refactoring (8 operations: extract_function, inline_function, convert_visibility, rename_parameter, modify_attributes, change_signature, move_function, extract_module, plus MCP integration)
 
 ### Future Work
 
 - **Phase 6**: Production optimizations (performance tuning, caching strategies)
 - **Phase 7**: Additional language support (Go, Rust, Java)
+- **Phase 10B**: Multi-language refactoring (Erlang, Python, JavaScript/TypeScript)
+- **Phase 10C**: Preview/diff generation, conflict detection, undo/redo stack
 
 ## Common Tasks
 
@@ -342,6 +345,84 @@ Core.rollback("path/to/file.ex")
 - Project-wide or module-scoped
 - Automatic call site updates
 - Arity-aware renaming
+
+### Advanced Refactoring Operations (Phase 10A)
+
+**Phase 10A adds 8 sophisticated refactoring operations accessible via the `advanced_refactor` MCP tool:**
+
+1. **Extract Function**: Extract code range into new function with automatic parameter inference
+2. **Inline Function**: Replace all calls with function body, remove definition
+3. **Convert Visibility**: Toggle between `def` and `defp` (public/private)
+4. **Rename Parameter**: Rename parameter within function scope
+5. **Modify Attributes**: Add/remove/update module attributes
+6. **Change Signature**: Add/remove/reorder/rename parameters with call site updates
+7. **Move Function**: Move function between modules with reference updates
+8. **Extract Module**: Extract multiple functions into new module with file creation
+
+**Using via MCP Tool:**
+```json
+{
+  "name": "advanced_refactor",
+  "arguments": {
+    "operation": "extract_function",
+    "params": {
+      "module": "MyModule",
+      "source_function": "process",
+      "source_arity": 2,
+      "new_function": "validate",
+      "line_start": 45,
+      "line_end": 52
+    },
+    "validate": true,
+    "format": true
+  }
+}
+```
+
+**Using via API:**
+```elixir
+alias Ragex.Editor.Refactor
+
+# Extract function
+Refactor.extract_function(:MyModule, :process, 2, :validate, {45, 52})
+
+# Inline function
+Refactor.inline_function(:MyModule, :helper, 1)
+
+# Convert visibility
+Refactor.convert_visibility(:MyModule, :process, 2, :private)
+
+# Rename parameter
+Refactor.rename_parameter(:MyModule, :process, 2, "data", "input")
+
+# Modify attributes
+Refactor.modify_attributes(:MyModule, [
+  {:add, :behaviour, "GenServer"},
+  {:update, :moduledoc, "New docs"}
+])
+
+# Change signature
+Refactor.change_signature(:MyModule, :process, 2, [
+  {:add, "opts", 2, []}
+])
+
+# Move function
+Refactor.move_function(:SourceModule, :TargetModule, :helper, 1)
+
+# Extract module
+Refactor.extract_module(:MyModule, :MyModule.Helpers, [
+  {:helper1, 1},
+  {:helper2, 2}
+])
+```
+
+**Key Features:**
+- All operations use atomic transactions with automatic rollback
+- AST-aware transformations preserve code structure
+- Knowledge graph integration for cross-file updates
+- Optional validation and formatting
+- Comprehensive error reporting with rollback details
+- See `ADVANCED_REFACTOR_MCP.md` for detailed documentation
 
 ### MCP Streaming Notifications (Phase 5C)
 
