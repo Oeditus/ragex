@@ -10,6 +10,7 @@ defmodule Ragex.Editor.Transaction do
   """
 
   alias Ragex.Editor.{Core, Types}
+  alias Ragex.MCP.Server
   require Logger
 
   @typedoc """
@@ -144,13 +145,17 @@ defmodule Ragex.Editor.Transaction do
   @spec commit(t()) :: {:ok, transaction_result()} | {:error, transaction_result()}
   def commit(transaction) do
     Logger.info("Starting transaction with #{length(transaction.edits)} edits")
+    notify_progress("transaction_start", %{file_count: length(transaction.edits)})
 
     # Phase 1: Validate all edits (if validation is enabled)
     should_validate = Keyword.get(transaction.opts, :validate, true)
 
     validation_result =
       if should_validate do
-        validate(transaction)
+        notify_progress("validation_start", %{file_count: length(transaction.edits)})
+        result = validate(transaction)
+        notify_progress("validation_complete", %{result: elem(result, 0)})
+        result
       else
         {:ok, :valid}
       end
@@ -178,22 +183,34 @@ defmodule Ragex.Editor.Transaction do
   # Private functions
 
   defp apply_all_edits(transaction) do
+    total = length(transaction.edits)
+    notify_progress("apply_start", %{file_count: total})
+
     # Apply each edit, collecting results
     {status, results, errors} =
-      Enum.reduce_while(transaction.edits, {:ok, [], []}, fn edit,
-                                                             {_status, results_acc, errors_acc} ->
-        opts = Keyword.merge(transaction.opts, edit.opts)
+      Enum.reduce_while(
+        Enum.with_index(transaction.edits, 1),
+        {:ok, [], []},
+        fn {edit, index}, {_status, results_acc, errors_acc} ->
+          notify_progress("apply_file", %{
+            path: edit.path,
+            current: index,
+            total: total
+          })
 
-        case Core.edit_file(edit.path, edit.changes, opts) do
-          {:ok, result} ->
-            {:cont, {:ok, [result | results_acc], errors_acc}}
+          opts = Keyword.merge(transaction.opts, edit.opts)
 
-          {:error, reason} ->
-            error = {edit.path, reason}
-            # Stop on first error
-            {:halt, {:error, results_acc, [error | errors_acc]}}
+          case Core.edit_file(edit.path, edit.changes, opts) do
+            {:ok, result} ->
+              {:cont, {:ok, [result | results_acc], errors_acc}}
+
+            {:error, reason} ->
+              error = {edit.path, reason}
+              # Stop on first error
+              {:halt, {:error, results_acc, [error | errors_acc]}}
+          end
         end
-      end)
+      )
 
     case status do
       :ok ->
@@ -227,9 +244,13 @@ defmodule Ragex.Editor.Transaction do
   end
 
   defp rollback_edits(results) do
+    notify_progress("rollback_start", %{file_count: length(results)})
+
     # Attempt to rollback each successfully edited file
     rollback_results =
       Enum.map(results, fn result ->
+        notify_progress("rollback_file", %{path: result.path})
+
         case Core.rollback(result.path, backup_id: result.backup_id) do
           {:ok, _backup_info} ->
             Logger.info("Rolled back #{result.path}")
@@ -241,7 +262,21 @@ defmodule Ragex.Editor.Transaction do
         end
       end)
 
+    success = Enum.all?(rollback_results, &(&1 == :ok))
+    notify_progress("rollback_complete", %{success: success})
+
     # Return true if all rollbacks succeeded
-    Enum.all?(rollback_results, &(&1 == :ok))
+    success
+  end
+
+  defp notify_progress(event, params) do
+    # Send notification via MCP server if available
+    if Process.whereis(Ragex.MCP.Server) do
+      Server.send_notification("editor/progress", %{
+        event: event,
+        params: params,
+        timestamp: DateTime.utc_now()
+      })
+    end
   end
 end

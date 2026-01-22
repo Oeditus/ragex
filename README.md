@@ -263,9 +263,10 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 
 ### Planned Features
 
-- [x] Streaming RAG responses (Phase 5A complete - internal streaming, MCP notifications in Phase 5C)
+- [x] Streaming RAG responses (Phase 5A complete - internal streaming)
+- [x] MCP streaming notifications (Phase 5C complete - real-time progress tracking)
 - [x] MetaAST-enhanced retrieval (Phase 5B complete)
-- [ ] Provider health checks and auto-failover (Phase 5C)
+- [ ] Provider health checks and auto-failover (future)
 - [ ] Production optimizations (Phase 6)
 - [ ] Additional language support (Phase 7: Go, Rust, Java)
 - [ ] Enhanced refactoring capabilities (Phase 10)

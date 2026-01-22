@@ -26,6 +26,15 @@ defmodule Ragex.MCP.Server do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @doc """
+  Send a notification to the client.
+
+  Notifications are one-way messages with no response expected.
+  """
+  def send_notification(method, params \\ nil) do
+    GenServer.cast(__MODULE__, {:send_notification, method, params})
+  end
+
   # Server Callbacks
 
   @impl true
@@ -58,6 +67,13 @@ defmodule Ragex.MCP.Server do
         Logger.error("Failed to decode message: #{inspect(reason)}")
         {:noreply, state}
     end
+  end
+
+  @impl true
+  def handle_cast({:send_notification, method, params}, state) do
+    notification = Protocol.notification(method, params)
+    send_response(notification)
+    {:noreply, state}
   end
 
   # Private functions

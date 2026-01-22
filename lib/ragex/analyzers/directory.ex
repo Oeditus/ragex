@@ -12,6 +12,7 @@ defmodule Ragex.Analyzers.Directory do
   alias Ragex.Analyzers.Python, as: PythonAnalyzer
   alias Ragex.Embeddings.{FileTracker, Helper}
   alias Ragex.Graph.Store
+  alias Ragex.MCP.Server
 
   @doc """
   Analyzes all supported files in a directory recursively.
@@ -65,6 +66,12 @@ defmodule Ragex.Analyzers.Directory do
         {file_paths, []}
       end
 
+    notify_progress("analysis_start", %{
+      total: length(file_paths),
+      to_analyze: length(files_to_analyze),
+      skipped: length(skipped_files)
+    })
+
     results =
       files_to_analyze
       |> Task.async_stream(&analyze_and_store_file/1,
@@ -73,10 +80,20 @@ defmodule Ragex.Analyzers.Directory do
         timeout: 30_000,
         on_timeout: :kill_task
       )
-      |> Enum.to_list()
+      |> Stream.with_index(1)
       |> Enum.map(fn
-        {:ok, result} -> result
-        {:exit, reason} -> {:error, {:task_exit, reason}}
+        {{:ok, result}, index} ->
+          notify_progress("analysis_file", %{
+            current: index,
+            total: length(files_to_analyze),
+            file: result[:file],
+            status: result[:status]
+          })
+
+          result
+
+        {{:exit, reason}, _index} ->
+          {:error, {:task_exit, reason}}
       end)
 
     success_count = Enum.count(results, &match?({:ok, _}, &1))
@@ -87,6 +104,13 @@ defmodule Ragex.Analyzers.Directory do
       results
       |> Enum.filter(&match?({:error, _}, &1))
       |> Enum.map(fn {:error, {file, reason}} -> %{file: file, reason: reason} end)
+
+    notify_progress("analysis_complete", %{
+      total: length(file_paths),
+      analyzed: length(files_to_analyze),
+      success: success_count,
+      errors: error_count
+    })
 
     {:ok,
      %{
@@ -270,5 +294,16 @@ defmodule Ragex.Analyzers.Directory do
       ".pytest_cache",
       ".mypy_cache"
     ]
+  end
+
+  defp notify_progress(event, params) do
+    # Send notification via MCP server if available
+    if Process.whereis(Ragex.MCP.Server) do
+      Server.send_notification("analyzer/progress", %{
+        event: event,
+        params: params,
+        timestamp: DateTime.utc_now()
+      })
+    end
   end
 end

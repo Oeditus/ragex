@@ -101,6 +101,7 @@ end
    - Protocol handler (JSON-RPC 2.0)
    - Tool definitions and execution
    - stdio communication
+   - Streaming notifications for progress tracking
 
 2. **Analyzers** (`lib/ragex/analyzers/`)
    - Language-specific AST parsers
@@ -134,6 +135,7 @@ end
    - Format integration (mix, rebar3, black, prettier)
    - Multi-file atomic transactions
    - Semantic refactoring (AST-aware)
+   - MCP tool integration with progress notifications
 
 ## Development Practices
 
@@ -182,7 +184,7 @@ end
 - **Phase 4E**: Documentation (ALGORITHMS.md, comprehensive guides)
 - **Phase 5A**: Core editor infrastructure (atomic operations, backups, rollback)
 - **Phase 5B**: Validation pipeline (multi-language syntax checking)
-- **Phase 5C**: MCP edit tools (edit_file, validate_edit, rollback_edit, edit_history)
+- **Phase 5C**: MCP edit tools + streaming notifications (edit_file, validate_edit, rollback_edit, edit_history, progress tracking)
 - **Phase 5D**: Advanced editing (format integration, multi-file transactions)
 - **Phase 5E**: Semantic refactoring (rename_function, rename_module via AST)
 - **Phase 8**: Advanced graph algorithms (betweenness centrality, closeness centrality, community detection, visualization)
@@ -340,6 +342,53 @@ Core.rollback("path/to/file.ex")
 - Project-wide or module-scoped
 - Automatic call site updates
 - Arity-aware renaming
+
+### MCP Streaming Notifications (Phase 5C)
+
+**Overview:**
+The MCP server supports streaming notifications for real-time progress tracking during long-running operations.
+
+**Notification Methods:**
+- `editor/progress`: Progress events for edit operations
+- `analyzer/progress`: Progress events for directory analysis
+
+**Editor Progress Events:**
+- `transaction_start`: Multi-file transaction initiated
+- `validation_start`: Validation phase starting
+- `validation_complete`: Validation finished
+- `apply_start`: Starting to apply edits
+- `apply_file`: Processing individual file (includes current/total)
+- `rollback_start`: Starting rollback
+- `rollback_file`: Rolling back individual file
+- `rollback_complete`: Rollback finished
+
+**Analyzer Progress Events:**
+- `analysis_start`: Directory analysis initiated (includes file counts)
+- `analysis_file`: Processing individual file (includes current/total, status)
+- `analysis_complete`: Analysis finished (includes success/error counts)
+
+**Example Notification:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "editor/progress",
+  "params": {
+    "event": "apply_file",
+    "params": {
+      "path": "lib/file1.ex",
+      "current": 1,
+      "total": 3
+    },
+    "timestamp": "2026-01-22T16:54:30Z"
+  }
+}
+```
+
+**Implementation:**
+- Notifications sent asynchronously via GenServer cast
+- No blocking on delivery
+- Graceful degradation if MCP server not running
+- See PHASE5C_COMPLETE.md for full details
 
 ### Advanced Graph Algorithms (Phase 8)
 
