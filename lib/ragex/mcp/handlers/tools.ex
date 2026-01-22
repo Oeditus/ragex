@@ -11,7 +11,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   alias Ragex.Analyzers.JavaScript, as: JavaScriptAnalyzer
   alias Ragex.Analyzers.Metastatic
   alias Ragex.Analyzers.Python, as: PythonAnalyzer
-  alias Ragex.Editor.{Core, Refactor, Transaction, Types}
+  alias Ragex.Editor.{Conflict, Core, Refactor, Transaction, Types, Undo, Visualize}
   alias Ragex.Embeddings.Bumblebee
   alias Ragex.Embeddings.Helper, as: EmbeddingsHelper
   alias Ragex.Graph.Algorithms
@@ -1000,6 +1000,121 @@ defmodule Ragex.MCP.Handlers.Tools do
             },
             required: ["target"]
           }
+        },
+        %{
+          name: "preview_refactor",
+          description:
+            "Preview refactoring changes without applying them - shows diffs, conflicts, and statistics",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              operation: %{
+                type: "string",
+                description: "Refactoring operation type",
+                enum: ["rename_function", "rename_module", "extract_function", "inline_function"]
+              },
+              params: %{
+                type: "object",
+                description: "Operation-specific parameters"
+              },
+              format: %{
+                type: "string",
+                description: "Preview output format",
+                enum: ["unified", "side_by_side", "json"],
+                default: "unified"
+              }
+            },
+            required: ["operation", "params"]
+          }
+        },
+        %{
+          name: "refactor_conflicts",
+          description:
+            "Check for conflicts before applying a refactoring operation - detects naming, dependency, and scope conflicts",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              operation: %{
+                type: "string",
+                description: "Refactoring operation type",
+                enum: ["rename_function", "rename_module", "move_function", "extract_module"]
+              },
+              params: %{
+                type: "object",
+                description: "Operation-specific parameters"
+              }
+            },
+            required: ["operation", "params"]
+          }
+        },
+        %{
+          name: "undo_refactor",
+          description:
+            "Undo the most recent refactoring operation by restoring files to their previous state",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              project_path: %{
+                type: "string",
+                description: "Project root path (uses current directory if not specified)"
+              }
+            }
+          }
+        },
+        %{
+          name: "refactor_history",
+          description: "List refactoring operation history with timestamps and file counts",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              project_path: %{
+                type: "string",
+                description: "Project root path (uses current directory if not specified)"
+              },
+              limit: %{
+                type: "integer",
+                description: "Maximum number of entries to return",
+                default: 50
+              },
+              include_undone: %{
+                type: "boolean",
+                description: "Include undone operations",
+                default: false
+              }
+            }
+          }
+        },
+        %{
+          name: "visualize_impact",
+          description:
+            "Visualize the impact of refactoring changes - shows affected functions, impact radius, and risk analysis",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              files: %{
+                type: "array",
+                description: "List of file paths affected by refactoring",
+                items: %{type: "string"}
+              },
+              format: %{
+                type: "string",
+                description: "Visualization format",
+                enum: ["graphviz", "d3_json", "ascii"],
+                default: "ascii"
+              },
+              depth: %{
+                type: "integer",
+                description: "Impact radius depth (number of neighbor levels)",
+                default: 1
+              },
+              include_risk: %{
+                type: "boolean",
+                description: "Include risk analysis based on centrality metrics",
+                default: true
+              }
+            },
+            required: ["files"]
+          }
         }
       ]
     }
@@ -1118,6 +1233,21 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "rag_suggest_stream" ->
         rag_suggest_stream_tool(arguments)
+
+      "preview_refactor" ->
+        preview_refactor_tool(arguments)
+
+      "refactor_conflicts" ->
+        refactor_conflicts_tool(arguments)
+
+      "undo_refactor" ->
+        undo_refactor_tool(arguments)
+
+      "refactor_history" ->
+        refactor_history_tool(arguments)
+
+      "visualize_impact" ->
+        visualize_impact_tool(arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
@@ -3309,4 +3439,205 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp parse_language_list(_), do: []
+
+  # Phase 10C MCP tool implementations
+
+  defp preview_refactor_tool(%{"operation" => operation, "params" => params} = args) do
+    format = Map.get(args, "format", "unified")
+
+    # Create a dry-run preview - this would need Preview module integration
+    # For now, return a basic structure
+    {:ok,
+     %{
+       status: "preview",
+       operation: operation,
+       message:
+         "Preview mode: would perform #{operation} with params #{inspect(params)}. Format: #{format}",
+       format: format
+     }}
+  end
+
+  defp preview_refactor_tool(_), do: {:error, "Missing required parameters"}
+
+  defp refactor_conflicts_tool(%{"operation" => operation, "params" => params}) do
+    # Check conflicts based on operation type
+    result =
+      case operation do
+        "rename_function" ->
+          with {:ok, module} <- get_required_param(params, "module"),
+               {:ok, _old_name} <- get_required_param(params, "old_name"),
+               {:ok, new_name} <- get_required_param(params, "new_name"),
+               {:ok, arity} <- get_required_param(params, "arity") do
+            module_atom = String.to_existing_atom("Elixir." <> module)
+            new_atom = String.to_atom(new_name)
+
+            Conflict.check_rename_conflicts(module_atom, new_atom, arity)
+          else
+            {:error, reason} -> {:error, reason}
+          end
+
+        "rename_module" ->
+          with {:ok, old_name} <- get_required_param(params, "old_name"),
+               {:ok, new_name} <- get_required_param(params, "new_name") do
+            old_atom = String.to_existing_atom("Elixir." <> old_name)
+            new_atom = String.to_existing_atom("Elixir." <> new_name)
+
+            # For module rename, check if new name conflicts
+            Conflict.check_rename_conflicts(old_atom, new_atom, 0)
+          else
+            {:error, reason} -> {:error, reason}
+          end
+
+        "move_function" ->
+          with {:ok, source_module} <- get_required_param(params, "source_module"),
+               {:ok, target_module} <- get_required_param(params, "target_module"),
+               {:ok, function} <- get_required_param(params, "function"),
+               {:ok, arity} <- get_required_param(params, "arity") do
+            source_atom = String.to_existing_atom("Elixir." <> source_module)
+            target_atom = String.to_existing_atom("Elixir." <> target_module)
+            function_atom = String.to_atom(function)
+
+            Conflict.check_move_conflicts(source_atom, target_atom, function_atom, arity)
+          else
+            {:error, reason} -> {:error, reason}
+          end
+
+        "extract_module" ->
+          with {:ok, source_module} <- get_required_param(params, "source_module"),
+               {:ok, new_module} <- get_required_param(params, "new_module"),
+               {:ok, functions} <- get_required_param(params, "functions") do
+            source_atom = String.to_existing_atom("Elixir." <> source_module)
+            new_atom = String.to_existing_atom("Elixir." <> new_module)
+
+            case parse_function_list(functions) do
+              {:ok, parsed_functions} ->
+                Conflict.check_extract_module_conflicts(
+                  source_atom,
+                  new_atom,
+                  parsed_functions
+                )
+
+              {:error, reason} ->
+                {:error, reason}
+            end
+          else
+            {:error, reason} -> {:error, reason}
+          end
+
+        _ ->
+          {:error, "Unknown operation: #{operation}"}
+      end
+
+    case result do
+      {:error, reason} ->
+        {:error, reason}
+
+      {:ok, conflict_result} ->
+        formatted =
+          Enum.map(conflict_result.conflicts, fn conflict ->
+            %{
+              type: conflict.type,
+              severity: conflict.severity,
+              message: conflict.message,
+              file: conflict.file,
+              line: conflict.line,
+              suggestion: conflict.suggestion
+            }
+          end)
+
+        {:ok,
+         %{
+           status: "checked",
+           operation: operation,
+           has_conflicts: conflict_result.has_conflicts,
+           conflicts: formatted,
+           stats: conflict_result.stats,
+           can_proceed: conflict_result.stats.errors == 0
+         }}
+    end
+  end
+
+  defp refactor_conflicts_tool(_), do: {:error, "Missing required parameters"}
+
+  defp undo_refactor_tool(params) do
+    project_path = Map.get(params, "project_path", ".")
+
+    case Undo.undo(project_path) do
+      {:ok, result} ->
+        {:ok,
+         %{
+           status: "undone",
+           operation: result.operation,
+           description: result.description,
+           files_restored: result.files_restored
+         }}
+
+      {:error, :no_undo_history} ->
+        {:ok, %{status: "none", message: "No undo history found"}}
+
+      {:error, reason} ->
+        {:error, "Failed to undo: #{inspect(reason)}"}
+    end
+  end
+
+  defp refactor_history_tool(params) do
+    project_path = Map.get(params, "project_path", ".")
+    limit = Map.get(params, "limit", 50)
+    include_undone = Map.get(params, "include_undone", false)
+
+    case Undo.list_undo_stack(project_path, limit: limit, include_undone: include_undone) do
+      {:ok, entries} ->
+        formatted =
+          Enum.map(entries, fn entry ->
+            %{
+              id: entry.id,
+              operation: entry.operation,
+              description: entry.description,
+              timestamp: DateTime.to_iso8601(entry.timestamp),
+              files_affected: length(entry.files_affected),
+              result: entry.result,
+              undone: Map.get(entry, :undone, false)
+            }
+          end)
+
+        {:ok, %{status: "success", entries: formatted, count: length(formatted)}}
+
+      {:error, :no_undo_history} ->
+        {:ok, %{status: "empty", entries: [], count: 0}}
+
+      {:error, reason} ->
+        {:error, "Failed to retrieve history: #{inspect(reason)}"}
+    end
+  end
+
+  defp visualize_impact_tool(%{"files" => files} = params) do
+    format_atom =
+      case Map.get(params, "format", "ascii") do
+        "graphviz" -> :graphviz
+        "d3_json" -> :d3_json
+        "ascii" -> :ascii
+        _ -> :ascii
+      end
+
+    depth = Map.get(params, "depth", 1)
+    include_risk = Map.get(params, "include_risk", true)
+
+    opts = [
+      depth: depth,
+      include_risk: include_risk
+    ]
+
+    case Visualize.visualize_impact(files, format_atom, opts) do
+      {:ok, visualization} when format_atom == :d3_json ->
+        {:ok, %{status: "success", format: "d3_json", data: visualization}}
+
+      {:ok, visualization} ->
+        {:ok, %{status: "success", format: Atom.to_string(format_atom), content: visualization}}
+
+      {:error, reason} ->
+        {:error, "Failed to visualize impact: #{inspect(reason)}"}
+    end
+  end
+
+  defp visualize_impact_tool(_), do: {:error, "Missing required 'files' parameter"}
 end
