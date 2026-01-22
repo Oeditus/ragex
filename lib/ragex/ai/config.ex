@@ -12,8 +12,10 @@ defmodule Ragex.AI.Config do
   Get the configured AI provider module.
   """
   def provider do
-    provider_atom = Application.get_env(:ragex, :ai)[:provider] || :deepseek_r1
-    provider_module(provider_atom)
+    :ragex
+    |> Application.get_env(:ai, [])
+    |> Keyword.get(:provider, :deepseek_r1)
+    |> provider_module()
   end
 
   @doc """
@@ -59,7 +61,7 @@ defmodule Ragex.AI.Config do
   # Private
 
   defp provider_module(:deepseek_r1), do: Ragex.AI.Provider.DeepSeekR1
-  defp provider_module(:openai), do: Ragex.AI.Provider.OpenAI
-  defp provider_module(:anthropic), do: Ragex.AI.Provider.Anthropic
+  # defp provider_module(:openai), do: Ragex.AI.Provider.OpenAI
+  # defp provider_module(:anthropic), do: Ragex.AI.Provider.Anthropic
   defp provider_module(atom), do: raise("Unknown AI provider: #{atom}")
 end
