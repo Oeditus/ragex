@@ -732,6 +732,93 @@ defmodule Ragex.MCP.Handlers.Tools do
             },
             required: ["target"]
           }
+        },
+        %{
+          name: "rag_query_stream",
+          description:
+            "Query codebase using RAG with streaming AI response (internally uses streaming, returns complete result)",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              query: %{
+                type: "string",
+                description: "Natural language query about the codebase"
+              },
+              limit: %{
+                type: "integer",
+                description: "Maximum number of code snippets to retrieve",
+                default: 10
+              },
+              include_code: %{
+                type: "boolean",
+                description: "Include full code snippets in context",
+                default: true
+              },
+              provider: %{
+                type: "string",
+                description: "AI provider override",
+                enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
+              },
+              show_chunks: %{
+                type: "boolean",
+                description: "Include intermediate chunks in response for debugging",
+                default: false
+              }
+            },
+            required: ["query"]
+          }
+        },
+        %{
+          name: "rag_explain_stream",
+          description:
+            "Explain code using RAG with streaming AI response (internally uses streaming, returns complete result)",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              target: %{
+                type: "string",
+                description: "File path or function identifier (e.g., 'MyModule.function/2')"
+              },
+              aspect: %{
+                type: "string",
+                description: "What to explain",
+                enum: ["purpose", "complexity", "dependencies", "all"],
+                default: "all"
+              },
+              show_chunks: %{
+                type: "boolean",
+                description: "Include intermediate chunks in response for debugging",
+                default: false
+              }
+            },
+            required: ["target"]
+          }
+        },
+        %{
+          name: "rag_suggest_stream",
+          description:
+            "Suggest code improvements using RAG with streaming AI (internally uses streaming, returns complete result)",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              target: %{
+                type: "string",
+                description: "File path or function identifier"
+              },
+              focus: %{
+                type: "string",
+                description: "Improvement focus area",
+                enum: ["performance", "readability", "testing", "security", "all"],
+                default: "all"
+              },
+              show_chunks: %{
+                type: "boolean",
+                description: "Include intermediate chunks in response for debugging",
+                default: false
+              }
+            },
+            required: ["target"]
+          }
         }
       ]
     }
@@ -826,6 +913,15 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "rag_suggest" ->
         rag_suggest_tool(arguments)
+
+      "rag_query_stream" ->
+        rag_query_stream_tool(arguments)
+
+      "rag_explain_stream" ->
+        rag_explain_stream_tool(arguments)
+
+      "rag_suggest_stream" ->
+        rag_suggest_stream_tool(arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
@@ -2130,6 +2226,146 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp rag_suggest_tool(_), do: {:error, "Missing 'target' parameter"}
+
+  # Streaming RAG tool implementations
+  # Note: These collect all chunks and return complete response
+  # Full MCP streaming protocol support will be added in Phase 5C
+
+  defp rag_query_stream_tool(%{"query" => query} = params) do
+    limit = Map.get(params, "limit", 10)
+    include_code = Map.get(params, "include_code", true)
+    provider = parse_provider(Map.get(params, "provider"))
+    show_chunks = Map.get(params, "show_chunks", false)
+
+    opts = [
+      limit: limit,
+      include_code: include_code
+    ]
+
+    opts = if provider, do: Keyword.put(opts, :provider, provider), else: opts
+
+    case Pipeline.stream_query(query, opts) do
+      {:ok, stream} ->
+        # Collect all chunks
+        result = collect_stream_chunks(stream, show_chunks)
+
+        {:ok,
+         %{
+           status: "success",
+           query: query,
+           response: result.content,
+           sources_count: result.sources_count,
+           model_used: result.model,
+           streaming: true,
+           chunks_count: result.chunks_count
+         }
+         |> maybe_add_chunks(result, show_chunks)}
+
+      {:error, reason} ->
+        {:error, "RAG streaming query failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp rag_query_stream_tool(_), do: {:error, "Missing 'query' parameter"}
+
+  defp rag_explain_stream_tool(%{"target" => target} = params) do
+    aspect = String.to_atom(Map.get(params, "aspect", "all"))
+    show_chunks = Map.get(params, "show_chunks", false)
+
+    opts = [aspect: aspect]
+
+    case Pipeline.stream_explain(target, aspect, opts) do
+      {:ok, stream} ->
+        result = collect_stream_chunks(stream, show_chunks)
+
+        {:ok,
+         %{
+           status: "success",
+           target: target,
+           explanation: result.content,
+           aspect: Atom.to_string(aspect),
+           sources_count: result.sources_count,
+           model_used: result.model,
+           streaming: true,
+           chunks_count: result.chunks_count
+         }
+         |> maybe_add_chunks(result, show_chunks)}
+
+      {:error, reason} ->
+        {:error, "RAG streaming explain failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp rag_explain_stream_tool(_), do: {:error, "Missing 'target' parameter"}
+
+  defp rag_suggest_stream_tool(%{"target" => target} = params) do
+    focus = String.to_atom(Map.get(params, "focus", "all"))
+    show_chunks = Map.get(params, "show_chunks", false)
+
+    opts = [focus: focus]
+
+    case Pipeline.stream_suggest(target, focus, opts) do
+      {:ok, stream} ->
+        result = collect_stream_chunks(stream, show_chunks)
+
+        {:ok,
+         %{
+           status: "success",
+           target: target,
+           suggestions: result.content,
+           focus: Atom.to_string(focus),
+           sources_count: result.sources_count,
+           model_used: result.model,
+           streaming: true,
+           chunks_count: result.chunks_count
+         }
+         |> maybe_add_chunks(result, show_chunks)}
+
+      {:error, reason} ->
+        {:error, "RAG streaming suggest failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp rag_suggest_stream_tool(_), do: {:error, "Missing 'target' parameter"}
+
+  defp collect_stream_chunks(stream, show_chunks) do
+    chunks = if show_chunks, do: [], else: nil
+
+    {content, metadata, collected_chunks} =
+      Enum.reduce(stream, {"", nil, chunks}, fn
+        %{done: false, content: chunk_content} = chunk, {acc_content, _meta, acc_chunks} ->
+          new_chunks = if show_chunks, do: [chunk | acc_chunks], else: acc_chunks
+          {acc_content <> chunk_content, nil, new_chunks}
+
+        %{done: true, metadata: final_meta}, {acc_content, _meta, acc_chunks} ->
+          {acc_content, final_meta, acc_chunks}
+
+        {:error, reason}, {acc_content, meta, acc_chunks} ->
+          # Handle error chunks
+          new_meta = if meta, do: Map.put(meta, :error, reason), else: %{error: reason}
+          {acc_content, new_meta, acc_chunks}
+
+        _other, acc ->
+          acc
+      end)
+
+    metadata = metadata || %{}
+
+    %{
+      content: content,
+      model: metadata[:model],
+      sources_count: length(metadata[:sources] || []),
+      chunks_count: if(show_chunks, do: length(collected_chunks), else: :not_tracked),
+      chunks: if(show_chunks, do: Enum.reverse(collected_chunks), else: nil),
+      metadata: metadata
+    }
+  end
+
+  defp maybe_add_chunks(result, %{chunks: chunks}, true) when is_list(chunks) do
+    Map.put(result, :chunks, chunks)
+  end
+
+  defp maybe_add_chunks(result, _stream_result, _show_chunks), do: result
 
   defp parse_provider(nil), do: nil
   defp parse_provider("deepseek_r1"), do: :deepseek_r1

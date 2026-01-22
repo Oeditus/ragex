@@ -240,7 +240,8 @@ defmodule Ragex.AI.Provider.OpenAI do
       messages: messages,
       temperature: config.temperature,
       max_tokens: config.max_tokens,
-      stream: true
+      stream: true,
+      stream_options: %{include_usage: true}
     }
 
     headers = [
@@ -248,69 +249,201 @@ defmodule Ragex.AI.Provider.OpenAI do
       {"content-type", "application/json"}
     ]
 
-    # Return a stream that will be consumed by the caller
+    # Use Task to handle streaming in separate process
+    parent = self()
+
+    task =
+      Task.async(fn ->
+        case Req.post(url,
+               json: body,
+               headers: headers,
+               into: fn {:data, data}, {req, resp} ->
+                 # Send chunks to parent
+                 send(parent, {:stream_chunk, data})
+                 {:cont, {req, resp}}
+               end
+             ) do
+          {:ok, %{status: 200}} ->
+            # Signal completion
+            send(parent, :stream_done)
+            :ok
+
+          {:ok, response} ->
+            send(parent, {:stream_error, {:api_error, response.status, response.body}})
+            {:error, {:api_error, response.status}}
+
+          {:error, reason} ->
+            send(parent, {:stream_error, {:http_error, reason}})
+            {:error, {:http_error, reason}}
+        end
+      end)
+
+    # Return a stream that receives messages from the task
     stream =
       Stream.resource(
         fn ->
-          case Req.post(url, json: body, headers: headers, into: :self) do
-            {:ok, %{status: 200}} = result ->
-              result
-
-            {:ok, %{status: status, body: error_body}} ->
-              {:error, {:api_error, status, error_body}}
-
-            {:error, reason} ->
-              {:error, {:http_error, reason}}
+          # Initial state with usage tracking
+          %{
+            task: task,
+            buffer: "",
+            usage: %{prompt_tokens: 0, completion_tokens: 0, total_tokens: 0},
+            model: config.model,
+            done: false
+          }
+        end,
+        fn state ->
+          if state.done do
+            {:halt, state}
+          else
+            receive_and_parse_chunks(state)
           end
         end,
-        fn
-          {:error, reason} ->
-            {[{:error, reason}], :halt}
+        fn state ->
+          # Cleanup: ensure task is terminated
+          if Process.alive?(state.task.pid) do
+            Task.shutdown(state.task, :brutal_kill)
+          end
 
-          {:ok, response} ->
-            # Parse SSE stream chunks
-            case parse_stream_chunk(response.body) do
-              {:ok, chunk, done?} ->
-                if done? do
-                  {[chunk], :halt}
-                else
-                  {[chunk], {:ok, response}}
-                end
-
-              {:error, reason} ->
-                {[{:error, reason}], :halt}
-            end
-
-          :halt ->
-            {:halt, :halt}
-        end,
-        fn _ -> :ok end
+          :ok
+        end
       )
 
     {:ok, stream}
   end
 
-  defp parse_stream_chunk(chunk) when is_binary(chunk) do
-    # OpenAI sends SSE format: "data: {...}\n\n"
-    case String.split(chunk, "\n", parts: 2) do
-      ["data: " <> json, _rest] ->
-        case Jason.decode(json) do
-          {:ok, %{"choices" => [%{"delta" => %{"content" => content}} | _]}} ->
-            {:ok, %{content: content, done: false, metadata: %{provider: :openai}}, false}
+  defp receive_and_parse_chunks(state) do
+    receive do
+      {:stream_chunk, data} ->
+        # Append to buffer
+        new_buffer = state.buffer <> data
+        {events, remaining} = extract_sse_events(new_buffer)
 
-          {:ok, %{"choices" => [%{"finish_reason" => reason} | _]}} when reason != nil ->
-            {:ok,
-             %{content: "", done: true, metadata: %{finish_reason: reason, provider: :openai}},
-             true}
+        # Parse each event
+        {chunks, new_usage} =
+          Enum.flat_map_reduce(events, state.usage, fn event, usage_acc ->
+            case parse_sse_event(event, state.model) do
+              {:chunk, chunk, usage_update} ->
+                updated_usage = merge_usage(usage_acc, usage_update)
+                {[chunk], updated_usage}
 
-          _ ->
-            {:ok, %{content: "", done: false, metadata: %{provider: :openai}}, false}
+              {:done, finish_reason, usage_update} ->
+                final_usage = merge_usage(usage_acc, usage_update)
+
+                final_chunk = %{
+                  content: "",
+                  done: true,
+                  metadata: %{
+                    finish_reason: finish_reason,
+                    provider: :openai,
+                    model: state.model,
+                    usage: final_usage
+                  }
+                }
+
+                {[final_chunk], final_usage}
+
+              :skip ->
+                {[], usage_acc}
+            end
+          end)
+
+        # Check if we got a done chunk
+        done? = Enum.any?(chunks, & &1.done)
+        new_state = %{state | buffer: remaining, usage: new_usage, done: done?}
+        {chunks, new_state}
+
+      :stream_done ->
+        # Stream completed without explicit done chunk
+        if state.done do
+          {:halt, state}
+        else
+          # Send final done chunk
+          final_chunk = %{
+            content: "",
+            done: true,
+            metadata: %{
+              finish_reason: "stop",
+              provider: :openai,
+              model: state.model,
+              usage: state.usage
+            }
+          }
+
+          {[final_chunk], %{state | done: true}}
         end
 
-      _ ->
-        {:ok, %{content: "", done: false, metadata: %{provider: :openai}}, false}
+      {:stream_error, error} ->
+        {[{:error, error}], %{state | done: true}}
+    after
+      30_000 ->
+        # Timeout after 30 seconds
+        {[{:error, :timeout}], %{state | done: true}}
     end
   end
 
-  defp parse_stream_chunk(_), do: {:error, :invalid_chunk}
+  defp extract_sse_events(buffer) do
+    # SSE events are separated by double newlines
+    case String.split(buffer, "\n\n") do
+      [] ->
+        {[], ""}
+
+      [incomplete] ->
+        # Only one part, might be incomplete
+        {[], incomplete}
+
+      parts ->
+        # Last part might be incomplete
+        [incomplete | complete_reversed] = Enum.reverse(parts)
+        {Enum.reverse(complete_reversed), incomplete}
+    end
+  end
+
+  defp parse_sse_event("data: [DONE]" <> _, _model) do
+    {:done, "stop", nil}
+  end
+
+  defp parse_sse_event("data: " <> json_str, _model) do
+    with {:ok, data} <- Jason.decode(String.trim(json_str)),
+         %{"choices" => [choice | _]} <- data do
+      delta = choice["delta"] || %{}
+      content = delta["content"] || ""
+      finish_reason = choice["finish_reason"]
+      usage = extract_usage(data)
+
+      cond do
+        finish_reason != nil ->
+          {:done, finish_reason, usage}
+
+        content != "" ->
+          chunk = %{
+            content: content,
+            done: false,
+            metadata: %{provider: :openai}
+          }
+
+          {:chunk, chunk, usage}
+
+        true ->
+          :skip
+      end
+    else
+      _ -> :skip
+    end
+  end
+
+  defp parse_sse_event(_, _model), do: :skip
+
+  defp extract_usage(%{"usage" => usage}) when is_map(usage) do
+    %{
+      prompt_tokens: usage["prompt_tokens"] || 0,
+      completion_tokens: usage["completion_tokens"] || 0,
+      total_tokens: usage["total_tokens"] || 0
+    }
+  end
+
+  defp extract_usage(_), do: nil
+
+  defp merge_usage(current, nil), do: current
+
+  defp merge_usage(_current, new) when is_map(new), do: new
 end

@@ -242,67 +242,216 @@ defmodule Ragex.AI.Provider.Anthropic do
       {"content-type", "application/json"}
     ]
 
-    # Return a stream that will be consumed by the caller
+    # Use Task to handle streaming in separate process
+    parent = self()
+
+    task =
+      Task.async(fn ->
+        case Req.post(url,
+               json: body,
+               headers: headers,
+               into: fn {:data, data}, {req, resp} ->
+                 send(parent, {:stream_chunk, data})
+                 {:cont, {req, resp}}
+               end
+             ) do
+          {:ok, %{status: 200}} ->
+            send(parent, :stream_done)
+            :ok
+
+          {:ok, response} ->
+            send(parent, {:stream_error, {:api_error, response.status, response.body}})
+            {:error, {:api_error, response.status}}
+
+          {:error, reason} ->
+            send(parent, {:stream_error, {:http_error, reason}})
+            {:error, {:http_error, reason}}
+        end
+      end)
+
+    # Return a stream that receives messages from the task
     stream =
       Stream.resource(
         fn ->
-          case Req.post(url, json: body, headers: headers, into: :self) do
-            {:ok, %{status: 200}} = result ->
-              result
-
-            {:ok, %{status: status, body: error_body}} ->
-              {:error, {:api_error, status, error_body}}
-
-            {:error, reason} ->
-              {:error, {:http_error, reason}}
+          # Initial state with usage tracking
+          %{
+            task: task,
+            buffer: "",
+            usage: %{input_tokens: 0, output_tokens: 0},
+            model: config.model,
+            stop_reason: nil,
+            done: false
+          }
+        end,
+        fn state ->
+          if state.done do
+            {:halt, state}
+          else
+            receive_and_parse_events(state)
           end
         end,
-        fn
-          {:error, reason} ->
-            {[{:error, reason}], :halt}
+        fn state ->
+          # Cleanup: ensure task is terminated
+          if Process.alive?(state.task.pid) do
+            Task.shutdown(state.task, :brutal_kill)
+          end
 
-          {:ok, response} ->
-            # Parse SSE stream chunks
-            case parse_stream_chunk(response.body) do
-              {:ok, chunk, done?} ->
-                if done? do
-                  {[chunk], :halt}
-                else
-                  {[chunk], {:ok, response}}
-                end
-
-              {:error, reason} ->
-                {[{:error, reason}], :halt}
-            end
-
-          :halt ->
-            {:halt, :halt}
-        end,
-        fn _ -> :ok end
+          :ok
+        end
       )
 
     {:ok, stream}
   end
 
-  defp parse_stream_chunk(chunk) when is_binary(chunk) do
-    # Anthropic sends SSE format with event types
-    case String.split(chunk, "\n", parts: 3) do
-      ["event: content_block_delta", "data: " <> json, _rest] ->
-        case Jason.decode(json) do
-          {:ok, %{"delta" => %{"text" => text}}} ->
-            {:ok, %{content: text, done: false, metadata: %{provider: :anthropic}}, false}
+  defp receive_and_parse_events(state) do
+    receive do
+      {:stream_chunk, data} ->
+        # Append to buffer
+        new_buffer = state.buffer <> data
+        {events, remaining} = extract_anthropic_events(new_buffer)
 
-          _ ->
-            {:ok, %{content: "", done: false, metadata: %{provider: :anthropic}}, false}
+        # Parse each event
+        {chunks, new_state} =
+          Enum.flat_map_reduce(events, %{state | buffer: remaining}, fn event, acc ->
+            case parse_anthropic_event(event) do
+              {:text, text} ->
+                chunk = %{
+                  content: text,
+                  done: false,
+                  metadata: %{provider: :anthropic}
+                }
+
+                {[chunk], acc}
+
+              {:usage, usage} ->
+                # Update usage tracking
+                {[], %{acc | usage: usage}}
+
+              {:message_stop, stop_reason} ->
+                # Final chunk with usage stats
+                final_chunk = %{
+                  content: "",
+                  done: true,
+                  metadata: %{
+                    stop_reason: stop_reason || acc.stop_reason || "end_turn",
+                    provider: :anthropic,
+                    model: acc.model,
+                    usage: %{
+                      prompt_tokens: acc.usage.input_tokens,
+                      completion_tokens: acc.usage.output_tokens,
+                      total_tokens: acc.usage.input_tokens + acc.usage.output_tokens
+                    }
+                  }
+                }
+
+                {[final_chunk], %{acc | done: true, stop_reason: stop_reason}}
+
+              :skip ->
+                {[], acc}
+            end
+          end)
+
+        {chunks, new_state}
+
+      :stream_done ->
+        # Stream completed without explicit stop
+        if state.done do
+          {:halt, state}
+        else
+          # Send final done chunk
+          final_chunk = %{
+            content: "",
+            done: true,
+            metadata: %{
+              stop_reason: state.stop_reason || "end_turn",
+              provider: :anthropic,
+              model: state.model,
+              usage: %{
+                prompt_tokens: state.usage.input_tokens,
+                completion_tokens: state.usage.output_tokens,
+                total_tokens: state.usage.input_tokens + state.usage.output_tokens
+              }
+            }
+          }
+
+          {[final_chunk], %{state | done: true}}
         end
 
-      ["event: message_stop", _data, _rest] ->
-        {:ok, %{content: "", done: true, metadata: %{provider: :anthropic}}, true}
-
-      _ ->
-        {:ok, %{content: "", done: false, metadata: %{provider: :anthropic}}, false}
+      {:stream_error, error} ->
+        {[{:error, error}], %{state | done: true}}
+    after
+      30_000 ->
+        # Timeout after 30 seconds
+        {[{:error, :timeout}], %{state | done: true}}
     end
   end
 
-  defp parse_stream_chunk(_), do: {:error, :invalid_chunk}
+  defp extract_anthropic_events(buffer) do
+    # Anthropic SSE format: "event: <type>\ndata: <json>\n\n"
+    case String.split(buffer, "\n\n") do
+      [] ->
+        {[], ""}
+
+      [incomplete] ->
+        {[], incomplete}
+
+      parts ->
+        [incomplete | complete_reversed] = Enum.reverse(parts)
+        {Enum.reverse(complete_reversed), incomplete}
+    end
+  end
+
+  defp parse_anthropic_event(event) do
+    lines = String.split(event, "\n", parts: 2)
+
+    case lines do
+      ["event: message_start", "data: " <> json] ->
+        # Extract usage from message_start
+        with {:ok, data} <- Jason.decode(json),
+             %{"message" => %{"usage" => usage}} <- data do
+          parse_usage_data(usage)
+        else
+          _ -> :skip
+        end
+
+      ["event: content_block_delta", "data: " <> json] ->
+        # Extract text delta
+        with {:ok, data} <- Jason.decode(json),
+             %{"delta" => %{"text" => text}} <- data do
+          {:text, text}
+        else
+          _ -> :skip
+        end
+
+      ["event: message_delta", "data: " <> json] ->
+        # Extract final usage
+        with {:ok, data} <- Jason.decode(json) do
+          usage = get_in(data, ["usage"])
+
+          if usage do
+            parse_usage_data(usage)
+          else
+            :skip
+          end
+        else
+          _ -> :skip
+        end
+
+      ["event: message_stop" | _] ->
+        {:message_stop, nil}
+
+      _ ->
+        :skip
+    end
+  end
+
+  defp parse_usage_data(usage) when is_map(usage) do
+    {:usage,
+     %{
+       input_tokens: usage["input_tokens"] || 0,
+       output_tokens: usage["output_tokens"] || 0
+     }}
+  end
+
+  defp parse_usage_data(_), do: :skip
 end

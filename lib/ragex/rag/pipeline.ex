@@ -71,6 +71,58 @@ defmodule Ragex.RAG.Pipeline do
     query(query_text, opts)
   end
 
+  @doc """
+  Execute RAG query pipeline with streaming response.
+
+  Returns `{:ok, stream}` where stream emits chunks as they arrive from the AI provider.
+  The final chunk will include usage statistics and sources.
+
+  ## Options
+
+  Same as `query/2` plus:
+  - `:stream_metadata` - Include sources in every chunk (default: false)
+  """
+  def stream_query(user_query, opts \\ []) do
+    Logger.info("RAG Pipeline (streaming): query='#{user_query}'")
+
+    with {:ok, retrieval_results} <- retrieve(user_query, opts),
+         {:ok, context} <- build_context(retrieval_results, opts),
+         {:ok, prompt} <- build_prompt(user_query, context, opts),
+         {:ok, stream} <- stream_generate(:query, prompt, context, retrieval_results, opts) do
+      {:ok, stream}
+    end
+  end
+
+  @doc """
+  Explain code using RAG with streaming response.
+  """
+  def stream_explain(target, aspect, opts \\ []) do
+    query_text = build_explain_query(target, aspect)
+
+    opts =
+      opts
+      |> Keyword.put(:system_prompt, explain_system_prompt())
+      |> Keyword.put(:limit, 5)
+      |> Keyword.put(:operation, :explain)
+
+    stream_query(query_text, opts)
+  end
+
+  @doc """
+  Suggest improvements using RAG with streaming response.
+  """
+  def stream_suggest(target, focus, opts \\ []) do
+    query_text = build_suggest_query(target, focus)
+
+    opts =
+      opts
+      |> Keyword.put(:system_prompt, suggest_system_prompt())
+      |> Keyword.put(:limit, 3)
+      |> Keyword.put(:operation, :suggest)
+
+    stream_query(query_text, opts)
+  end
+
   # Private
 
   defp retrieve(query, opts) do
@@ -161,6 +213,74 @@ defmodule Ragex.RAG.Pipeline do
 
       error ->
         error
+    end
+  end
+
+  defp stream_generate(_operation, prompt, context, retrieval_results, opts) do
+    provider = get_provider(opts)
+    provider_name = get_provider_name(opts)
+
+    # Check rate limiting first
+    case Usage.check_rate_limit(provider_name) do
+      :ok ->
+        # Note: Streaming responses are not cached (real-time nature)
+        ai_opts = ai_generation_opts(opts)
+        model = get_model_name(provider, opts)
+        include_metadata = Keyword.get(opts, :stream_metadata, false)
+        sources = format_sources(retrieval_results)
+
+        case provider.stream_generate(prompt, %{context: context}, ai_opts) do
+          {:ok, base_stream} ->
+            # Wrap the provider stream to add usage tracking and sources
+            wrapped_stream =
+              base_stream
+              |> Stream.map(fn chunk ->
+                case chunk do
+                  %{done: true, metadata: metadata} = final_chunk ->
+                    # Track usage on final chunk
+                    usage = metadata[:usage] || %{}
+                    prompt_tokens = usage[:prompt_tokens] || 0
+                    completion_tokens = usage[:completion_tokens] || 0
+
+                    if prompt_tokens > 0 or completion_tokens > 0 do
+                      Usage.record_request(provider_name, model, prompt_tokens, completion_tokens)
+                    end
+
+                    # Add sources to final chunk
+                    updated_metadata =
+                      metadata
+                      |> Map.put(:sources, sources)
+                      |> Map.put(:retrieval_count, length(retrieval_results))
+                      |> Map.put(:timestamp, DateTime.utc_now())
+
+                    %{final_chunk | metadata: updated_metadata}
+
+                  %{done: false} = content_chunk ->
+                    # Optionally include sources in every chunk
+                    if include_metadata do
+                      put_in(content_chunk, [:metadata, :sources], sources)
+                    else
+                      content_chunk
+                    end
+
+                  {:error, _reason} = error ->
+                    error
+
+                  other ->
+                    other
+                end
+              end)
+
+            {:ok, wrapped_stream}
+
+          {:error, reason} = error ->
+            Logger.error("Streaming generation failed: #{inspect(reason)}")
+            error
+        end
+
+      {:error, reason} ->
+        Logger.warning("Rate limit exceeded: #{reason}")
+        {:error, {:rate_limited, reason}}
     end
   end
 

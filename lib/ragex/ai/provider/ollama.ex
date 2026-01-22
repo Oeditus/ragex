@@ -238,61 +238,149 @@ defmodule Ragex.AI.Provider.Ollama do
       stream: true
     }
 
-    # Return a stream that will be consumed by the caller
-    stream =
-      Stream.resource(
-        fn ->
-          case Req.post(url, json: body, into: :self) do
-            {:ok, %{status: 200}} = result ->
-              result
+    parent = self()
 
-            {:ok, %{status: status, body: error_body}} ->
-              {:error, {:api_error, status, error_body}}
-
-            {:error, reason} ->
-              {:error, {:http_error, reason}}
-          end
-        end,
-        fn
-          {:error, reason} ->
-            {[{:error, reason}], :halt}
+    task =
+      Task.async(fn ->
+        case Req.post(url,
+               json: body,
+               into: fn {:data, data}, {req, resp} ->
+                 send(parent, {:stream_chunk, data})
+                 {:cont, {req, resp}}
+               end
+             ) do
+          {:ok, %{status: 200}} ->
+            send(parent, :stream_done)
+            :ok
 
           {:ok, response} ->
-            # Parse NDJSON stream chunks (newline-delimited JSON)
-            case parse_stream_chunk(response.body) do
-              {:ok, chunk, done?} ->
-                if done? do
-                  {[chunk], :halt}
-                else
-                  {[chunk], {:ok, response}}
-                end
+            send(parent, {:stream_error, {:api_error, response.status, response.body}})
+            {:error, {:api_error, response.status}}
 
-              {:error, reason} ->
-                {[{:error, reason}], :halt}
-            end
+          {:error, reason} ->
+            send(parent, {:stream_error, {:http_error, reason}})
+            {:error, {:http_error, reason}}
+        end
+      end)
 
-          :halt ->
-            {:halt, :halt}
+    stream =
+      Stream.resource(
+        fn -> %{task: task, buffer: "", model: config.model, done: false, total_content: ""} end,
+        fn state ->
+          if state.done do
+            {:halt, state}
+          else
+            receive_ollama_chunks(state)
+          end
         end,
-        fn _ -> :ok end
+        fn state ->
+          if Process.alive?(state.task.pid), do: Task.shutdown(state.task, :brutal_kill)
+          :ok
+        end
       )
 
     {:ok, stream}
   end
 
-  defp parse_stream_chunk(chunk) when is_binary(chunk) do
-    # Ollama sends newline-delimited JSON
-    case Jason.decode(chunk) do
-      {:ok, %{"response" => content, "done" => done}} ->
-        {:ok, %{content: content, done: done, metadata: %{provider: :ollama, local: true}}, done}
+  defp receive_ollama_chunks(state) do
+    receive do
+      {:stream_chunk, data} ->
+        # Ollama sends NDJSON (newline-delimited JSON)
+        new_buffer = state.buffer <> data
+        {lines, remaining} = extract_ndjson_lines(new_buffer)
 
-      {:ok, %{"done" => true}} ->
-        {:ok, %{content: "", done: true, metadata: %{provider: :ollama, local: true}}, true}
+        {chunks, new_state} =
+          Enum.flat_map_reduce(lines, %{state | buffer: remaining}, fn line, acc ->
+            case Jason.decode(line) do
+              {:ok, %{"response" => content, "done" => false}} ->
+                chunk = %{
+                  content: content,
+                  done: false,
+                  metadata: %{provider: :ollama, local: true}
+                }
 
-      _ ->
-        {:ok, %{content: "", done: false, metadata: %{provider: :ollama, local: true}}, false}
+                {[chunk], %{acc | total_content: acc.total_content <> content}}
+
+              {:ok, %{"done" => true} = data} ->
+                # Final chunk with token estimation
+                est_tokens = div(String.length(acc.total_content), 4)
+
+                final_chunk = %{
+                  content: "",
+                  done: true,
+                  metadata: %{
+                    provider: :ollama,
+                    local: true,
+                    model: data["model"] || acc.model,
+                    usage: %{
+                      prompt_tokens: 0,
+                      completion_tokens: est_tokens,
+                      total_tokens: est_tokens
+                    }
+                  }
+                }
+
+                {[final_chunk], %{acc | done: true}}
+
+              {:ok, %{"response" => content}} ->
+                chunk = %{
+                  content: content,
+                  done: false,
+                  metadata: %{provider: :ollama, local: true}
+                }
+
+                {[chunk], %{acc | total_content: acc.total_content <> content}}
+
+              _ ->
+                {[], acc}
+            end
+          end)
+
+        {chunks, new_state}
+
+      :stream_done ->
+        if state.done do
+          {:halt, state}
+        else
+          est_tokens = div(String.length(state.total_content), 4)
+
+          final_chunk = %{
+            content: "",
+            done: true,
+            metadata: %{
+              provider: :ollama,
+              local: true,
+              model: state.model,
+              usage: %{
+                prompt_tokens: 0,
+                completion_tokens: est_tokens,
+                total_tokens: est_tokens
+              }
+            }
+          }
+
+          {[final_chunk], %{state | done: true}}
+        end
+
+      {:stream_error, error} ->
+        {[{:error, error}], %{state | done: true}}
+    after
+      30_000 -> {[{:error, :timeout}], %{state | done: true}}
     end
   end
 
-  defp parse_stream_chunk(_), do: {:error, :invalid_chunk}
+  defp extract_ndjson_lines(buffer) do
+    case String.split(buffer, "\n") do
+      [] ->
+        {[], ""}
+
+      [incomplete] ->
+        {[], incomplete}
+
+      parts ->
+        [incomplete | complete_reversed] = Enum.reverse(parts)
+        complete = Enum.reverse(complete_reversed) |> Enum.reject(&(&1 == ""))
+        {complete, incomplete}
+    end
+  end
 end

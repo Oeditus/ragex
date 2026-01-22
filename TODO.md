@@ -2,7 +2,7 @@
 
 **Project Status**: Production-Ready (v0.2.0)  
 **Last Updated**: January 22, 2026  
-**Completed Phases**: 1-5, 8, 9, RAG (Phases 1-4)
+**Completed Phases**: 1-5, 8, 9, RAG (Phases 1-4, Phase 5A)
 
 ---
 
@@ -11,16 +11,16 @@
 Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-language codebase analysis, semantic search, safe code editing, and AI-powered code intelligence. This document outlines remaining work, improvements, and future enhancements.
 
 **Current State:**
-- 16,800+ lines of production code (including RAG system)
+- 17,400+ lines of production code (including RAG system with streaming)
 - 343 tests passing (25+ test files)
-- 25 MCP tools (analysis, search, editing, refactoring, RAG, monitoring)
+- 28 MCP tools (analysis, search, editing, refactoring, RAG, streaming RAG, monitoring)
 - 6 MCP resources (read-only state access)
 - 6 MCP prompts (workflow templates)
 - 4 languages fully supported (Elixir, Erlang, Python, JS/TS)
 - Metastatic MetaAST integration for enhanced analysis
 - Phase 8: Advanced graph algorithms (complete)
 - Phase 9: MCP resources and prompts (complete)
-- **NEW**: RAG System with Multi-Provider AI (Phases 1-4 complete - January 22, 2026)
+- **NEW**: RAG System with Multi-Provider AI (Phases 1-4, Phase 5A complete - January 22, 2026)
 
 ---
 
@@ -98,7 +98,7 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 - All 343 tests passing
 - Zero breaking changes
 
-### Phase 5: Advanced RAG Enhancements (Next Priority)
+### Phase 5: Advanced RAG Enhancements (In Progress)
 
 **Priority**: CRITICAL - Foundation for Phases 10-12  
 **Estimated Effort**: 3-4 weeks  
@@ -106,11 +106,24 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 
 **Strategic Importance**: Phase 5 is the critical foundation for Phases 10 (Enhanced Refactoring), 11 (Advanced Analysis), and 12 (Developer Experience). All features in Phase 5 should be designed to support the needs of Phases 10-12, though additional capabilities may be needed during those phases.
 
-#### 5A: Streaming Responses
-- [ ] Streaming responses via MCP protocol
-- [ ] Server-sent events support
-- [ ] Progressive UI updates
-- [ ] Cancellable streaming operations
+#### 5A: Streaming Responses (COMPLETE - January 22, 2026)
+- [x] Streaming responses via provider APIs (SSE/NDJSON)
+- [x] Server-sent events parsing (OpenAI, Anthropic, DeepSeek)
+- [x] NDJSON streaming support (Ollama)
+- [x] Task-based concurrent streaming with Stream.resource
+- [x] Token usage tracking in streaming mode
+- [x] Pipeline integration (stream_query, stream_explain, stream_suggest)
+- [x] MCP tools (rag_query_stream, rag_explain_stream, rag_suggest_stream)
+- [x] Documentation (STREAMING.md)
+- [ ] Full MCP notification protocol (deferred to Phase 5C)
+- [ ] Real-time chunk delivery to MCP clients (deferred to Phase 5C)
+
+**Deliverables:**
+- 600 lines of new streaming code across 5 files
+- All 4 providers support streaming (OpenAI, Anthropic, DeepSeek, Ollama)
+- 3 new MCP tools for streaming RAG operations
+- STREAMING.md documentation (327 lines)
+- All 343 tests passing (zero breaking changes)
 
 #### 5B: Enhanced Retrieval Strategies  
 - [ ] MetaAST-enhanced retrieval (leverage Metastatic metadata)

@@ -198,6 +198,8 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
     ▸ AI Provider Abstraction  
       ▹ Provider Behaviour: Clean interface for multiple AI providers  
       ▹ DeepSeek R1: Full integration with deepseek-chat and deepseek-reasoner models  
+      ▹ Streaming Support: All providers support streaming responses (SSE/NDJSON)  
+      ▹ Real-time Responses: Progressive content delivery with token usage tracking  
       ▹ OpenAI: GPT-4, GPT-4-turbo, GPT-3.5-turbo support  
       ▹ Anthropic: Claude 3 Opus, Sonnet, and Haiku models  
       ▹ Ollama: Local LLM support (llama2, mistral, codellama, phi)  
@@ -238,26 +240,32 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ `rag_query`: Answer general codebase questions with AI  
       ▹ `rag_explain`: Explain code with aspect focus (purpose, complexity, dependencies, all)  
       ▹ `rag_suggest`: Suggest improvements (performance, readability, testing, security, all)  
+      ▹ `rag_query_stream`: Streaming version of rag_query (internally uses streaming)  
+      ▹ `rag_explain_stream`: Streaming version of rag_explain (internally uses streaming)  
+      ▹ `rag_suggest_stream`: Streaming version of rag_suggest (internally uses streaming)  
       ▹ `get_ai_usage`: Query usage statistics and costs per provider  
       ▹ `get_ai_cache_stats`: View cache performance metrics  
       ▹ `clear_ai_cache`: Clear cache via MCP  
       ▹ Provider Override: Select provider per-query (openai, anthropic, deepseek_r1, ollama)  
-      ▹ Documentation: See [RAG_IMPLEMENTATION_SUMMARY.md](RAG_IMPLEMENTATION_SUMMARY.md)
+      ▹ Documentation: See [RAG_IMPLEMENTATION_SUMMARY.md](RAG_IMPLEMENTATION_SUMMARY.md) and [STREAMING.md](STREAMING.md)
 </details>
 
 ### Planned Features
 
-- [ ] Streaming RAG responses via MCP
-- [ ] Provider health checks and auto-failover
-- [ ] Production optimizations (performance tuning)
-- [ ] Additional language support (Go, Rust, Java, …)
-- [ ] Advanced cost analytics and budget alerts
+- [x] Streaming RAG responses (Phase 5A complete - internal streaming, MCP notifications in Phase 5C)
+- [ ] MetaAST-enhanced retrieval (Phase 5B)
+- [ ] Provider health checks and auto-failover (Phase 5C)
+- [ ] Production optimizations (Phase 6)
+- [ ] Additional language support (Phase 7: Go, Rust, Java)
+- [ ] Enhanced refactoring capabilities (Phase 10)
+- [ ] Advanced analysis and insights (Phase 11)
+- [ ] Developer experience improvements (Phase 12)
 
 ## Architecture
 
 ```mermaid
 graph TD
-    MCP["MCP Server (stdio)<br/>25 Tools + 6 Resources + 6 Prompts"]
+    MCP["MCP Server (stdio)<br/>28 Tools + 6 Resources + 6 Prompts"]
     
     MCP --> Tools["Tools Handler"]
     MCP --> Resources["Resources Handler"]

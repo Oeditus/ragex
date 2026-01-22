@@ -48,16 +48,58 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
   def stream_generate(prompt, context, opts \\ []) do
     config = Config.api_config()
     opts = Config.generation_opts(Keyword.put(opts, :stream, true))
-
     body = build_request_body(prompt, context, opts, config.model)
 
-    case make_request(config, body, stream: true) do
-      {:ok, stream} ->
-        {:ok, Stream.map(stream, &parse_stream_chunk/1)}
+    url = "#{config.endpoint}/chat/completions"
 
-      {:error, reason} ->
-        {:error, reason}
-    end
+    headers = [
+      {"authorization", "Bearer #{config.api_key}"},
+      {"content-type", "application/json"}
+    ]
+
+    parent = self()
+
+    task =
+      Task.async(fn ->
+        case Req.post(url,
+               json: body,
+               headers: headers,
+               into: fn {:data, data}, {req, resp} ->
+                 send(parent, {:stream_chunk, data})
+                 {:cont, {req, resp}}
+               end
+             ) do
+          {:ok, %{status: 200}} ->
+            send(parent, :stream_done)
+            :ok
+
+          {:ok, response} ->
+            send(parent, {:stream_error, {:api_error, response.status, response.body}})
+            {:error, {:api_error, response.status}}
+
+          {:error, reason} ->
+            send(parent, {:stream_error, {:http_error, reason}})
+            {:error, {:http_error, reason}}
+        end
+      end)
+
+    stream =
+      Stream.resource(
+        fn -> %{task: task, buffer: "", usage: %{}, model: config.model, done: false} end,
+        fn state ->
+          if state.done do
+            {:halt, state}
+          else
+            receive_deepseek_chunks(state)
+          end
+        end,
+        fn state ->
+          if Process.alive?(state.task.pid), do: Task.shutdown(state.task, :brutal_kill)
+          :ok
+        end
+      )
+
+    {:ok, stream}
   end
 
   @impl true
@@ -234,18 +276,108 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
 
   defp parse_response(_), do: {:error, "Invalid response format"}
 
-  defp parse_stream_chunk(chunk) when is_binary(chunk) do
-    # SSE format: "data: {...}\n\n"
-    with "data: " <> json_str <- String.trim(chunk),
-         {:ok, data} <- Jason.decode(json_str) do
-      delta = get_in(data, ["choices", Access.at(0), "delta", "content"]) || ""
-      done = get_in(data, ["choices", Access.at(0), "finish_reason"]) != nil
+  defp receive_deepseek_chunks(state) do
+    receive do
+      {:stream_chunk, data} ->
+        new_buffer = state.buffer <> data
+        {events, remaining} = extract_sse_events(new_buffer)
 
-      %{content: delta, done: done, metadata: data}
-    else
-      _ -> %{content: "", done: false, metadata: %{}}
+        {chunks, new_state} =
+          Enum.flat_map_reduce(events, %{state | buffer: remaining}, fn event, acc ->
+            case parse_deepseek_event(event) do
+              {:chunk, chunk, usage} ->
+                updated_acc = if usage, do: %{acc | usage: usage}, else: acc
+                {[chunk], updated_acc}
+
+              {:done, finish_reason, usage} ->
+                final_usage = usage || acc.usage
+
+                final_chunk = %{
+                  content: "",
+                  done: true,
+                  metadata: %{
+                    finish_reason: finish_reason,
+                    provider: :deepseek_r1,
+                    model: acc.model,
+                    usage: final_usage
+                  }
+                }
+
+                {[final_chunk], %{acc | done: true}}
+
+              :skip ->
+                {[], acc}
+            end
+          end)
+
+        {chunks, new_state}
+
+      :stream_done ->
+        if state.done do
+          {:halt, state}
+        else
+          final_chunk = %{
+            content: "",
+            done: true,
+            metadata: %{
+              finish_reason: "stop",
+              provider: :deepseek_r1,
+              model: state.model,
+              usage: state.usage
+            }
+          }
+
+          {[final_chunk], %{state | done: true}}
+        end
+
+      {:stream_error, error} ->
+        {[{:error, error}], %{state | done: true}}
+    after
+      30_000 -> {[{:error, :timeout}], %{state | done: true}}
     end
   end
+
+  defp extract_sse_events(buffer) do
+    case String.split(buffer, "\n\n") do
+      [] ->
+        {[], ""}
+
+      [incomplete] ->
+        {[], incomplete}
+
+      parts ->
+        [incomplete | complete_reversed] = Enum.reverse(parts)
+        {Enum.reverse(complete_reversed), incomplete}
+    end
+  end
+
+  defp parse_deepseek_event("data: [DONE]" <> _), do: {:done, "stop", nil}
+
+  defp parse_deepseek_event("data: " <> json_str) do
+    with {:ok, data} <- Jason.decode(String.trim(json_str)),
+         %{"choices" => [choice | _]} <- data do
+      delta = choice["delta"] || %{}
+      content = delta["content"] || ""
+      finish_reason = choice["finish_reason"]
+      usage = data["usage"]
+
+      cond do
+        finish_reason != nil ->
+          {:done, finish_reason, usage}
+
+        content != "" ->
+          chunk = %{content: content, done: false, metadata: %{provider: :deepseek_r1}}
+          {:chunk, chunk, usage}
+
+        true ->
+          :skip
+      end
+    else
+      _ -> :skip
+    end
+  end
+
+  defp parse_deepseek_event(_), do: :skip
 
   defp valid_endpoint?(endpoint) do
     String.starts_with?(endpoint, "https://api.deepseek.com")
