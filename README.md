@@ -131,14 +131,26 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ Transaction Validation: Pre-validate all files before applying changes  
       ▹ MCP Integration: `edit_files` tool for coordinated multi-file edits
 
-    ▸ Semantic Refactoring  
-      ▹ AST Manipulation: Elixir-specific AST parsing and transformation  
-      ▹ Rename Function: Rename functions with automatic call site updates  
-      ▹ Rename Module: Rename modules with reference updates  
-      ▹ Graph Integration: Use knowledge graph to find all affected files  
-      ▹ Arity Support: Handle functions with multiple arities correctly  
-      ▹ Scope Control: Module-level or project-wide refactoring  
-      ▹ MCP Integration: `refactor_code` tool for semantic refactoring
+    ▸ Semantic Refactoring  
+      ▹ AST Manipulation: Elixir-specific AST parsing and transformation  
+      ▹ Rename Function: Rename functions with automatic call site updates  
+      ▹ Rename Module: Rename modules with reference updates  
+      ▹ Graph Integration: Use knowledge graph to find all affected files  
+      ▹ Arity Support: Handle functions with multiple arities correctly  
+      ▹ Scope Control: Module-level or project-wide refactoring  
+      ▹ MCP Integration: `refactor_code` tool for semantic refactoring
+
+    ▸ Advanced Refactoring (Phase 10A)  
+      ▹ Extract Function: Extract code range into new function (basic support)  
+      ▹ Inline Function: Replace all calls with function body, remove definition (fully working)  
+      ▹ Convert Visibility: Toggle between `def` and `defp` (fully working)  
+      ▹ Rename Parameter: Rename parameter within function scope (fully working)  
+      ▹ Modify Attributes: Add/remove/update module attributes (fully working)  
+      ▹ Change Signature: Add/remove/reorder/rename parameters with call site updates (fully working)  
+      ▹ Move Function: Move function between modules (deferred - requires advanced semantic analysis)  
+      ▹ Extract Module: Extract multiple functions into new module (deferred - requires advanced semantic analysis)  
+      ▹ MCP Integration: `advanced_refactor` tool with 8 operation types  
+      ▹ Status: 6 of 8 operations fully functional, 2 deferred pending semantic analysis enhancements
 </details>
 <details>
   <summary>Advanced Graph Algorithms</summary>

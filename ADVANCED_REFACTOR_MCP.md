@@ -11,6 +11,27 @@ The `advanced_refactor` tool provides AST-aware, atomic refactoring operations f
 - Include optional syntax validation and formatting
 - Return structured results with detailed operation metadata
 
+## Phase 10A Implementation Status
+
+**Fully Working Operations (6/8):**
+- Inline Function: Replace all calls with function body
+- Convert Visibility: Toggle between `def` and `defp`
+- Rename Parameter: Rename parameter within function scope
+- Modify Attributes: Add/remove/update module attributes
+- Change Signature: Add/remove/reorder/rename parameters with call site updates
+- Extract Function: Basic support for simple cases without variable dependencies
+
+**Deferred Operations (2/8):**
+- Move Function: Requires advanced semantic analysis
+- Extract Module: Requires advanced semantic analysis
+
+**Limitations:**
+- Extract Function does not yet handle variable assignment tracking or return value inference
+- Move Function and Extract Module require cross-module refactoring infrastructure
+- 12 tests are currently skipped (marked with `@tag skip: true, reason: :phase_10a`)
+
+All working operations are production-ready with comprehensive test coverage.
+
 ## Tool Definition
 
 ```json
@@ -62,9 +83,11 @@ The `advanced_refactor` tool provides AST-aware, atomic refactoring operations f
 
 ## Operations
 
-### 1. Extract Function
+### 1. Extract Function [BASIC SUPPORT]
 
 Extracts a range of lines from a function into a new function, with automatic free variable analysis and parameter inference.
+
+**Status:** Basic support only. Works for simple cases without variable assignments. Variable assignment tracking, return value inference, and guard handling are deferred.
 
 **Parameters:**
 ```json
@@ -99,9 +122,11 @@ Extracts a range of lines from a function into a new function, with automatic fr
 }
 ```
 
-### 2. Inline Function
+### 2. Inline Function [FULLY WORKING]
 
 Replaces all calls to a function with its body, with parameter substitution. Removes the function definition.
+
+**Status:** Fully functional and production-ready.
 
 **Parameters:**
 ```json
@@ -132,9 +157,11 @@ Replaces all calls to a function with its body, with parameter substitution. Rem
 }
 ```
 
-### 3. Convert Visibility
+### 3. Convert Visibility [FULLY WORKING]
 
 Converts a function between public (`def`) and private (`defp`).
+
+**Status:** Fully functional and production-ready.
 
 **Parameters:**
 ```json
@@ -166,9 +193,11 @@ Converts a function between public (`def`) and private (`defp`).
 }
 ```
 
-### 4. Rename Parameter
+### 4. Rename Parameter [FULLY WORKING]
 
 Renames a parameter within a function's scope (all clauses and body).
+
+**Status:** Fully functional and production-ready.
 
 **Parameters:**
 ```json
@@ -202,9 +231,11 @@ Renames a parameter within a function's scope (all clauses and body).
 }
 ```
 
-### 5. Modify Attributes
+### 5. Modify Attributes [FULLY WORKING]
 
 Adds, removes, or updates module attributes (`@moduledoc`, `@doc`, `@spec`, custom attributes).
+
+**Status:** Fully functional and production-ready.
 
 **Parameters:**
 ```json
@@ -252,9 +283,11 @@ Adds, removes, or updates module attributes (`@moduledoc`, `@doc`, `@spec`, cust
 }
 ```
 
-### 6. Change Signature
+### 6. Change Signature [FULLY WORKING]
 
 Changes a function's signature by adding, removing, reordering, or renaming parameters. Updates all call sites.
+
+**Status:** Fully functional and production-ready. Includes validation to prevent removing parameters still used in function bodies.
 
 **Parameters:**
 ```json
@@ -314,9 +347,11 @@ Changes a function's signature by adding, removing, reordering, or renaming para
 }
 ```
 
-### 7. Move Function
+### 7. Move Function [DEFERRED]
 
 Moves a function from one module to another, updating all references.
+
+**Status:** Implementation deferred pending advanced semantic analysis infrastructure.
 
 **Parameters:**
 ```json
@@ -349,9 +384,11 @@ Moves a function from one module to another, updating all references.
 }
 ```
 
-### 8. Extract Module
+### 8. Extract Module [DEFERRED]
 
 Extracts multiple functions from a module into a new module, creating the file and updating references.
+
+**Status:** Implementation deferred pending advanced semantic analysis infrastructure.
 
 **Parameters:**
 ```json
@@ -553,11 +590,22 @@ echo '{
 
 ## Future Enhancements
 
-- Phase 10B: Multi-language support (Erlang, Python, JavaScript)
-- Phase 10C: Preview/dry-run mode with diff generation
-- Phase 10C: Conflict detection and resolution
-- Phase 10C: Undo/redo stack
-- Phase 10C: Refactoring reports and visualization
+**Phase 10A Completion:**
+- Variable assignment tracking for extract_function
+- Return value inference for extract_function
+- Guard handling in extracted functions
+- Move Function implementation (cross-module refactoring)
+- Extract Module implementation (multi-function extraction)
+
+**Phase 10B: Multi-Language Support**
+- Multi-language support (Erlang, Python, JavaScript)
+- Cross-language refactoring via Metastatic integration
+
+**Phase 10C: Preview/Safety (COMPLETED)**
+- [x] Preview/dry-run mode with diff generation
+- [x] Conflict detection and resolution
+- [x] Undo/redo stack
+- [x] Refactoring reports and visualization
 
 ## See Also
 

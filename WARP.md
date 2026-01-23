@@ -189,6 +189,10 @@ end
 - **Phase 5E**: Semantic refactoring (rename_function, rename_module via AST)
 - **Phase 8**: Advanced graph algorithms (betweenness centrality, closeness centrality, community detection, visualization)
 - **Phase 10A**: Enhanced refactoring (8 operations: extract_function, inline_function, convert_visibility, rename_parameter, modify_attributes, change_signature, move_function, extract_module, plus MCP integration)
+  - Core features: change_signature, modify_attributes, rename_parameter, inline_function, convert_visibility (fully working)
+  - Basic extract_function support (simple cases without variable assignment tracking)
+  - Advanced features deferred: Variable assignment tracking, return value inference, guard handling, cross-module refactoring
+  - 12 tests skipped (marked with `@tag skip: true, reason: :phase_10a`) pending advanced semantic analysis implementation
 - **Phase 10C**: Preview/Safety features (diff generation, preview mode, conflict detection, undo stack, reports, visualization, MCP tools, comprehensive testing)
   - 10C.1: Diff generation (Myers algorithm, 4 formats: unified, side-by-side, JSON, HTML)
   - 10C.2: Preview mode (dry-run capabilities with diffs and stats)
@@ -372,14 +376,20 @@ Core.rollback("path/to/file.ex")
 
 **Phase 10A adds 8 sophisticated refactoring operations accessible via the `advanced_refactor` MCP tool:**
 
-1. **Extract Function**: Extract code range into new function with automatic parameter inference
-2. **Inline Function**: Replace all calls with function body, remove definition
-3. **Convert Visibility**: Toggle between `def` and `defp` (public/private)
-4. **Rename Parameter**: Rename parameter within function scope
-5. **Modify Attributes**: Add/remove/update module attributes
-6. **Change Signature**: Add/remove/reorder/rename parameters with call site updates
-7. **Move Function**: Move function between modules with reference updates
-8. **Extract Module**: Extract multiple functions into new module with file creation
+1. **Extract Function**: Extract code range into new function with automatic parameter inference ⚠️ *Basic support only*
+2. **Inline Function**: Replace all calls with function body, remove definition ✅ *Fully working*
+3. **Convert Visibility**: Toggle between `def` and `defp` (public/private) ✅ *Fully working*
+4. **Rename Parameter**: Rename parameter within function scope ✅ *Fully working*
+5. **Modify Attributes**: Add/remove/update module attributes ✅ *Fully working*
+6. **Change Signature**: Add/remove/reorder/rename parameters with call site updates ✅ *Fully working*
+7. **Move Function**: Move function between modules with reference updates ⚠️ *Deferred*
+8. **Extract Module**: Extract multiple functions into new module with file creation ⚠️ *Deferred*
+
+**Current Status:**
+- Core features (2-6) are fully functional and tested
+- Basic extract_function works for simple cases without variable dependencies
+- Advanced features requiring semantic analysis are deferred (12 tests skipped)
+- Infrastructure in place for future completion
 
 **Using via MCP Tool:**
 ```json

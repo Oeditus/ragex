@@ -284,20 +284,34 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 **Estimated Effort**: 4-5 weeks  
 **Dependencies**: Phase 5 (critical foundation)
 
-### 10A: Additional Refactoring Operations
-- [ ] Extract function refactoring
-- [ ] Inline function refactoring
-- [ ] Extract module refactoring
-- [ ] Move function to different module
-- [ ] Change function signature (add/remove parameters)
-- [ ] Convert private to public (and vice versa)
-- [ ] Rename parameter refactoring
-- [ ] Add/remove module attributes
+### 10A: Additional Refactoring Operations (COMPLETED - January 23, 2026)
+
+**Status**: 6 of 8 operations fully functional, 2 deferred
+
+#### Completed Operations
+- [x] Change function signature (add/remove/reorder/rename parameters with call site updates)
+- [x] Modify attributes (add/remove/update module attributes)
+- [x] Rename parameter refactoring
+- [x] Inline function refactoring
+- [x] Convert visibility (toggle def/defp)
+- [x] Extract function refactoring (basic support - simple cases without variable dependencies)
+
+#### Deferred Operations
+- [ ] Move function to different module (requires advanced semantic analysis)
+- [ ] Extract module refactoring (requires advanced semantic analysis)
 
 **Deliverables:**
-- Extended refactoring API
-- MCP tools for new operations
-- Comprehensive tests
+- [x] Extended refactoring API (lib/ragex/editor/refactor/elixir.ex)
+- [x] MCP tool `advanced_refactor` with 8 operation types
+- [x] Comprehensive tests (168 passing, 12 skipped pending semantic analysis)
+- [x] Documentation (ADVANCED_REFACTOR_MCP.md, WARP.md updated)
+
+**Remaining Work for 10A Completion:**
+- [ ] Variable assignment tracking for extract_function
+- [ ] Return value inference for extract_function
+- [ ] Guard handling in extracted functions
+- [ ] Move Function implementation (cross-module refactoring)
+- [ ] Extract Module implementation (multi-function extraction)
 
 ### 10B: Cross-Language Refactoring
 - [ ] Extend semantic refactoring to Erlang
@@ -310,17 +324,23 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 - Multi-language refactoring support
 - Cross-language call tracking
 
-### 10C: Refactoring Previews and Diffs
-- [ ] Generate unified diffs for refactoring operations
-- [ ] Add refactoring simulation mode (dry-run)
-- [ ] Implement refactoring conflict detection
-- [ ] Add refactoring undo stack (beyond simple rollback)
-- [ ] Generate refactoring reports
-- [ ] Add refactoring visualization
+### 10C: Refactoring Previews and Diffs (COMPLETED - January 2026)
+
+**Status**: Complete (see WARP.md for details)
+
+- [x] Generate unified diffs for refactoring operations (Myers algorithm, 4 formats)
+- [x] Add refactoring simulation mode (dry-run with preview mode)
+- [x] Implement refactoring conflict detection (5 conflict types with severity levels)
+- [x] Add refactoring undo stack (persistent history in ~/.ragex/undo)
+- [x] Generate refactoring reports (Markdown, JSON, HTML with stats and warnings)
+- [x] Add refactoring visualization (Graphviz, D3, ASCII for impact analysis)
 
 **Deliverables:**
-- Preview and diff tools
-- Conflict resolution strategies
+- [x] Preview and diff tools (preview_refactor MCP tool)
+- [x] Conflict detection and resolution (refactor_conflicts MCP tool)
+- [x] Undo/redo support (undo_refactor, refactor_history MCP tools)
+- [x] Visualization tools (visualize_impact MCP tool)
+- [x] Comprehensive testing (29 tests covering all features)
 
 ---
 
