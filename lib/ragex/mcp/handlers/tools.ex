@@ -5,7 +5,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   Implements the tools/list and tools/call methods.
   """
   alias Ragex.AI.{Cache, Usage}
-  alias Ragex.Analysis.{DeadCode, DependencyGraph, MetastaticBridge, QualityStore}
+  alias Ragex.Analysis.{DeadCode, DependencyGraph, Duplication, MetastaticBridge, QualityStore}
   alias Ragex.Analyzers.Directory
   alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
@@ -1371,6 +1371,76 @@ defmodule Ragex.MCP.Handlers.Tools do
               }
             }
           }
+        },
+        %{
+          name: "find_duplicates",
+          description:
+            "Find code duplicates using AST-based clone detection (Type I-IV) - works across different languages via Metastatic",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              path: %{
+                type: "string",
+                description:
+                  "File path or directory to analyze (if two paths separated by comma, compares them)"
+              },
+              threshold: %{
+                type: "number",
+                description: "Similarity threshold for Type III clones (0.0-1.0)",
+                default: 0.8
+              },
+              recursive: %{
+                type: "boolean",
+                description: "Recursively scan directories",
+                default: true
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              },
+              exclude_patterns: %{
+                type: "array",
+                description: "Patterns to exclude from scan",
+                items: %{type: "string"},
+                default: ["_build", "deps", ".git"]
+              }
+            },
+            required: ["path"]
+          }
+        },
+        %{
+          name: "find_similar_code",
+          description:
+            "Find semantically similar code using embedding-based similarity - complements AST-based duplicate detection",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              threshold: %{
+                type: "number",
+                description: "Similarity threshold (0.0-1.0)",
+                default: 0.95
+              },
+              limit: %{
+                type: "integer",
+                description: "Maximum number of similar pairs to return",
+                default: 100
+              },
+              node_type: %{
+                type: "string",
+                description: "Type of code entity to compare",
+                enum: ["function", "module"],
+                default: "function"
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              }
+            }
+          }
         }
       ]
     }
@@ -1528,6 +1598,12 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "coupling_report" ->
         coupling_report_tool(arguments)
+
+      "find_duplicates" ->
+        find_duplicates_tool(arguments)
+
+      "find_similar_code" ->
+        find_similar_code_tool(arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
@@ -4511,7 +4587,7 @@ defmodule Ragex.MCP.Handlers.Tools do
         filtered =
           if threshold > 0 do
             Enum.filter(all_metrics, fn {_module, metrics} ->
-              metrics.afferent + metrics.efferent >= threshold
+              metrics.afferent + metrics.afferent >= threshold
             end)
           else
             all_metrics
@@ -4521,6 +4597,85 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       {:error, reason} ->
         {:error, "Failed to generate coupling report: #{inspect(reason)}"}
+    end
+  end
+
+  defp find_duplicates_tool(%{"path" => path} = params) do
+    threshold = Map.get(params, "threshold", 0.8)
+    recursive = Map.get(params, "recursive", true)
+    format = Map.get(params, "format", "summary")
+    exclude_patterns = Map.get(params, "exclude_patterns", ["_build", "deps", ".git"])
+
+    opts = [
+      threshold: threshold,
+      recursive: recursive,
+      exclude_patterns: exclude_patterns
+    ]
+
+    # Check if comparing two specific files (comma-separated)
+    case String.split(path, ",") do
+      [file1, file2] ->
+        # Compare two files
+        file1 = String.trim(file1)
+        file2 = String.trim(file2)
+
+        case Duplication.detect_between_files(file1, file2, opts) do
+          {:ok, result} ->
+            format_duplicate_result(file1, file2, result, format)
+
+          {:error, reason} ->
+            {:error, "Failed to detect duplicates: #{inspect(reason)}"}
+        end
+
+      [single_path] ->
+        # Analyze directory or single file context
+        single_path = String.trim(single_path)
+
+        cond do
+          File.dir?(single_path) ->
+            case Duplication.detect_in_directory(single_path, opts) do
+              {:ok, clones} ->
+                format_duplicates_result(clones, format)
+
+              {:error, reason} ->
+                {:error, "Failed to detect duplicates: #{inspect(reason)}"}
+            end
+
+          File.regular?(single_path) ->
+            {:error,
+             "Single file provided. Please provide a directory or two files separated by comma."}
+
+          true ->
+            {:error, "Path not found: #{single_path}"}
+        end
+
+      _ ->
+        {:error, "Invalid path format. Use a directory or two files separated by comma."}
+    end
+  end
+
+  defp find_duplicates_tool(_), do: {:error, "Invalid parameters for find_duplicates"}
+
+  defp find_similar_code_tool(params) do
+    threshold = Map.get(params, "threshold", 0.95)
+    limit = Map.get(params, "limit", 100)
+    node_type_str = Map.get(params, "node_type", "function")
+    format = Map.get(params, "format", "summary")
+
+    node_type = String.to_atom(node_type_str)
+
+    opts = [
+      threshold: threshold,
+      limit: limit,
+      node_type: node_type
+    ]
+
+    case Duplication.find_similar_functions(opts) do
+      {:ok, similar_pairs} ->
+        format_similar_code_result(similar_pairs, format)
+
+      {:error, reason} ->
+        {:error, "Failed to find similar code: #{inspect(reason)}"}
     end
   end
 
@@ -4926,4 +5081,198 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp extract_function_parts({:function, module, name, arity}), do: {module, name, arity}
+
+  # Duplication formatting helpers
+
+  defp format_duplicate_result(file1, file2, result, "json") do
+    {:ok,
+     %{
+       status: "success",
+       file1: file1,
+       file2: file2,
+       duplicate: result.duplicate?,
+       clone_type: result.clone_type,
+       similarity: result.similarity_score,
+       summary: result.summary || ""
+     }}
+  end
+
+  defp format_duplicate_result(file1, file2, result, "detailed") do
+    content = """
+    Duplicate Detection Result
+    =========================
+    File 1: #{file1}
+    File 2: #{file2}
+
+    Duplicate: #{if result.duplicate?, do: "YES", else: "NO"}
+    #{if result.duplicate? do
+      "Clone Type: #{format_clone_type(result.clone_type)}\nSimilarity: #{Float.round(result.similarity_score, 3)}\n\nSummary:\n#{result.summary || ""}"
+    else
+      "These files are not duplicates."
+    end}
+    """
+
+    {:ok, %{status: "success", duplicate: result.duplicate?, summary: String.trim(content)}}
+  end
+
+  defp format_duplicate_result(_file1, _file2, result, "summary") do
+    if result.duplicate? do
+      {:ok,
+       %{
+         status: "success",
+         duplicate: true,
+         summary:
+           "Duplicate detected: #{format_clone_type(result.clone_type)} (similarity: #{Float.round(result.similarity_score, 2)})"
+       }}
+    else
+      {:ok, %{status: "success", duplicate: false, summary: "No duplication detected."}}
+    end
+  end
+
+  defp format_duplicates_result(clones, "json") do
+    {:ok,
+     %{
+       status: "success",
+       total_clones: length(clones),
+       clones:
+         Enum.map(clones, fn clone ->
+           %{
+             file1: clone.file1,
+             file2: clone.file2,
+             clone_type: clone.clone_type,
+             similarity: clone.similarity
+           }
+         end)
+     }}
+  end
+
+  defp format_duplicates_result(clones, "detailed") do
+    content =
+      if length(clones) > 0 do
+        by_type =
+          Enum.group_by(clones, & &1.clone_type)
+          |> Enum.map_join("\n", fn {type, group} ->
+            "  #{format_clone_type(type)}: #{length(group)}"
+          end)
+
+        pairs =
+          Enum.map_join(clones, "\n\n", fn clone ->
+            """
+            #{clone.file1} <-> #{clone.file2}
+              Type: #{format_clone_type(clone.clone_type)}
+              Similarity: #{Float.round(clone.similarity, 3)}
+            """
+          end)
+
+        """
+        Code Duplication Report
+        ======================
+        Total Duplicate Pairs: #{length(clones)}
+
+        By Clone Type:
+        #{by_type}
+
+        Duplicate Pairs:
+        #{pairs}
+        """
+      else
+        "No duplicates found."
+      end
+
+    {:ok, %{status: "success", total_clones: length(clones), summary: String.trim(content)}}
+  end
+
+  defp format_duplicates_result(clones, "summary") do
+    if length(clones) > 0 do
+      by_type =
+        Enum.group_by(clones, & &1.clone_type)
+        |> Enum.map_join(", ", fn {type, group} ->
+          "#{length(group)} #{format_clone_type(type)}"
+        end)
+
+      {:ok,
+       %{
+         status: "success",
+         total_clones: length(clones),
+         summary: "Found #{length(clones)} duplicate pairs: #{by_type}"
+       }}
+    else
+      {:ok, %{status: "success", total_clones: 0, summary: "No duplicates found."}}
+    end
+  end
+
+  defp format_similar_code_result(pairs, "json") do
+    {:ok,
+     %{
+       status: "success",
+       total_pairs: length(pairs),
+       pairs:
+         Enum.map(pairs, fn pair ->
+           %{
+             function1: format_function_ref(pair.function1),
+             function2: format_function_ref(pair.function2),
+             similarity: pair.similarity,
+             method: pair.method
+           }
+         end)
+     }}
+  end
+
+  defp format_similar_code_result(pairs, "detailed") do
+    content =
+      if length(pairs) > 0 do
+        avg_sim =
+          (Enum.sum(Enum.map(pairs, & &1.similarity)) / length(pairs))
+          |> Float.round(3)
+
+        pairs_text =
+          Enum.map_join(pairs, "\n\n", fn pair ->
+            """
+            #{format_function_ref(pair.function1)} ~ #{format_function_ref(pair.function2)}
+              Similarity: #{Float.round(pair.similarity, 3)}
+              Method: #{pair.method}
+            """
+          end)
+
+        """
+        Similar Code Report
+        ==================
+        Total Similar Pairs: #{length(pairs)}
+        Average Similarity: #{avg_sim}
+
+        Similar Pairs:
+        #{pairs_text}
+        """
+      else
+        "No similar code found."
+      end
+
+    {:ok, %{status: "success", total_pairs: length(pairs), summary: String.trim(content)}}
+  end
+
+  defp format_similar_code_result(pairs, "summary") do
+    if length(pairs) > 0 do
+      avg_sim =
+        (Enum.sum(Enum.map(pairs, & &1.similarity)) / length(pairs))
+        |> Float.round(2)
+
+      {:ok,
+       %{
+         status: "success",
+         total_pairs: length(pairs),
+         summary: "Found #{length(pairs)} similar pairs (avg similarity: #{avg_sim})"
+       }}
+    else
+      {:ok, %{status: "success", total_pairs: 0, summary: "No similar code found."}}
+    end
+  end
+
+  defp format_clone_type(:type_i), do: "Type I (Exact)"
+  defp format_clone_type(:type_ii), do: "Type II (Renamed)"
+  defp format_clone_type(:type_iii), do: "Type III (Near-miss)"
+  defp format_clone_type(:type_iv), do: "Type IV (Semantic)"
+  defp format_clone_type(other), do: to_string(other)
+
+  defp format_function_ref({:function, module, name, arity}), do: "#{module}.#{name}/#{arity}"
+  defp format_function_ref(other), do: inspect(other)
 end
