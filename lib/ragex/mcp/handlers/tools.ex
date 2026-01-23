@@ -5,7 +5,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   Implements the tools/list and tools/call methods.
   """
   alias Ragex.AI.{Cache, Usage}
-  alias Ragex.Analysis.{DeadCode, DependencyGraph, Duplication, MetastaticBridge, QualityStore}
+  alias Ragex.Analysis.{DeadCode, DependencyGraph, Duplication, Impact, MetastaticBridge, QualityStore}
   alias Ragex.Analyzers.Directory
   alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
@@ -1441,6 +1441,94 @@ defmodule Ragex.MCP.Handlers.Tools do
               }
             }
           }
+        },
+        %{
+          name: "analyze_impact",
+          description:
+            "Analyze the impact of changing a function or module - finds all affected code via graph traversal",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              target: %{
+                type: "string",
+                description:
+                  "Target to analyze (format: 'Module.function/arity' or 'Module' for modules)"
+              },
+              depth: %{
+                type: "integer",
+                description: "Maximum traversal depth",
+                default: 5
+              },
+              include_tests: %{
+                type: "boolean",
+                description: "Include test files in analysis",
+                default: true
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              }
+            },
+            required: ["target"]
+          }
+        },
+        %{
+          name: "estimate_refactoring_effort",
+          description:
+            "Estimate effort required for a refactoring operation - provides time estimates and recommendations",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              operation: %{
+                type: "string",
+                description: "Refactoring operation type",
+                enum: [
+                  "rename_function",
+                  "rename_module",
+                  "extract_function",
+                  "inline_function",
+                  "move_function",
+                  "change_signature"
+                ]
+              },
+              target: %{
+                type: "string",
+                description:
+                  "Target to refactor (format: 'Module.function/arity' or 'Module' for modules)"
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              }
+            },
+            required: ["operation", "target"]
+          }
+        },
+        %{
+          name: "risk_assessment",
+          description:
+            "Calculate risk score for changing a function or module - combines importance, coupling, and complexity",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              target: %{
+                type: "string",
+                description:
+                  "Target to assess (format: 'Module.function/arity' or 'Module' for modules)"
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              }
+            },
+            required: ["target"]
+          }
         }
       ]
     }
@@ -1604,6 +1692,15 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "find_similar_code" ->
         find_similar_code_tool(arguments)
+
+      "analyze_impact" ->
+        analyze_impact_tool(arguments)
+
+      "estimate_refactoring_effort" ->
+        estimate_refactoring_effort_tool(arguments)
+
+      "risk_assessment" ->
+        risk_assessment_tool(arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
@@ -4678,6 +4775,267 @@ defmodule Ragex.MCP.Handlers.Tools do
         {:error, "Failed to find similar code: #{inspect(reason)}"}
     end
   end
+
+  # Impact analysis tool implementations (Phase 11 Week 4)
+
+  defp analyze_impact_tool(%{"target" => target_str} = params) do
+    depth = Map.get(params, "depth", 5)
+    include_tests = Map.get(params, "include_tests", true)
+    format = Map.get(params, "format", "summary")
+
+    # Parse target string: "Module.function/arity" or "Module"
+    case parse_target_string(target_str) do
+      {:ok, target} ->
+        opts = [
+          depth: depth,
+          include_tests: include_tests
+        ]
+
+        case Ragex.Analysis.Impact.analyze_change(target, opts) do
+          {:ok, analysis} ->
+            format_impact_analysis(analysis, format)
+
+          {:error, reason} ->
+            {:error, "Impact analysis failed: #{inspect(reason)}"}
+        end
+
+      {:error, reason} ->
+        {:error, "Invalid target format: #{reason}. Use 'Module.function/arity' or 'Module'"}
+    end
+  end
+
+  defp analyze_impact_tool(_), do: {:error, "Missing required 'target' parameter"}
+
+  defp estimate_refactoring_effort_tool(%{"operation" => operation_str, "target" => target_str} = params) do
+    format = Map.get(params, "format", "summary")
+
+    operation = String.to_atom(operation_str)
+    
+    # Parse target string
+    case parse_target_string(target_str) do
+      {:ok, target} ->
+        case Ragex.Analysis.Impact.estimate_effort(operation, target, []) do
+          {:ok, estimate} ->
+            format_effort_estimate(estimate, format)
+
+          {:error, reason} ->
+            {:error, "Effort estimation failed: #{inspect(reason)}"}
+        end
+
+      {:error, reason} ->
+        {:error, "Invalid target format: #{reason}. Use 'Module.function/arity' or 'Module'"}
+    end
+  end
+
+  defp estimate_refactoring_effort_tool(_), do: {:error, "Missing required parameters"}
+
+  defp risk_assessment_tool(%{"target" => target_str} = params) do
+    format = Map.get(params, "format", "summary")
+
+    # Parse target string
+    case parse_target_string(target_str) do
+      {:ok, target} ->
+        case Ragex.Analysis.Impact.risk_score(target) do
+          {:ok, risk} ->
+            format_risk_assessment(risk, format)
+
+          {:error, reason} ->
+            {:error, "Risk assessment failed: #{inspect(reason)}"}
+        end
+
+      {:error, reason} ->
+        {:error, "Invalid target format: #{reason}. Use 'Module.function/arity' or 'Module'"}
+    end
+  end
+
+  defp risk_assessment_tool(_), do: {:error, "Missing required 'target' parameter"}
+
+  # Helper functions for impact analysis tools
+
+  defp parse_target_string(target_str) do
+    cond do
+      # Module.function/arity format
+      String.contains?(target_str, "/") and String.contains?(target_str, ".") ->
+        case String.split(target_str, ".", parts: 2) do
+          [module_str, func_arity] ->
+            case String.split(func_arity, "/") do
+              [func_str, arity_str] ->
+                case Integer.parse(arity_str) do
+                  {arity, ""} ->
+                    module = String.to_existing_atom("Elixir." <> module_str)
+                    function = String.to_atom(func_str)
+                    {:ok, {:function, module, function, arity}}
+
+                  _ ->
+                    {:error, "Invalid arity: #{arity_str}"}
+                end
+
+              _ ->
+                {:error, "Invalid function/arity format"}
+            end
+
+          _ ->
+            {:error, "Invalid module.function format"}
+        end
+
+      # Module format
+      true ->
+        try do
+          module = String.to_existing_atom("Elixir." <> target_str)
+          {:ok, {:module, module}}
+        rescue
+          ArgumentError ->
+            {:error, "Module not found: #{target_str}"}
+        end
+    end
+  end
+
+  defp format_impact_analysis(analysis, "json") do
+    {:ok,
+     %{
+       status: "success",
+       target: format_node_id(analysis.target),
+       direct_callers_count: length(analysis.direct_callers),
+       affected_count: analysis.affected_count,
+       depth: analysis.depth,
+       risk_score: Float.round(analysis.risk_score, 4),
+       importance: Float.round(analysis.importance, 4),
+       direct_callers: Enum.map(analysis.direct_callers, &format_node_id/1),
+       all_affected: Enum.map(analysis.all_affected, &format_node_id/1),
+       recommendations: analysis.recommendations
+     }}
+  end
+
+  defp format_impact_analysis(analysis, "detailed") do
+    content = """
+    Impact Analysis
+    ==============
+    Target: #{format_node_id(analysis.target)}
+    Risk Score: #{Float.round(analysis.risk_score, 4)}
+    Importance: #{Float.round(analysis.importance, 4)}
+    
+    Direct Callers: #{length(analysis.direct_callers)}
+    #{Enum.map_join(analysis.direct_callers, "\n", fn caller -> "  - #{format_node_id(caller)}" end)}
+    
+    All Affected: #{analysis.affected_count}
+    #{Enum.map_join(Enum.take(analysis.all_affected, 10), "\n", fn node -> "  - #{format_node_id(node)}" end)}
+    #{if analysis.affected_count > 10, do: "  ... and #{analysis.affected_count - 10} more", else: ""}
+    
+    Recommendations:
+    #{Enum.map_join(analysis.recommendations, "\n", fn rec -> "  - #{rec}" end)}
+    """
+
+    {:ok, %{status: "success", content: String.trim(content)}}
+  end
+
+  defp format_impact_analysis(analysis, "summary") do
+    content = """
+    Impact: #{format_node_id(analysis.target)}
+    Risk: #{Float.round(analysis.risk_score, 2)} | Importance: #{Float.round(analysis.importance, 2)}
+    Direct Callers: #{length(analysis.direct_callers)} | Total Affected: #{analysis.affected_count}
+    """
+
+    {:ok, %{status: "success", summary: String.trim(content)}}
+  end
+
+  defp format_effort_estimate(estimate, "json") do
+    {:ok,
+     %{
+       status: "success",
+       operation: Atom.to_string(estimate.operation),
+       target: format_node_id(estimate.target),
+       estimated_changes: estimate.estimated_changes,
+       complexity: Atom.to_string(estimate.complexity),
+       estimated_time: estimate.estimated_time,
+       risks: estimate.risks,
+       recommendations: estimate.recommendations
+     }}
+  end
+
+  defp format_effort_estimate(estimate, "detailed") do
+    content = """
+    Refactoring Effort Estimate
+    =========================
+    Operation: #{estimate.operation}
+    Target: #{format_node_id(estimate.target)}
+    
+    Estimated Changes: #{estimate.estimated_changes} locations
+    Complexity: #{estimate.complexity}
+    Estimated Time: #{estimate.estimated_time}
+    
+    Risks:
+    #{Enum.map_join(estimate.risks, "\n", fn risk -> "  - #{risk}" end)}
+    
+    Recommendations:
+    #{Enum.map_join(estimate.recommendations, "\n", fn rec -> "  - #{rec}" end)}
+    """
+
+    {:ok, %{status: "success", content: String.trim(content)}}
+  end
+
+  defp format_effort_estimate(estimate, "summary") do
+    content = """
+    Effort: #{estimate.operation} on #{format_node_id(estimate.target)}
+    Changes: #{estimate.estimated_changes} | Complexity: #{estimate.complexity} | Time: #{estimate.estimated_time}
+    """
+
+    {:ok, %{status: "success", summary: String.trim(content)}}
+  end
+
+  defp format_risk_assessment(risk, "json") do
+    {:ok,
+     %{
+       status: "success",
+       target: format_node_id(risk.target),
+       importance: Float.round(risk.importance, 4),
+       coupling: Float.round(risk.coupling, 4),
+       complexity: Float.round(risk.complexity, 4),
+       overall: Float.round(risk.overall, 4),
+       level: Atom.to_string(risk.level),
+       factors: risk.factors
+     }}
+  end
+
+  defp format_risk_assessment(risk, "detailed") do
+    content = """
+    Risk Assessment
+    ==============
+    Target: #{format_node_id(risk.target)}
+    Overall Risk: #{Float.round(risk.overall, 4)} (#{risk.level})
+    
+    Components:
+      - Importance: #{Float.round(risk.importance, 4)} (PageRank-based)
+      - Coupling: #{Float.round(risk.coupling, 4)} (incoming/outgoing edges)
+      - Complexity: #{Float.round(risk.complexity, 4)} (code metrics)
+    
+    Factors:
+    #{format_risk_factors(risk.factors)}
+    """
+
+    {:ok, %{status: "success", content: String.trim(content)}}
+  end
+
+  defp format_risk_assessment(risk, "summary") do
+    content = """
+    Risk: #{format_node_id(risk.target)}
+    Overall: #{Float.round(risk.overall, 2)} (#{risk.level})
+    Importance: #{Float.round(risk.importance, 2)} | Coupling: #{Float.round(risk.coupling, 2)} | Complexity: #{Float.round(risk.complexity, 2)}
+    """
+
+    {:ok, %{status: "success", summary: String.trim(content)}}
+  end
+
+  defp format_risk_factors(factors) when is_map(factors) do
+    Enum.map_join(factors, "\n", fn {key, value} ->
+      "  - #{key}: #{format_risk_factor_value(value)}"
+    end)
+  end
+
+  defp format_risk_factors(_), do: "None"
+
+  defp format_risk_factor_value(value) when is_float(value), do: Float.round(value, 4)
+  defp format_risk_factor_value(value) when is_integer(value), do: value
+  defp format_risk_factor_value(value), do: inspect(value)
 
   # Formatting helpers for dependency tools
 
