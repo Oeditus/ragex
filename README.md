@@ -271,17 +271,76 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ Hybrid Integration: MetaAST ranking applied to all search strategies  
       ▹ MCP Tools: `metaast_search`, `cross_language_alternatives`, `expand_query`, `find_metaast_pattern`  
 </details>
+<details>
+  <summary>Code Analysis & Quality (Phase 11 - January 23, 2026)</summary>
+
+    ▸ Dead Code Detection  
+      ▹ Graph-Based Analysis: Find unused functions via call graph traversal  
+      ▹ Confidence Scoring: 0.0-1.0 score to distinguish callbacks from dead code  
+      ▹ Pattern Detection: AST-based unreachable code detection via Metastatic  
+      ▹ Intraprocedural Analysis: Constant conditionals, unreachable branches  
+      ▹ Interprocedural Analysis: Unused exports, private functions  
+      ▹ Callback Recognition: GenServer, Phoenix, and other framework callbacks  
+      ▹ MCP Tools: `find_dead_code`, `analyze_dead_code_patterns`
+
+    ▸ Dependency Analysis  
+      ▹ Coupling Metrics: Afferent (Ca) and Efferent (Ce) coupling  
+      ▹ Instability: I = Ce / (Ca + Ce) ranges from 0 (stable) to 1 (unstable)  
+      ▹ Circular Dependencies: Detect cycles at module and function levels  
+      ▹ Transitive Dependencies: Optional deep dependency traversal  
+      ▹ God Module Detection: Find modules with high coupling  
+      ▹ MCP Tools: `analyze_dependencies`, `find_circular_dependencies`, `coupling_report`
+
+    ▸ Code Duplication Detection  
+      ▹ AST-Based Clones: Type I-IV clone detection via Metastatic  
+      ▹ Type I: Exact clones (whitespace/comment differences only)  
+      ▹ Type II: Renamed clones (same structure, different identifiers)  
+      ▹ Type III: Near-miss clones (similar with modifications, configurable threshold)  
+      ▹ Type IV: Semantic clones (different syntax, same behavior)  
+      ▹ Embedding-Based Similarity: Semantic code similarity using ML embeddings  
+      ▹ Directory Scanning: Recursive multi-file analysis with exclusion patterns  
+      ▹ Reports: Summary, detailed, and JSON formats  
+      ▹ MCP Tools: `find_duplicates`, `find_similar_code`
+
+    ▸ Impact Analysis (Phase 11 Week 4)  
+      ▹ Change Impact: Predict affected code via graph traversal  
+      ▹ Risk Scoring: Combine importance (PageRank) + coupling + complexity  
+      ▹ Test Discovery: Find affected tests automatically  
+      ▹ Effort Estimation: Estimate refactoring time/complexity for 6 operations  
+      ▹ Risk Levels: Low (<0.3), medium (0.3-0.6), high (0.6-0.8), critical (≥0.8)  
+      ▹ Complexity Levels: Low (<5 changes), medium (5-20), high (20-50), very high (50+)  
+      ▹ Support Operations: rename_function, rename_module, extract_function, inline_function, move_function, change_signature  
+      ▹ MCP Tools: `analyze_impact`, `estimate_refactoring_effort`, `risk_assessment`
+
+    ▸ Quality Metrics (Metastatic Integration)  
+      ▹ Complexity Metrics: Cyclomatic, cognitive, nesting depth  
+      ▹ Halstead Metrics: Difficulty and effort calculations  
+      ▹ Lines of Code: Physical LOC counting  
+      ▹ Purity Analysis: Function purity and side-effect detection  
+      ▹ Function Metrics: Per-function analysis  
+      ▹ Project-wide Reports: Aggregated statistics by language  
+      ▹ MCP Tools: `analyze_quality`, `quality_report`, `find_complex_code`
+
+    ▸ Documentation  
+      ▹ Comprehensive Guide: See [ANALYSIS.md](ANALYSIS.md) for complete API documentation  
+      ▹ Analysis Approaches: AST-based vs embedding-based strategies  
+      ▹ Usage Examples: API and MCP tool examples with code snippets  
+      ▹ Best Practices: Threshold recommendations, workflow tips  
+      ▹ Troubleshooting: Common issues and solutions  
+      ▹ CI/CD Integration: Pre-commit hooks, pipeline examples
+</details>
 
 ### Planned Features
 
 - [x] Streaming RAG responses
 - [x] MCP streaming notifications
 - [x] MetaAST-enhanced retrieval
+- [x] Code quality analysis (Phase 11)
+- [x] Impact analysis and risk assessment
 - [ ] Provider health checks and auto-failover
 - [ ] Production optimizations
 - [ ] Additional language support
-- [ ] Enhanced refactoring capabilities
-- [ ] Advanced analysis and insights
+- [ ] Cross-language refactoring via Metastatic
 - [ ] Developer experience improvements
 
 ## Architecture
