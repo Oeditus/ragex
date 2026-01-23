@@ -13,7 +13,7 @@ defmodule Ragex.Editor.Visualize do
   - ASCII art (for terminal display)
   """
 
-  alias Ragex.Graph.{Store, Algorithms}
+  alias Ragex.Graph.{Algorithms, Store}
 
   @type visualization_format :: :graphviz | :d3_json | :ascii
   @type impact_data :: %{
@@ -221,8 +221,9 @@ defmodule Ragex.Editor.Visualize do
       |> Enum.map(fn node ->
         Map.get(degree_centrality, node, %{total_degree: 0}).total_degree
       end)
-      |> then(fn degrees ->
-        if length(degrees) > 0, do: Enum.sum(degrees) / length(degrees), else: 0.0
+      |> then(fn
+        [_ | _] = degrees -> Enum.sum(degrees) / length(degrees)
+        _ -> 0.0
       end)
 
     # Normalize to 0-1 scale (heuristic)

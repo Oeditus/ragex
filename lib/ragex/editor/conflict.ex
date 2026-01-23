@@ -283,28 +283,28 @@ defmodule Ragex.Editor.Conflict do
     # If making private, check for external callers
     conflicts =
       if new_visibility == :private do
-        external_callers =
-          Store.get_incoming_edges({:function, module_name, function_name, arity}, :calls)
-          |> Enum.map(fn %{from: from_node} -> from_node end)
-          |> Enum.filter(fn {:function, caller_module, _name, _arity} ->
-            caller_module != module_name
-          end)
+        Store.get_incoming_edges({:function, module_name, function_name, arity}, :calls)
+        |> Enum.map(fn %{from: from_node} -> from_node end)
+        |> Enum.filter(fn {:function, caller_module, _name, _arity} ->
+          caller_module != module_name
+        end)
+        |> case do
+          [_ | _] = external_callers ->
+            [
+              %{
+                type: :visibility_conflict,
+                severity: :error,
+                message:
+                  "Cannot make #{module_name}.#{function_name}/#{arity} private: #{length(external_callers)} external caller(s)",
+                file: nil,
+                line: nil,
+                suggestion: "Update or remove external callers first, or keep function public"
+              }
+              | conflicts
+            ]
 
-        if length(external_callers) > 0 do
-          [
-            %{
-              type: :visibility_conflict,
-              severity: :error,
-              message:
-                "Cannot make #{module_name}.#{function_name}/#{arity} private: #{length(external_callers)} external caller(s)",
-              file: nil,
-              line: nil,
-              suggestion: "Update or remove external callers first, or keep function public"
-            }
-            | conflicts
-          ]
-        else
-          conflicts
+          _ ->
+            conflicts
         end
       else
         conflicts
@@ -428,7 +428,7 @@ defmodule Ragex.Editor.Conflict do
 
     {:ok,
      %{
-       has_conflicts: length(conflicts) > 0,
+       has_conflicts: match?([_ | _], conflicts),
        conflicts: conflicts,
        stats: stats
      }}

@@ -71,14 +71,18 @@ defmodule Ragex.Editor.RefactorInlineTest do
         def caller do
           OtherModule.helper(42)
         end
+        
+        defp helper(x), do: x
       end
       """
 
       assert {:ok, new_content} =
                ElixirRefactor.inline_function(content, :Test, :helper, 1)
 
-      # Should inline qualified calls
-      assert new_content =~ "42"
+      # Should NOT inline qualified calls to other modules
+      assert new_content =~ "OtherModule.helper(42)"
+      # But should remove the local helper definition
+      refute new_content =~ "defp helper"
     end
 
     test "fails for multi-clause functions" do
@@ -262,8 +266,13 @@ defmodule Ragex.Editor.RefactorInlineTest do
       assert {:ok, new_content} =
                ElixirRefactor.rename_parameter(content, :Test, :func, 2, "x", "first")
 
-      assert new_content =~ "func(x), do: x"
-      assert new_content =~ "func(first, y), do: first + y"
+      # func/1 should remain unchanged (x not renamed)
+      assert new_content =~ "func(x)"
+      # x is still returned
+      assert new_content =~ ~r/x\s*$/m
+      # func/2 should have parameter renamed to first
+      assert new_content =~ "func(first, y)"
+      assert new_content =~ "first + y"
     end
 
     test "handles parameter with default value" do
@@ -278,7 +287,7 @@ defmodule Ragex.Editor.RefactorInlineTest do
       assert {:ok, new_content} =
                ElixirRefactor.rename_parameter(content, :Test, :func, 1, "opts", "options")
 
-      assert new_content =~ "func(options \\\\\\\\ [])"
+      assert new_content =~ "func(options \\\\ [])"
       assert new_content =~ "Keyword.get(options, :key)"
     end
   end

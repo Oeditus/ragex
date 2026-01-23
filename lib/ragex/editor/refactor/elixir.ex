@@ -399,19 +399,29 @@ defmodule Ragex.Editor.Refactor.Elixir do
 
   # Extract nodes within line range from function body
   defp extract_body_lines(body, start_line, end_line) do
-    {_ast, extracted} =
-      Macro.prewalk(body, [], fn node, acc ->
-        meta = extract_meta(node)
+    case body do
+      {:__block__, _meta, statements} ->
+        # Extract top-level statements within the range
+        Enum.filter(statements, fn stmt ->
+          meta = extract_meta(stmt)
+          line = Keyword.get(meta, :line)
+          line && line >= start_line && line <= end_line
+        end)
+
+      [do: do_block] ->
+        extract_body_lines(do_block, start_line, end_line)
+
+      single_expr ->
+        # Single expression - check if it's in range
+        meta = extract_meta(single_expr)
         line = Keyword.get(meta, :line)
 
         if line && line >= start_line && line <= end_line do
-          {node, [node | acc]}
+          [single_expr]
         else
-          {node, acc}
+          []
         end
-      end)
-
-    Enum.reverse(extracted)
+    end
   end
 
   defp extract_meta({_form, meta, _args}) when is_list(meta), do: meta
@@ -693,10 +703,10 @@ defmodule Ragex.Editor.Refactor.Elixir do
 
   defp insert_new_function(ast, source_function, source_arity, new_function_def, placement) do
     case placement do
-      :after_source ->
+      p when p in [:after_source, :after] ->
         insert_after_function(ast, source_function, source_arity, new_function_def)
 
-      :before_source ->
+      p when p in [:before_source, :before] ->
         insert_before_function(ast, source_function, source_arity, new_function_def)
 
       :end_of_module ->
@@ -707,13 +717,30 @@ defmodule Ragex.Editor.Refactor.Elixir do
   defp insert_after_function(ast, source_function, source_arity, new_function_def) do
     Macro.prewalk(ast, fn node ->
       case node do
+        # Module with multiple statements
         {:defmodule, meta,
-         [{module_name, module_meta, _}, [do: {:__block__, block_meta, statements}]]} ->
+         [{module_name, module_meta, module_ctx}, [do: {:__block__, block_meta, statements}]]} ->
           new_statements =
             insert_after_in_list(statements, source_function, source_arity, new_function_def)
 
           {:defmodule, meta,
-           [{module_name, module_meta, nil}, [do: {:__block__, block_meta, new_statements}]]}
+           [
+             {module_name, module_meta, module_ctx},
+             [do: {:__block__, block_meta, new_statements}]
+           ]}
+
+        # Module with single statement
+        {:defmodule, meta, [{module_name, module_meta, module_ctx}, [do: single_stmt]]} ->
+          if matches_function_def?(single_stmt, source_function, source_arity) do
+            # Insert after the single function
+            {:defmodule, meta,
+             [
+               {module_name, module_meta, module_ctx},
+               [do: {:__block__, [], [single_stmt, new_function_def]}]
+             ]}
+          else
+            node
+          end
 
         _ ->
           node
@@ -724,13 +751,30 @@ defmodule Ragex.Editor.Refactor.Elixir do
   defp insert_before_function(ast, source_function, source_arity, new_function_def) do
     Macro.prewalk(ast, fn node ->
       case node do
+        # Module with multiple statements
         {:defmodule, meta,
-         [{module_name, module_meta, _}, [do: {:__block__, block_meta, statements}]]} ->
+         [{module_name, module_meta, module_ctx}, [do: {:__block__, block_meta, statements}]]} ->
           new_statements =
             insert_before_in_list(statements, source_function, source_arity, new_function_def)
 
           {:defmodule, meta,
-           [{module_name, module_meta, nil}, [do: {:__block__, block_meta, new_statements}]]}
+           [
+             {module_name, module_meta, module_ctx},
+             [do: {:__block__, block_meta, new_statements}]
+           ]}
+
+        # Module with single statement
+        {:defmodule, meta, [{module_name, module_meta, module_ctx}, [do: single_stmt]]} ->
+          if matches_function_def?(single_stmt, source_function, source_arity) do
+            # Insert before the single function
+            {:defmodule, meta,
+             [
+               {module_name, module_meta, module_ctx},
+               [do: {:__block__, [], [new_function_def, single_stmt]}]
+             ]}
+          else
+            node
+          end
 
         _ ->
           node
@@ -741,12 +785,25 @@ defmodule Ragex.Editor.Refactor.Elixir do
   defp insert_at_module_end(ast, new_function_def) do
     Macro.prewalk(ast, fn node ->
       case node do
+        # Module with multiple statements
         {:defmodule, meta,
-         [{module_name, module_meta, _}, [do: {:__block__, block_meta, statements}]]} ->
+         [{module_name, module_meta, module_ctx}, [do: {:__block__, block_meta, statements}]]} ->
           new_statements = statements ++ [new_function_def]
 
           {:defmodule, meta,
-           [{module_name, module_meta, nil}, [do: {:__block__, block_meta, new_statements}]]}
+           [
+             {module_name, module_meta, module_ctx},
+             [do: {:__block__, block_meta, new_statements}]
+           ]}
+
+        # Module with single statement
+        {:defmodule, meta, [{module_name, module_meta, module_ctx}, [do: single_stmt]]} ->
+          # Add new function at the end
+          {:defmodule, meta,
+           [
+             {module_name, module_meta, module_ctx},
+             [do: {:__block__, [], [single_stmt, new_function_def]}]
+           ]}
 
         _ ->
           node
@@ -922,19 +979,15 @@ defmodule Ragex.Editor.Refactor.Elixir do
     } = function_info
 
     # Replace all calls to the function with inlined body
+    # Only inline unqualified calls (qualified calls to other modules are left alone)
     transformed_ast =
       Macro.prewalk(ast, fn node ->
         case node do
-          # Direct call: function_name(args...)
+          # Direct/unqualified call: function_name(args...)
           {^function_name, _meta, args} when is_list(args) and length(args) == arity ->
             inline_call(body, params, args)
 
-          # Qualified call: Module.function_name(args...)
-          {{:., _dot_meta, [_module, ^function_name]}, _call_meta, args}
-          when is_list(args) and length(args) == arity ->
-            # For qualified calls, inline the body
-            inline_call(body, params, args)
-
+          # Skip qualified calls - they reference other modules
           _ ->
             node
         end
@@ -1158,9 +1211,16 @@ defmodule Ragex.Editor.Refactor.Elixir do
         new_param_name,
         _opts \\ []
       ) do
+    # Convert string param names to atoms if needed
+    old_param =
+      if is_binary(old_param_name), do: String.to_atom(old_param_name), else: old_param_name
+
+    new_param =
+      if is_binary(new_param_name), do: String.to_atom(new_param_name), else: new_param_name
+
     with {:ok, ast} <- parse_code(content),
          transformed_ast <-
-           apply_parameter_rename(ast, function_name, arity, old_param_name, new_param_name),
+           apply_parameter_rename(ast, function_name, arity, old_param, new_param),
          {:ok, new_content} <- ast_to_string(transformed_ast) do
       {:ok, new_content}
     else
@@ -1171,7 +1231,7 @@ defmodule Ragex.Editor.Refactor.Elixir do
   defp apply_parameter_rename(ast, function_name, arity, old_param, new_param) do
     Macro.prewalk(ast, fn node ->
       case node do
-        # Match function definition
+        # Match function definition without guard
         {:def, meta, [{^function_name, call_meta, args}, body]} when is_list(args) ->
           if length(args) == arity do
             new_args = rename_in_params(args, old_param, new_param)
@@ -1190,6 +1250,33 @@ defmodule Ragex.Editor.Refactor.Elixir do
             node
           end
 
+        # Match function definition with guard: def func(x) when guard
+        {:def, meta, [{:when, when_meta, [{^function_name, call_meta, args} | guards]}, body]}
+        when is_list(args) ->
+          if length(args) == arity do
+            new_args = rename_in_params(args, old_param, new_param)
+            new_guards = Enum.map(guards, &rename_in_body(&1, old_param, new_param))
+            new_body = rename_in_body(body, old_param, new_param)
+
+            {:def, meta,
+             [{:when, when_meta, [{function_name, call_meta, new_args} | new_guards]}, new_body]}
+          else
+            node
+          end
+
+        {:defp, meta, [{:when, when_meta, [{^function_name, call_meta, args} | guards]}, body]}
+        when is_list(args) ->
+          if length(args) == arity do
+            new_args = rename_in_params(args, old_param, new_param)
+            new_guards = Enum.map(guards, &rename_in_body(&1, old_param, new_param))
+            new_body = rename_in_body(body, old_param, new_param)
+
+            {:defp, meta,
+             [{:when, when_meta, [{function_name, call_meta, new_args} | new_guards]}, new_body]}
+          else
+            node
+          end
+
         _ ->
           node
       end
@@ -1198,10 +1285,13 @@ defmodule Ragex.Editor.Refactor.Elixir do
 
   defp rename_in_params(params, old_name, new_name) do
     Enum.map(params, fn param ->
-      case param do
-        {^old_name, meta, context} -> {new_name, meta, context}
-        _ -> param
-      end
+      # Use prewalk to handle nested patterns like {:ok, value}
+      Macro.prewalk(param, fn node ->
+        case node do
+          {^old_name, meta, context} when is_atom(context) -> {new_name, meta, context}
+          _ -> node
+        end
+      end)
     end)
   end
 
@@ -1222,10 +1312,11 @@ defmodule Ragex.Editor.Refactor.Elixir do
 
   ## Parameters
   - `content`: Source code as string
-  - `changes`: Map with :add, :remove, and/or :update keys
-    - `:add` - List of {attribute_name, value} tuples to add
-    - `:remove` - List of attribute names to remove
-    - `:update` - List of {attribute_name, new_value} tuples to update
+  - `module_name`: Module to modify (currently unused, modifies all modules)
+  - `changes`: List of change tuples:
+    - `{:add, attribute_name, value}` - Add new attribute
+    - `{:remove, attribute_name}` - Remove attribute
+    - `{:update, attribute_name, new_value}` - Update existing attribute
   - `opts`: Options (currently unused)
 
   ## Returns
@@ -1234,23 +1325,86 @@ defmodule Ragex.Editor.Refactor.Elixir do
 
   ## Examples
 
-      iex> changes = %{
-      ...>   add: [{:vsn, "1.0.0"}],
-      ...>   remove: [:deprecated],
-      ...>   update: [{:moduledoc, "Updated documentation"}]
-      ...> }
-      iex> modify_attributes(content, changes)
+      iex> changes = [
+      ...>   {:add, :vsn, "1.0.0"},
+      ...>   {:remove, :deprecated},
+      ...>   {:update, :moduledoc, "Updated documentation"}
+      ...> ]
+      iex> modify_attributes(content, :MyModule, changes)
       {:ok, updated_content}
   """
-  @spec modify_attributes(String.t(), map(), keyword()) :: {:ok, String.t()} | {:error, term()}
-  def modify_attributes(content, changes, _opts \\ []) do
+  @spec modify_attributes(String.t(), atom(), list(), keyword()) ::
+          {:ok, String.t()} | {:error, term()}
+  def modify_attributes(content, _module_name, changes, _opts \\ []) do
+    # Convert list format to map format
+    changes_map = changes_list_to_map(changes)
+
     with {:ok, ast} <- parse_code(content),
-         transformed_ast <- apply_attribute_changes(ast, changes),
+         {:ok, _} <- validate_attribute_changes(ast, changes_map),
+         transformed_ast <- apply_attribute_changes(ast, changes_map),
          {:ok, new_content} <- ast_to_string(transformed_ast) do
       {:ok, new_content}
     else
       {:error, _reason} = error -> error
     end
+  end
+
+  defp changes_list_to_map(changes) do
+    Enum.reduce(changes, %{add: [], remove: [], update: []}, fn change, acc ->
+      case change do
+        {:add, attr_name, value} ->
+          Map.update!(acc, :add, &[{attr_name, value} | &1])
+
+        {:remove, attr_name} ->
+          Map.update!(acc, :remove, &[attr_name | &1])
+
+        {:update, attr_name, value} ->
+          Map.update!(acc, :update, &[{attr_name, value} | &1])
+      end
+    end)
+  end
+
+  # Validate attribute changes before applying them
+  defp validate_attribute_changes(ast, changes) do
+    to_add = Map.get(changes, :add, [])
+    to_remove = Map.get(changes, :remove, [])
+
+    # Find existing attributes in the AST
+    existing_attrs = extract_existing_attributes(ast)
+
+    # Check for duplicate additions
+    Enum.each(to_add, fn {attr_name, _value} ->
+      if attr_name in existing_attrs do
+        throw({:error, "Attribute @#{attr_name} already exists"})
+      end
+    end)
+
+    # Check for non-existent removals
+    Enum.each(to_remove, fn attr_name ->
+      if attr_name not in existing_attrs do
+        throw({:error, "Attribute @#{attr_name} not found"})
+      end
+    end)
+
+    {:ok, :valid}
+  catch
+    {:error, _} = error -> error
+  end
+
+  # Extract list of existing attribute names from AST
+  defp extract_existing_attributes(ast) do
+    {_ast, attrs} =
+      Macro.prewalk(ast, [], fn node, acc ->
+        case node do
+          {:@, _, [{attr_name, _, _}]} ->
+            {node, [attr_name | acc]}
+
+          _ ->
+            {node, acc}
+        end
+      end)
+
+    attrs
   end
 
   defp apply_attribute_changes(ast, changes) do
@@ -1260,7 +1414,7 @@ defmodule Ragex.Editor.Refactor.Elixir do
 
     Macro.prewalk(ast, fn node ->
       case node do
-        # Module with block
+        # Module with block (multiple statements)
         {:defmodule, meta,
          [{module_name, module_meta, module_ctx}, [do: {:__block__, block_meta, statements}]]} ->
           # Separate attributes from other statements
@@ -1278,7 +1432,9 @@ defmodule Ragex.Editor.Refactor.Elixir do
           # Add new attributes
           new_attributes =
             Enum.map(to_add, fn {attr_name, value} ->
-              {:@, [], [{attr_name, [], [value]}]}
+              # Convert string to atom for module-reference attributes
+              converted_value = convert_attribute_value(attr_name, value)
+              {:@, [], [{attr_name, [], [converted_value]}]}
             end)
 
           # Combine: new attributes + modified attributes + other statements
@@ -1289,6 +1445,42 @@ defmodule Ragex.Editor.Refactor.Elixir do
              {module_name, module_meta, module_ctx},
              [do: {:__block__, block_meta, all_statements}]
            ]}
+
+        # Module with single statement (no __block__)
+        {:defmodule, meta, [{module_name, module_meta, module_ctx}, [do: single_stmt]]} ->
+          # Check if statement is an attribute
+          {attributes, other_statements} =
+            if match?({:@, _, [{_attr_name, _, _}]}, single_stmt) do
+              {[single_stmt], []}
+            else
+              {[], [single_stmt]}
+            end
+
+          # Apply changes
+          modified_attributes =
+            attributes
+            |> remove_attributes(to_remove)
+            |> update_attributes(to_update)
+
+          # Add new attributes
+          new_attributes =
+            Enum.map(to_add, fn {attr_name, value} ->
+              converted_value = convert_attribute_value(attr_name, value)
+              {:@, [], [{attr_name, [], [converted_value]}]}
+            end)
+
+          # Combine all statements
+          all_statements = new_attributes ++ modified_attributes ++ other_statements
+
+          # If we have multiple statements now, wrap in __block__
+          new_do_clause =
+            case all_statements do
+              [] -> {:__block__, [], []}
+              [single] -> single
+              multiple -> {:__block__, [], multiple}
+            end
+
+          {:defmodule, meta, [{module_name, module_meta, module_ctx}, [do: new_do_clause]]}
 
         _ ->
           node
@@ -1309,14 +1501,32 @@ defmodule Ragex.Editor.Refactor.Elixir do
     Enum.map(attributes, fn
       {:@, meta, [{attr_name, attr_meta, _old_value}]} = attr ->
         case Map.get(update_map, attr_name) do
-          nil -> attr
-          new_value -> {:@, meta, [{attr_name, attr_meta, [new_value]}]}
+          nil ->
+            attr
+
+          new_value ->
+            converted_value = convert_attribute_value(attr_name, new_value)
+            {:@, meta, [{attr_name, attr_meta, [converted_value]}]}
         end
 
       other ->
         other
     end)
   end
+
+  # Convert string values to appropriate types for module attributes
+  defp convert_attribute_value(attr_name, value) when attr_name in [:behaviour, :behavior] do
+    # @behaviour should reference module as alias, not string
+    if is_binary(value) do
+      # Convert "GenServer" to {:__aliases__, [], [:GenServer]}
+      module_atom = String.to_atom(value)
+      {:__aliases__, [], [module_atom]}
+    else
+      value
+    end
+  end
+
+  defp convert_attribute_value(_attr_name, value), do: value
 
   @doc """
   Changes a function signature by adding, removing, reordering, or renaming parameters.
@@ -1385,8 +1595,19 @@ defmodule Ragex.Editor.Refactor.Elixir do
       ) do
     with {:ok, ast} <- parse_code(content),
          {:ok, function_info} <- extract_signature_info(ast, function_name, old_arity),
+         # Convert list format to map format if needed
+         changes_map <- normalize_signature_changes(signature_changes, function_info.params),
+         # Validate that removed parameters are not used in function body
+         :ok <-
+           validate_parameter_removal(
+             ast,
+             function_name,
+             old_arity,
+             function_info.params,
+             changes_map
+           ),
          {:ok, new_params, param_mapping} <-
-           compute_new_signature(function_info.params, signature_changes),
+           compute_new_signature(function_info.params, changes_map),
          transformed_ast <-
            apply_signature_change(
              ast,
@@ -1394,13 +1615,98 @@ defmodule Ragex.Editor.Refactor.Elixir do
              old_arity,
              new_params,
              param_mapping,
-             signature_changes
+             changes_map
            ),
          {:ok, new_content} <- ast_to_string(transformed_ast) do
       {:ok, new_content}
     else
       {:error, _reason} = error -> error
     end
+  end
+
+  # Validate that removed parameters are not used in function body
+  defp validate_parameter_removal(ast, function_name, arity, params, changes_map) do
+    case Map.get(changes_map, :remove_params) do
+      nil ->
+        :ok
+
+      positions_to_remove ->
+        # Get the names of parameters being removed
+        removed_param_names =
+          positions_to_remove
+          |> Enum.map(fn pos ->
+            param = Enum.at(params, pos)
+            extract_param_name(param)
+          end)
+          |> Enum.filter(&(&1 != nil))
+
+        # Find all function clauses and check their bodies
+        case find_all_function_clauses(ast, function_name, arity) do
+          [] ->
+            :ok
+
+          clauses ->
+            # Check each clause body for usage of removed parameters
+            Enum.reduce_while(clauses, :ok, fn {_def_type, _func_ast, body}, _acc ->
+              case check_body_for_variables(body, removed_param_names) do
+                [] ->
+                  {:cont, :ok}
+
+                used_params ->
+                  {:halt,
+                   {:error,
+                    "Cannot remove parameter(s) #{Enum.join(used_params, ", ")} - still used in function body"}}
+              end
+            end)
+        end
+    end
+  end
+
+  # Find all clauses of a function (for multi-clause validation)
+  defp find_all_function_clauses(ast, function_name, arity) do
+    {_ast, clauses} =
+      Macro.prewalk(ast, [], fn node, acc ->
+        case node do
+          {:def, _meta, [{^function_name, _call_meta, args}, body]} when is_list(args) ->
+            if length(args) == arity do
+              {node, [{:def, node, body} | acc]}
+            else
+              {node, acc}
+            end
+
+          {:defp, _meta, [{^function_name, _call_meta, args}, body]} when is_list(args) ->
+            if length(args) == arity do
+              {node, [{:defp, node, body} | acc]}
+            else
+              {node, acc}
+            end
+
+          _ ->
+            {node, acc}
+        end
+      end)
+
+    Enum.reverse(clauses)
+  end
+
+  # Check if any of the given variable names are used in the body
+  defp check_body_for_variables(body, var_names) do
+    {_body, used} =
+      Macro.prewalk(body, [], fn node, acc ->
+        case node do
+          {var_name, _meta, context} when is_atom(var_name) and is_atom(context) ->
+            if var_name in var_names do
+              {node, [var_name | acc]}
+            else
+              {node, acc}
+            end
+
+          _ ->
+            {node, acc}
+        end
+      end)
+
+    used |> Enum.uniq()
   end
 
   # Extract current function signature information
@@ -1427,6 +1733,141 @@ defmodule Ragex.Editor.Refactor.Elixir do
       _ ->
         []
     end
+  end
+
+  # Convert list format to map format for signature changes
+  # List format: [{:add, name, pos, default}, {:remove, pos}, {:rename, pos, new_name}, {:reorder, from, to}]
+  # Map format: %{add_params: [...], remove_params: [...], rename_params: [...], reorder_params: [...]}
+  defp normalize_signature_changes(changes, old_params) when is_list(changes) do
+    # Extract parameter names for rename operations
+    param_names =
+      old_params
+      |> Enum.with_index()
+      |> Enum.map(fn {param, idx} ->
+        {idx, extract_param_name(param)}
+      end)
+      |> Map.new()
+
+    # Group changes by type
+    {adds, removes, renames, reorders} =
+      Enum.reduce(changes, {[], [], [], []}, fn change, {adds, removes, renames, reorders} ->
+        case change do
+          {:add, name, position, default} ->
+            name_atom = if is_binary(name), do: String.to_atom(name), else: name
+            param = %{name: name_atom, position: position, default: default}
+            {[param | adds], removes, renames, reorders}
+
+          {:remove, position} ->
+            {adds, [position | removes], renames, reorders}
+
+          {:rename, position, new_name} ->
+            old_name = Map.get(param_names, position)
+            new_name_atom = if is_binary(new_name), do: String.to_atom(new_name), else: new_name
+
+            if old_name do
+              {adds, removes, [{old_name, new_name_atom} | renames], reorders}
+            else
+              {adds, removes, renames, reorders}
+            end
+
+          {:reorder, from_pos, to_pos} ->
+            # Convert single swap to full reorder list
+            # For 2-param function: {:reorder, 0, 1} means swap, so new order is [1, 0]
+            arity = length(old_params)
+            order = List.duplicate(nil, arity)
+            order = List.replace_at(order, to_pos, from_pos)
+            order = List.replace_at(order, from_pos, to_pos)
+
+            # Fill in remaining positions
+            order =
+              Enum.reduce(0..(arity - 1), order, fn idx, acc ->
+                if Enum.at(acc, idx) == nil and idx not in [from_pos, to_pos] do
+                  List.replace_at(acc, idx, idx)
+                else
+                  acc
+                end
+              end)
+
+            {adds, removes, renames, [order | reorders]}
+
+          _ ->
+            {adds, removes, renames, reorders}
+        end
+      end)
+
+    # Build map, reversing lists since we built them backwards
+    result = %{}
+
+    result =
+      if adds != [] do
+        Map.put(result, :add_params, Enum.reverse(adds))
+      else
+        result
+      end
+
+    result =
+      if removes != [] do
+        Map.put(result, :remove_params, Enum.reverse(removes))
+      else
+        result
+      end
+
+    result =
+      if renames != [] do
+        Map.put(result, :rename_params, Enum.reverse(renames))
+      else
+        result
+      end
+
+    result =
+      if reorders != [] do
+        # Use the last reorder (most recent)
+        Map.put(result, :reorder_params, hd(reorders))
+      else
+        result
+      end
+
+    result
+  end
+
+  defp normalize_signature_changes(changes, _old_params) when is_map(changes) do
+    # Already in map format
+    changes
+  end
+
+  # Extract parameter name from AST
+  defp extract_param_name({name, _meta, _context}) when is_atom(name), do: name
+  defp extract_param_name(_), do: nil
+
+  # Convert Elixir value to AST representation
+  defp convert_value_to_ast(value) when is_list(value) do
+    # Empty list: []
+    if value == [] do
+      []
+    else
+      # List with elements - convert each element
+      Enum.map(value, &convert_value_to_ast/1)
+    end
+  end
+
+  defp convert_value_to_ast(value) when is_map(value) do
+    # Map: %{key: value}
+    pairs =
+      Enum.map(value, fn {k, v} ->
+        {convert_value_to_ast(k), convert_value_to_ast(v)}
+      end)
+
+    {:%{}, [], pairs}
+  end
+
+  defp convert_value_to_ast(value) when is_atom(value) or is_number(value) or is_binary(value) do
+    # Atoms, numbers, strings are literals
+    value
+  end
+
+  defp convert_value_to_ast(value) do
+    # For other values, return as-is (might already be AST)
+    value
   end
 
   # Compute new parameter list and mapping from old to new positions
@@ -1500,11 +1941,17 @@ defmodule Ragex.Editor.Refactor.Elixir do
         params_to_add ->
           # Insert params at specified positions
           Enum.reduce(params_to_add, params_after_reorder, fn param_spec, acc ->
-            %{name: name, position: pos} = param_spec
-            # Note: default value is stored in param_spec but used later in update_call_args
+            %{name: name, position: pos, default: default} = param_spec
 
-            # Create parameter AST
-            new_param = {name, [], nil}
+            # Create parameter AST with default value if present
+            # AST for param with default: {:\\, meta, [param, default_value]}
+            new_param =
+              if default != nil do
+                {:\\, [], [{name, [], nil}, convert_value_to_ast(default)]}
+              else
+                {name, [], nil}
+              end
+
             # Use negative index to mark as newly added
             new_entry = {new_param, -1}
 
@@ -1528,11 +1975,12 @@ defmodule Ragex.Editor.Refactor.Elixir do
   end
 
   # Apply signature changes to AST
+  # Each function clause must be transformed individually to preserve unique patterns
   defp apply_signature_change(
          ast,
          function_name,
          old_arity,
-         new_params,
+         _new_params,
          param_mapping,
          signature_changes
        ) do
@@ -1541,17 +1989,21 @@ defmodule Ragex.Editor.Refactor.Elixir do
         # Update function definition
         {:def, meta, [{^function_name, call_meta, args}, body]} when is_list(args) ->
           if length(args) == old_arity do
+            # Transform THIS clause's parameters
+            clause_new_params = transform_clause_params(args, signature_changes)
             # Update parameters in function head
             new_body = update_body_for_signature(body, signature_changes)
-            {:def, meta, [{function_name, call_meta, new_params}, new_body]}
+            {:def, meta, [{function_name, call_meta, clause_new_params}, new_body]}
           else
             node
           end
 
         {:defp, meta, [{^function_name, call_meta, args}, body]} when is_list(args) ->
           if length(args) == old_arity do
+            # Transform THIS clause's parameters
+            clause_new_params = transform_clause_params(args, signature_changes)
             new_body = update_body_for_signature(body, signature_changes)
-            {:defp, meta, [{function_name, call_meta, new_params}, new_body]}
+            {:defp, meta, [{function_name, call_meta, clause_new_params}, new_body]}
           else
             node
           end
@@ -1578,6 +2030,88 @@ defmodule Ragex.Editor.Refactor.Elixir do
           node
       end
     end)
+  end
+
+  # Transform parameters for a single function clause
+  # This preserves each clause's unique parameter patterns (literals, patterns, etc.)
+  defp transform_clause_params(params, signature_changes) do
+    # Step 1: Remove parameters
+    params_after_remove =
+      case Map.get(signature_changes, :remove_params) do
+        nil ->
+          params
+
+        positions_to_remove ->
+          params
+          |> Enum.with_index()
+          |> Enum.reject(fn {_param, idx} -> idx in positions_to_remove end)
+          |> Enum.map(fn {param, _idx} -> param end)
+      end
+
+    # Step 2: Reorder parameters
+    params_after_reorder =
+      case Map.get(signature_changes, :reorder_params) do
+        nil ->
+          params_after_remove
+
+        new_order ->
+          # Create a map of current positions
+          param_map =
+            params_after_remove
+            |> Enum.with_index()
+            |> Map.new(fn {param, idx} -> {idx, param} end)
+
+          # Apply new order
+          Enum.map(new_order, fn idx -> Map.get(param_map, idx) end)
+      end
+
+    # Step 3: Rename parameters (only affects simple variable patterns)
+    params_after_rename =
+      case Map.get(signature_changes, :rename_params) do
+        nil ->
+          params_after_reorder
+
+        renames ->
+          rename_map = Map.new(renames)
+
+          Enum.map(params_after_reorder, fn param ->
+            case param do
+              # Simple variable: {name, meta, context}
+              {old_name, meta, context} when is_atom(old_name) and is_atom(context) ->
+                case Map.get(rename_map, old_name) do
+                  nil -> param
+                  new_name -> {new_name, meta, context}
+                end
+
+              # Other patterns (literals, destructuring): keep as-is
+              _ ->
+                param
+            end
+          end)
+      end
+
+    # Step 4: Add new parameters
+    case Map.get(signature_changes, :add_params) do
+      nil ->
+        params_after_rename
+
+      params_to_add ->
+        # Insert params at specified positions
+        Enum.reduce(params_to_add, params_after_rename, fn param_spec, acc ->
+          %{name: name, position: pos, default: default} = param_spec
+
+          # Create parameter AST with default value if present
+          new_param =
+            if default != nil do
+              {:\\, [], [{name, [], nil}, convert_value_to_ast(default)]}
+            else
+              {name, [], nil}
+            end
+
+          # Insert at position
+          List.insert_at(acc, pos, new_param)
+        end)
+    end
   end
 
   # Update function body to reflect parameter renames

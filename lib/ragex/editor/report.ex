@@ -114,7 +114,7 @@ defmodule Ragex.Editor.Report do
         do: markdown_conflicts(data.conflicts),
         else: nil
       ),
-      if(!Enum.empty?(data.warnings), do: markdown_warnings(data.warnings), else: nil),
+      if(Enum.empty?(data.warnings), do: nil, else: markdown_warnings(data.warnings)),
       if(include_diffs, do: markdown_diffs(data.diffs), else: nil),
       if(include_timing && data.timing != %{}, do: markdown_timing(data.timing), else: nil)
     ]
@@ -151,11 +151,9 @@ defmodule Ragex.Editor.Report do
 
   defp markdown_conflicts(conflicts) do
     conflict_list =
-      conflicts
-      |> Enum.map(fn conflict ->
+      Enum.map_join(conflicts, "\n", fn conflict ->
         "- **#{conflict.type}** (#{conflict.severity}): #{conflict.message}"
       end)
-      |> Enum.join("\n")
 
     """
     ## Conflicts Detected
@@ -165,7 +163,7 @@ defmodule Ragex.Editor.Report do
   end
 
   defp markdown_warnings(warnings) do
-    warning_list = warnings |> Enum.map(&"- #{&1}") |> Enum.join("\n")
+    warning_list = Enum.map_join(warnings, "\n", &"- #{&1}")
 
     """
     ## Warnings
@@ -176,8 +174,7 @@ defmodule Ragex.Editor.Report do
 
   defp markdown_diffs(diffs) do
     diff_sections =
-      diffs
-      |> Enum.map(fn diff ->
+      Enum.map_join(diffs, "\n", fn diff ->
         """
         ### #{diff.file_path}
 
@@ -188,7 +185,6 @@ defmodule Ragex.Editor.Report do
         Changes: +#{diff.stats.added} -#{diff.stats.removed}
         """
       end)
-      |> Enum.join("\n")
 
     """
     ## Diffs
@@ -314,7 +310,7 @@ defmodule Ragex.Editor.Report do
 
       #{html_stats(data.stats)}
       #{if include_conflicts && !Enum.empty?(data.conflicts), do: html_conflicts(data.conflicts), else: ""}
-      #{if !Enum.empty?(data.warnings), do: html_warnings(data.warnings), else: ""}
+      #{if Enum.empty?(data.warnings), do: "", else: html_warnings(data.warnings)}
       #{if include_diffs, do: html_diffs(data.diffs), else: ""}
       #{if include_timing && data.timing != %{}, do: html_timing(data.timing), else: ""}
     </body>
@@ -350,8 +346,7 @@ defmodule Ragex.Editor.Report do
 
   defp html_conflicts(conflicts) do
     conflict_html =
-      conflicts
-      |> Enum.map(fn conflict ->
+      Enum.map_join(conflicts, "\n", fn conflict ->
         """
         <div class="conflict #{conflict.severity}">
           <strong>#{conflict.type}</strong> (#{conflict.severity}): #{conflict.message}
@@ -359,7 +354,6 @@ defmodule Ragex.Editor.Report do
         </div>
         """
       end)
-      |> Enum.join("\n")
 
     """
     <h2>Conflicts Detected</h2>
@@ -368,7 +362,7 @@ defmodule Ragex.Editor.Report do
   end
 
   defp html_warnings(warnings) do
-    warning_html = warnings |> Enum.map(&"<li>#{&1}</li>") |> Enum.join("\n")
+    warning_html = Enum.map_join(warnings, "\n", &"<li>#{&1}</li>")
 
     """
     <h2>Warnings</h2>
@@ -378,8 +372,7 @@ defmodule Ragex.Editor.Report do
 
   defp html_diffs(diffs) do
     diff_html =
-      diffs
-      |> Enum.map(fn diff ->
+      Enum.map_join(diffs, "\n", fn diff ->
         """
         <div class="diff">
           <h3>#{diff.file_path}</h3>
@@ -388,7 +381,6 @@ defmodule Ragex.Editor.Report do
         </div>
         """
       end)
-      |> Enum.join("\n")
 
     """
     <h2>Diffs</h2>

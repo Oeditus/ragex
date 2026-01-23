@@ -59,8 +59,9 @@ defmodule Ragex.Editor.Diff do
     old_file = Keyword.get(opts, :old_file, "original")
     new_file = Keyword.get(opts, :new_file, "modified")
 
-    old_lines = String.split(old_content, "\n")
-    new_lines = String.split(new_content, "\n")
+    # Handle empty content specially - String.split("", "\n") returns [""] not []
+    old_lines = if old_content == "", do: [], else: String.split(old_content, "\n")
+    new_lines = if new_content == "", do: [], else: String.split(new_content, "\n")
 
     # Use Myers algorithm to compute diff
     myers_diff = List.myers_difference(old_lines, new_lines)
@@ -107,7 +108,9 @@ defmodule Ragex.Editor.Diff do
   end
 
   def format_diff(diff_result, :json, _opts) do
-    {:ok, Jason.encode!(diff_result)}
+    # Convert tuples to JSON-friendly format
+    json_friendly = diff_result_to_json(diff_result)
+    {:ok, Jason.encode!(json_friendly)}
   rescue
     error -> {:error, "Failed to encode JSON: #{inspect(error)}"}
   end
@@ -142,6 +145,26 @@ defmodule Ragex.Editor.Diff do
 
   # Private functions
 
+  defp diff_result_to_json(diff_result) do
+    # For JSON format, only include actual changes (not context lines)
+    changes =
+      Enum.flat_map(diff_result.chunks, fn chunk ->
+        Enum.flat_map(chunk.lines, fn
+          # Skip unchanged context lines
+          {:eq, _line} -> []
+          {:del, line} -> [%{type: "delete", content: line}]
+          {:ins, line} -> [%{type: "insert", content: line}]
+        end)
+      end)
+
+    %{
+      old_file: diff_result.old_file,
+      new_file: diff_result.new_file,
+      stats: diff_result.stats,
+      changes: changes
+    }
+  end
+
   defp build_chunks(myers_diff, context_lines) do
     # Convert Myers diff to line-based format with context
     lines = myers_to_lines(myers_diff)
@@ -159,74 +182,66 @@ defmodule Ragex.Editor.Diff do
   end
 
   defp chunk_lines(lines, context_lines) do
-    # Find change boundaries and create chunks
-    {chunks, _} =
-      lines
-      |> Enum.with_index(1)
-      |> Enum.reduce({[], nil}, fn {line, idx}, {chunks, current_chunk} ->
-        case {line, current_chunk} do
-          {{:eq, _}, nil} ->
-            # Context line, no active chunk
-            {chunks, nil}
+    # Build list of all lines with indices
+    indexed_lines = Enum.with_index(lines, 1)
 
-          {{:eq, _}, chunk} ->
-            # Context line in chunk
-            updated_chunk = add_line_to_chunk(chunk, line, idx)
+    # Find indices of all changes
+    change_indices =
+      indexed_lines
+      |> Enum.filter(fn {{type, _}, _idx} -> type in [:del, :ins] end)
+      |> Enum.map(fn {_, idx} -> idx end)
 
-            # Check if we should close the chunk
-            if should_close_chunk?(updated_chunk, context_lines) do
-              {[finalize_chunk(updated_chunk) | chunks], nil}
-            else
-              {chunks, updated_chunk}
-            end
+    # If no changes, return empty chunks
+    if Enum.empty?(change_indices) do
+      []
+    else
+      # Group changes into ranges with context
+      change_ranges = build_change_ranges(change_indices, context_lines, length(lines))
 
-          {{change, _}, nil} when change in [:del, :ins] ->
-            # Start new chunk
-            {chunks, start_chunk(line, idx)}
+      # Convert ranges to chunks
+      Enum.map(change_ranges, fn {range_start, range_end} ->
+        chunk_lines = Enum.slice(indexed_lines, range_start - 1, range_end - range_start + 1)
+        build_chunk_from_lines(chunk_lines)
+      end)
+    end
+  end
 
-          {{change, _}, chunk} when change in [:del, :ins] ->
-            # Add to existing chunk
-            {chunks, add_line_to_chunk(chunk, line, idx)}
+  defp build_change_ranges(change_indices, context_lines, total_lines) do
+    # Expand each change index to include context
+    expanded_ranges =
+      Enum.map(change_indices, fn idx ->
+        range_start = max(1, idx - context_lines)
+        range_end = min(total_lines, idx + context_lines)
+        {range_start, range_end}
+      end)
+
+    # Merge overlapping ranges
+    merge_ranges(expanded_ranges)
+  end
+
+  defp merge_ranges([]), do: []
+  defp merge_ranges([range]), do: [range]
+
+  defp merge_ranges(ranges) do
+    [first | rest] = Enum.sort(ranges)
+
+    {merged, current} =
+      Enum.reduce(rest, {[], first}, fn {start, end_pos}, {acc, {curr_start, curr_end}} ->
+        if start <= curr_end + 1 do
+          # Overlapping or adjacent, merge
+          {acc, {curr_start, max(end_pos, curr_end)}}
+        else
+          # Non-overlapping, finalize current and start new
+          {[{curr_start, curr_end} | acc], {start, end_pos}}
         end
       end)
 
-    # Finalize any remaining chunk
-    chunks =
-      case chunks do
-        {cs, nil} -> cs
-        {cs, chunk} -> [finalize_chunk(chunk) | cs]
-      end
-
-    Enum.reverse(chunks)
+    Enum.reverse([current | merged])
   end
 
-  defp start_chunk(line, idx) do
-    %{
-      old_start: idx,
-      new_start: idx,
-      old_count: 0,
-      new_count: 0,
-      lines: [line],
-      context_after: 0
-    }
-  end
-
-  defp add_line_to_chunk(chunk, line, _idx) do
-    %{chunk | lines: [line | chunk.lines]}
-  end
-
-  defp should_close_chunk?(chunk, context_lines) do
-    # Close chunk if we have enough context lines after changes
-    recent_eq =
-      chunk.lines
-      |> Enum.take(context_lines + 1)
-      |> Enum.all?(&match?({:eq, _}, &1))
-
-    recent_eq
-  end
-
-  defp finalize_chunk(chunk) do
-    lines = Enum.reverse(chunk.lines)
+  defp build_chunk_from_lines(indexed_lines) do
+    [{_, first_idx} | _] = indexed_lines
+    lines = Enum.map(indexed_lines, fn {line, _} -> line end)
 
     {old_count, new_count} =
       Enum.reduce(lines, {0, 0}, fn
@@ -236,9 +251,9 @@ defmodule Ragex.Editor.Diff do
       end)
 
     %{
-      old_start: chunk.old_start,
+      old_start: first_idx,
       old_count: old_count,
-      new_start: chunk.new_start,
+      new_start: first_idx,
       new_count: new_count,
       lines: lines
     }
@@ -403,5 +418,81 @@ defmodule Ragex.Editor.Diff do
     |> String.replace("<", "&lt;")
     |> String.replace(">", "&gt;")
     |> String.replace("\"", "&quot;")
+  end
+
+  # Wrapper functions for test compatibility
+
+  @doc """
+  Combined generate and format function for test compatibility.
+
+  Generates a diff and returns it in a format suitable for testing.
+  """
+  def generate(old_content, new_content, file_path, opts \\ []) do
+    format = Keyword.get(opts, :format, :unified)
+    context_lines = Keyword.get(opts, :context_lines, 3)
+
+    diff_opts = [
+      old_file: file_path,
+      new_file: file_path,
+      context_lines: context_lines
+    ]
+
+    with {:ok, diff_result} <- generate_diff(old_content, new_content, diff_opts) do
+      # Calculate unchanged count: total lines in old - deletions
+      old_lines_count =
+        if old_content == "",
+          do: 0,
+          else: length(String.split(old_content, "\n"))
+
+      unchanged = old_lines_count - diff_result.stats.deletions
+
+      # Build result structure matching test expectations
+      result = %{
+        file_path: file_path,
+        format: format,
+        stats: %{
+          added: diff_result.stats.additions,
+          removed: diff_result.stats.deletions,
+          unchanged: unchanged
+        }
+      }
+
+      # Add format-specific fields
+      result =
+        case format do
+          :unified ->
+            {:ok, formatted} = format_diff(diff_result, :unified)
+            Map.put(result, :unified_diff, formatted)
+
+          :side_by_side ->
+            {:ok, formatted} = format_diff(diff_result, :side_by_side)
+            Map.put(result, :side_by_side_diff, formatted)
+
+          :json ->
+            {:ok, formatted} = format_diff(diff_result, :json)
+            json_data = Jason.decode!(formatted, keys: :atoms)
+            Map.put(result, :json_diff, json_data)
+
+          :html ->
+            {:ok, formatted} = format_diff(diff_result, :html)
+            Map.put(result, :html_diff, formatted)
+
+          _ ->
+            result
+        end
+
+      {:ok, result}
+    end
+  end
+
+  @doc """
+  Compares two files and returns a diff.
+  """
+  def compare_files(file1, file2, opts \\ []) do
+    with {:ok, content1} <- File.read(file1),
+         {:ok, content2} <- File.read(file2) do
+      format = Keyword.get(opts, :format, :unified)
+      generate(content1, content2, file2, format: format)
+    end
   end
 end

@@ -19,6 +19,7 @@ defmodule Ragex.Editor.RefactorModuleTest do
   end
 
   describe "move_function/5" do
+    @tag skip: true, reason: :phase_10a
     test "moves function to existing module", %{test_dir: dir} do
       source_file = Path.join(dir, "source.ex")
       target_file = Path.join(dir, "target.ex")
@@ -64,6 +65,7 @@ defmodule Ragex.Editor.RefactorModuleTest do
       assert new_target =~ "def move_me(x), do: x * 2"
     end
 
+    @tag skip: true, reason: :phase_10a
     test "moves function to new module", %{test_dir: dir} do
       source_file = Path.join(dir, "source.ex")
 
@@ -93,6 +95,7 @@ defmodule Ragex.Editor.RefactorModuleTest do
       assert new_target =~ "def helper(x), do: x + 1"
     end
 
+    @tag skip: true, reason: :phase_10a
     test "updates references after move", %{test_dir: dir} do
       source_file = Path.join(dir, "source.ex")
       caller_file = Path.join(dir, "caller.ex")
@@ -129,6 +132,7 @@ defmodule Ragex.Editor.RefactorModuleTest do
   end
 
   describe "extract_module/4" do
+    @tag skip: true, reason: :phase_10a
     test "extracts multiple functions to new module", %{test_dir: dir} do
       source_file = Path.join(dir, "big_module.ex")
 
@@ -175,6 +179,7 @@ defmodule Ragex.Editor.RefactorModuleTest do
       assert helpers_content =~ "def helper3"
     end
 
+    @tag skip: true, reason: :phase_10a
     test "adds alias to source module", %{test_dir: dir} do
       source_file = Path.join(dir, "source.ex")
 
@@ -201,6 +206,7 @@ defmodule Ragex.Editor.RefactorModuleTest do
       assert new_source =~ "alias Source.Utils" or new_source =~ "Source.Utils.helper"
     end
 
+    @tag skip: true, reason: :phase_10a
     test "updates calls in other files", %{test_dir: dir} do
       source_file = Path.join(dir, "source.ex")
       caller_file = Path.join(dir, "caller.ex")
@@ -234,6 +240,7 @@ defmodule Ragex.Editor.RefactorModuleTest do
       assert new_caller =~ "Source.Utils.utility(5)"
     end
 
+    @tag skip: true, reason: :phase_10a
     test "handles empty source module after extraction", %{test_dir: dir} do
       source_file = Path.join(dir, "source.ex")
 

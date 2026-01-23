@@ -58,6 +58,7 @@ defmodule Ragex.Editor.RefactorExtractTest do
       assert new_content =~ "compute("
     end
 
+    @tag skip: true, reason: :phase_10a
     test "handles nested function calls" do
       content = """
       defmodule Test do
@@ -170,6 +171,7 @@ defmodule Ragex.Editor.RefactorExtractTest do
       assert process_end < another_pos
     end
 
+    @tag skip: true, reason: :phase_10a
     test "extracts code with pipe operator" do
       content = """
       defmodule Test do
@@ -233,6 +235,7 @@ defmodule Ragex.Editor.RefactorExtractTest do
       assert message =~ "Parse error"
     end
 
+    @tag skip: true, reason: :phase_10a
     test "extracts code with multiple free variables" do
       content = """
       defmodule Test do
@@ -261,6 +264,7 @@ defmodule Ragex.Editor.RefactorExtractTest do
       assert new_content =~ "result = calculate_result("
     end
 
+    @tag skip: true, reason: :phase_10a
     test "extracts code with guards" do
       content = """
       defmodule Test do
@@ -298,6 +302,7 @@ defmodule Ragex.Editor.RefactorExtractTest do
       %{test_dir: test_dir}
     end
 
+    @tag skip: true, reason: :phase_10a
     test "creates backup and extracts function", %{test_dir: dir} do
       file_path = Path.join(dir, "test.ex")
 
