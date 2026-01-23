@@ -8,6 +8,8 @@ defmodule Ragex.VectorStoreTest do
   @moduletag :embeddings
   @moduletag timeout: 120_000
 
+  @skip_embedding Application.compile_env(:ragex, :skip_embedding_tests, true)
+
   setup do
     # Clear store before each test
     Store.clear()
@@ -56,6 +58,7 @@ defmodule Ragex.VectorStoreTest do
   end
 
   describe "search/2" do
+    @tag skip: @skip_embedding, slow: true, reason: :embedding
     test "finds similar embeddings by semantic meaning" do
       # Store some test embeddings
       {:ok, emb1} = Bumblebee.embed("Calculate the sum of two numbers")
@@ -179,6 +182,7 @@ defmodule Ragex.VectorStoreTest do
   end
 
   describe "nearest_neighbors/3" do
+    @tag skip: @skip_embedding, slow: true, reason: :embedding
     test "returns k nearest neighbors" do
       # Store multiple embeddings
       for i <- 1..10 do
@@ -220,7 +224,7 @@ defmodule Ragex.VectorStoreTest do
   end
 
   describe "performance" do
-    @tag :slow
+    @tag skip: @skip_embedding, slow: true, reason: :embedding
     test "handles large number of embeddings efficiently" do
       # Store 100 embeddings
       for i <- 1..100 do

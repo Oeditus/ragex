@@ -273,7 +273,7 @@ defmodule Ragex.Analysis.MetastaticBridge do
 
     purity_warnings =
       if purity_result && !purity_result.pure? do
-        effects = purity_result.effects |> Enum.map(&Atom.to_string/1) |> Enum.join(", ")
+        effects = Enum.join(purity_result.effects, ", ")
         ["Code is impure: #{effects}"]
       else
         []

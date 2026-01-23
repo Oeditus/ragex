@@ -135,8 +135,7 @@ defmodule Ragex.Analysis.QualityStore do
   def find_with_warnings do
     Store.list_nodes(@quality_metrics_type, :infinity)
     |> Enum.filter(fn node ->
-      warnings = Map.get(node.data, :warnings, [])
-      length(warnings) > 0
+      match?([_ | _], Map.get(node.data, :warnings, []))
     end)
     |> Enum.map(fn node ->
       {node.data.path, node.data.warnings}
@@ -297,7 +296,7 @@ defmodule Ragex.Analysis.QualityStore do
     nesting_values = Enum.map(nodes, fn n -> n.data.max_nesting || 0 end)
 
     files_with_warnings =
-      Enum.count(nodes, fn n -> length(Map.get(n.data, :warnings, [])) > 0 end)
+      Enum.count(nodes, fn n -> match?([_ | _], Map.get(n.data, :warnings, [])) end)
 
     impure_files = Enum.count(nodes, fn n -> Map.get(n.data, :purity_pure?) == false end)
 

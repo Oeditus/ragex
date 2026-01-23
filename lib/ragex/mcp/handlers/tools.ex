@@ -4275,17 +4275,13 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp format_language_list(languages) when is_map(languages) do
-    languages
-    |> Enum.map(fn {lang, count} -> "- #{lang}: #{count} files" end)
-    |> Enum.join("\n    ")
+    Enum.map_join(languages, "\n    ", fn {lang, count} -> "- #{lang}: #{count} files" end)
   end
 
   defp format_language_list(_), do: "None"
 
   defp format_language_list_text(languages) when is_map(languages) do
-    languages
-    |> Enum.map(fn {lang, count} -> "#{lang}(#{count})" end)
-    |> Enum.join(", ")
+    Enum.map_join(languages, ", ", fn {lang, count} -> "#{lang}(#{count})" end)
   end
 
   defp format_language_list_text(_), do: "None"
@@ -4340,10 +4336,7 @@ defmodule Ragex.MCP.Handlers.Tools do
       {:ok, cycles} ->
         formatted_cycles =
           Enum.map(cycles, fn cycle ->
-            formatted =
-              cycle
-              |> Enum.map(&format_cycle_entity/1)
-              |> Enum.join(" -> ")
+            formatted = Enum.map_join(cycle, " -> ", &format_cycle_entity/1)
 
             %{
               length: length(cycle),
@@ -4488,10 +4481,9 @@ defmodule Ragex.MCP.Handlers.Tools do
     top_unstable =
       all_metrics
       |> Enum.take(5)
-      |> Enum.map(fn {module, metrics} ->
+      |> Enum.map_join("\n", fn {module, metrics} ->
         "  - #{inspect(module)}: I=#{Float.round(metrics.instability, 2)} (Ca=#{metrics.afferent}, Ce=#{metrics.efferent})"
       end)
-      |> Enum.join("\n")
 
     content = """
     Dependency Analysis Summary
@@ -4561,11 +4553,10 @@ defmodule Ragex.MCP.Handlers.Tools do
     top_candidates =
       dead_functions
       |> Enum.take(10)
-      |> Enum.map(fn df ->
+      |> Enum.map_join("\n", fn df ->
         {mod, name, arity} = extract_function_parts(df.function)
         "  - #{mod}.#{name}/#{arity} (confidence: #{Float.round(df.confidence, 2)})"
       end)
-      |> Enum.join("\n")
 
     content = """
     Dead Code Analysis (#{scope})
@@ -4668,10 +4659,9 @@ defmodule Ragex.MCP.Handlers.Tools do
     """
 
     rows =
-      Enum.map(metrics, fn {module, m} ->
+      Enum.map_join(metrics, "\n    ", fn {module, m} ->
         "| #{inspect(module)} | #{m.afferent} | #{m.efferent} | #{Float.round(m.instability, 2)} |"
       end)
-      |> Enum.join("\n    ")
 
     content = header <> rows
 
@@ -4689,7 +4679,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     """
 
     rows =
-      Enum.map(metrics, fn {module, m} ->
+      Enum.map_join(metrics, "\n", fn {module, m} ->
         """
         #{inspect(module)}
           Afferent (Ca):  #{m.afferent}
@@ -4697,7 +4687,6 @@ defmodule Ragex.MCP.Handlers.Tools do
           Instability (I): #{Float.round(m.instability, 2)}
         """
       end)
-      |> Enum.join("\n")
 
     content = header <> rows
 

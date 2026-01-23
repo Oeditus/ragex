@@ -115,7 +115,7 @@ defmodule Ragex.Analysis.DeadCode do
       dead_functions =
         functions
         |> Enum.filter(fn func ->
-          is_public_function?(func) && should_check_module?(func, exclude_tests)
+          public_function?(func) && should_check_module?(func, exclude_tests)
         end)
         |> Enum.map(&analyze_function/1)
         |> Enum.filter(fn result ->
@@ -163,7 +163,7 @@ defmodule Ragex.Analysis.DeadCode do
       dead_functions =
         functions
         |> Enum.filter(fn func ->
-          is_private_function?(func) && should_check_module?(func, exclude_tests)
+          private_function?(func) && should_check_module?(func, exclude_tests)
         end)
         |> Enum.map(&analyze_function/1)
         |> Enum.filter(fn result ->
@@ -301,7 +301,7 @@ defmodule Ragex.Analysis.DeadCode do
 
     # Adjust for callback patterns
     callback_modifier =
-      if is_callback_pattern?(name, arity) do
+      if callback_pattern?(name, arity) do
         -0.7
       else
         0.0
@@ -309,7 +309,7 @@ defmodule Ragex.Analysis.DeadCode do
 
     # Adjust for entry point patterns
     entry_point_modifier =
-      if is_entry_point_pattern?(name) do
+      if entry_point_pattern?(name) do
         -0.5
       else
         0.0
@@ -318,8 +318,8 @@ defmodule Ragex.Analysis.DeadCode do
     # Adjust for module type
     module_modifier =
       cond do
-        is_test_module?(module) -> -0.3
-        is_mix_task?(module) -> -0.4
+        test_module?(module) -> -0.3
+        mix_task?(module) -> -0.4
         true -> 0.0
       end
 
@@ -370,31 +370,31 @@ defmodule Ragex.Analysis.DeadCode do
   end
 
   # Check if function is public
-  defp is_public_function?(%{data: metadata}) do
+  defp public_function?(%{data: metadata}) do
     Map.get(metadata, :visibility, :public) == :public
   end
 
   # Check if function is private
-  defp is_private_function?(%{data: metadata}) do
+  defp private_function?(%{data: metadata}) do
     Map.get(metadata, :visibility, :public) == :private
   end
 
   # Check if we should analyze this module
   defp should_check_module?(%{id: {module, _name, _arity}}, exclude_tests) do
     if exclude_tests do
-      !is_test_module?(module)
+      !test_module?(module)
     else
       true
     end
   end
 
   # Check if function matches callback patterns
-  defp is_callback_pattern?(name, arity) do
+  defp callback_pattern?(name, arity) do
     {name, arity} in @callback_patterns
   end
 
   # Check if function name matches entry point patterns
-  defp is_entry_point_pattern?(name) do
+  defp entry_point_pattern?(name) do
     name_str = Atom.to_string(name)
 
     Enum.any?(@entry_point_patterns, fn pattern ->
@@ -403,13 +403,13 @@ defmodule Ragex.Analysis.DeadCode do
   end
 
   # Check if module is a test module
-  defp is_test_module?(module) do
+  defp test_module?(module) do
     module_str = to_string(module)
     String.ends_with?(module_str, "Test") || String.contains?(module_str, ".Test.")
   end
 
   # Check if module is a Mix task
-  defp is_mix_task?(module) do
+  defp mix_task?(module) do
     module_str = to_string(module)
     String.starts_with?(module_str, "Mix.Tasks.")
   end

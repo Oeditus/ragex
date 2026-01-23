@@ -7,6 +7,8 @@ defmodule Ragex.Embeddings.HelperTest do
   @moduletag :embeddings
   @moduletag timeout: 120_000
 
+  @skip_embedding Application.compile_env(:ragex, :skip_embedding_tests, true)
+
   setup do
     # Clear the graph before each test
     Store.clear()
@@ -14,6 +16,7 @@ defmodule Ragex.Embeddings.HelperTest do
   end
 
   describe "generate_and_store_embeddings/1" do
+    @tag skip: @skip_embedding, slow: true, reason: :embedding
     test "generates embeddings for modules and functions" do
       # Wait for model
       wait_for_ready()

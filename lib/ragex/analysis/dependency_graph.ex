@@ -238,8 +238,8 @@ defmodule Ragex.Analysis.DependencyGraph do
       # Apply filters
       unused =
         unused
-        |> filter_if(exclude_tests, &(!is_test_module?(&1)))
-        |> filter_if(exclude_mix_tasks, &(!is_mix_task?(&1)))
+        |> filter_if(exclude_tests, &(!test_module?(&1)))
+        |> filter_if(exclude_mix_tasks, &(!mix_task?(&1)))
 
       {:ok, unused}
     rescue
@@ -311,106 +311,104 @@ defmodule Ragex.Analysis.DependencyGraph do
   """
   @spec decoupling_suggestions(keyword()) :: {:ok, [suggestion()]} | {:error, term()}
   def decoupling_suggestions(_opts \\ []) do
-    try do
-      suggestions = []
+    suggestions = []
 
-      # Detect circular dependencies
-      suggestions =
-        case find_cycles(scope: :module) do
-          {:ok, [_ | _] = cycles} ->
-            cycle_suggestions =
-              cycles
-              |> Enum.map(fn cycle ->
-                %{
-                  type: :circular_dependency,
-                  severity: severity_for_cycle(cycle),
-                  description: "Circular dependency detected: #{format_cycle(cycle)}",
-                  entities: cycle,
-                  metadata: %{cycle_length: length(cycle)}
-                }
-              end)
+    # Detect circular dependencies
+    suggestions =
+      case find_cycles(scope: :module) do
+        {:ok, [_ | _] = cycles} ->
+          cycle_suggestions =
+            cycles
+            |> Enum.map(fn cycle ->
+              %{
+                type: :circular_dependency,
+                severity: severity_for_cycle(cycle),
+                description: "Circular dependency detected: #{format_cycle(cycle)}",
+                entities: cycle,
+                metadata: %{cycle_length: length(cycle)}
+              }
+            end)
 
-            suggestions ++ cycle_suggestions
+          suggestions ++ cycle_suggestions
 
-          _ ->
-            suggestions
-        end
+        _ ->
+          suggestions
+      end
 
-      # Find God modules
-      suggestions =
-        case find_god_modules(15) do
-          {:ok, [_ | _] = god_modules} ->
-            god_suggestions =
-              god_modules
-              |> Enum.map(fn {module, metrics} ->
-                %{
-                  type: :god_module,
-                  severity: severity_for_coupling(metrics),
-                  description:
-                    "Module #{module} has high coupling (#{metrics.afferent + metrics.efferent} total dependencies)",
-                  entities: [module],
-                  metadata: metrics
-                }
-              end)
+    # Find God modules
+    suggestions =
+      case find_god_modules(15) do
+        {:ok, [_ | _] = god_modules} ->
+          god_suggestions =
+            god_modules
+            |> Enum.map(fn {module, metrics} ->
+              %{
+                type: :god_module,
+                severity: severity_for_coupling(metrics),
+                description:
+                  "Module #{module} has high coupling (#{metrics.afferent + metrics.efferent} total dependencies)",
+                entities: [module],
+                metadata: metrics
+              }
+            end)
 
-            suggestions ++ god_suggestions
+          suggestions ++ god_suggestions
 
-          _ ->
-            suggestions
-        end
+        _ ->
+          suggestions
+      end
 
-      # Find highly unstable modules
-      suggestions =
-        case all_coupling_metrics() do
-          {:ok, all_metrics} ->
-            unstable_suggestions =
-              all_metrics
-              |> Enum.filter(fn {_module, metrics} -> metrics.instability > 0.8 end)
-              |> Enum.map(fn {module, metrics} ->
-                %{
-                  type: :unstable_module,
-                  severity: :medium,
-                  description:
-                    "Module #{module} is highly unstable (I=#{Float.round(metrics.instability, 2)})",
-                  entities: [module],
-                  metadata: metrics
-                }
-              end)
+    # Find highly unstable modules
+    suggestions =
+      case all_coupling_metrics() do
+        {:ok, all_metrics} ->
+          unstable_suggestions =
+            all_metrics
+            |> Enum.filter(fn {_module, metrics} -> metrics.instability > 0.8 end)
+            |> Enum.map(fn {module, metrics} ->
+              %{
+                type: :unstable_module,
+                severity: :medium,
+                description:
+                  "Module #{module} is highly unstable (I=#{Float.round(metrics.instability, 2)})",
+                entities: [module],
+                metadata: metrics
+              }
+            end)
 
-            suggestions ++ unstable_suggestions
+          suggestions ++ unstable_suggestions
 
-          _ ->
-            suggestions
-        end
+        _ ->
+          suggestions
+      end
 
-      # Find unused modules
-      suggestions =
-        case find_unused() do
-          {:ok, [_ | _] = unused} ->
-            unused_suggestions =
-              unused
-              |> Enum.map(fn module ->
-                %{
-                  type: :unused_module,
-                  severity: :low,
-                  description: "Module #{module} appears to be unused and could be removed",
-                  entities: [module],
-                  metadata: %{}
-                }
-              end)
+    # Find unused modules
+    suggestions =
+      case find_unused() do
+        {:ok, [_ | _] = unused} ->
+          unused_suggestions =
+            unused
+            |> Enum.map(fn module ->
+              %{
+                type: :unused_module,
+                severity: :low,
+                description: "Module #{module} appears to be unused and could be removed",
+                entities: [module],
+                metadata: %{}
+              }
+            end)
 
-            suggestions ++ unused_suggestions
+          suggestions ++ unused_suggestions
 
-          _ ->
-            suggestions
-        end
+        _ ->
+          suggestions
+      end
 
-      {:ok, suggestions}
-    rescue
-      e ->
-        Logger.error("Failed to generate decoupling suggestions: #{inspect(e)}")
-        {:error, {:analysis_failed, Exception.message(e)}}
-    end
+    {:ok, suggestions}
+  rescue
+    e ->
+      Logger.error("Failed to generate decoupling suggestions: #{inspect(e)}")
+      {:error, {:analysis_failed, Exception.message(e)}}
   end
 
   # Private functions
@@ -681,9 +679,7 @@ defmodule Ragex.Analysis.DependencyGraph do
 
   # Helper: format cycle for display
   defp format_cycle(cycle) do
-    cycle
-    |> Enum.map(&format_entity/1)
-    |> Enum.join(" -> ")
+    Enum.map_join(cycle, " -> ", &format_entity/1)
   end
 
   # Helper: format entity for display
@@ -723,13 +719,13 @@ defmodule Ragex.Analysis.DependencyGraph do
   defp filter_if(list, false, _filter_fn), do: list
 
   # Helper: check if module is a test module
-  defp is_test_module?(module) do
+  defp test_module?(module) do
     module_str = to_string(module)
     String.ends_with?(module_str, "Test") || String.contains?(module_str, ".Test.")
   end
 
   # Helper: check if module is a Mix task
-  defp is_mix_task?(module) do
+  defp mix_task?(module) do
     module_str = to_string(module)
     String.starts_with?(module_str, "Mix.Tasks.")
   end

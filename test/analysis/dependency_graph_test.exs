@@ -105,7 +105,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
 
       {:ok, cycles} = DependencyGraph.find_cycles(scope: :module)
 
-      assert length(cycles) > 0
+      assert match?([_ | _], cycles)
       # Should find cycle containing ModA, ModB or ModD, and ModC
       cycle = List.first(cycles)
       assert :ModA in cycle
@@ -122,7 +122,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
 
       {:ok, cycles} = DependencyGraph.find_cycles(scope: :function)
 
-      assert length(cycles) > 0
+      assert match?([_ | _], cycles)
       cycle = List.first(cycles)
       assert {:function, :ModA, :func_a, 0} in cycle
       assert {:function, :ModB, :func_b, 0} in cycle
@@ -138,7 +138,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
 
       # Short cycles (length 2-3)
       {:ok, cycles_short} = DependencyGraph.find_cycles(min_cycle_length: 2)
-      assert length(cycles_short) > 0
+      assert match?([_ | _], cycles_short)
 
       # Long cycles only (length >= 5)
       {:ok, cycles_long} = DependencyGraph.find_cycles(min_cycle_length: 5)
@@ -154,7 +154,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
       )
 
       {:ok, cycles} = DependencyGraph.find_cycles(limit: 1)
-      assert length(cycles) <= 1
+      refute match?([_, _ | _], cycles)
     end
   end
 
@@ -373,7 +373,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
       circular_suggestions =
         Enum.filter(suggestions, fn s -> s.type == :circular_dependency end)
 
-      assert length(circular_suggestions) > 0
+      assert match?([_ | _], circular_suggestions)
     end
 
     test "suggests splitting God modules" do
@@ -393,7 +393,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
       {:ok, suggestions} = DependencyGraph.decoupling_suggestions()
 
       god_suggestions = Enum.filter(suggestions, fn s -> s.type == :god_module end)
-      assert length(god_suggestions) > 0
+      assert match?([_ | _], god_suggestions)
     end
 
     test "suggests stabilizing unstable modules" do
@@ -403,14 +403,14 @@ defmodule Ragex.Analysis.DependencyGraphTest do
       unstable_suggestions =
         Enum.filter(suggestions, fn s -> s.type == :unstable_module end)
 
-      assert length(unstable_suggestions) > 0
+      assert match?([_ | _], unstable_suggestions)
     end
 
     test "suggests removing unused modules" do
       {:ok, suggestions} = DependencyGraph.decoupling_suggestions()
 
       unused_suggestions = Enum.filter(suggestions, fn s -> s.type == :unused_module end)
-      assert length(unused_suggestions) > 0
+      assert match?([_ | _], unused_suggestions)
       assert Enum.any?(unused_suggestions, fn s -> :ModE in s.entities end)
     end
 
@@ -442,9 +442,8 @@ defmodule Ragex.Analysis.DependencyGraphTest do
              end)
 
       # Check that God modules with high coupling get higher severity
-      god_suggestions = Enum.filter(suggestions, fn s -> s.type == :god_module end)
-
-      if length(god_suggestions) > 0 do
+      with [_ | _] = god_suggestions <-
+             Enum.filter(suggestions, fn s -> s.type == :god_module end) do
         high_severity =
           Enum.any?(god_suggestions, fn s -> s.severity in [:medium, :high] end)
 
@@ -466,7 +465,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
 
       {:ok, suggestions} = DependencyGraph.decoupling_suggestions()
       # Should have minimal suggestions (maybe just unused module warnings)
-      assert length(suggestions) <= 1
+      refute match?([_, _ | _], suggestions)
     end
   end
 

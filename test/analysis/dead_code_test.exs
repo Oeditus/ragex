@@ -191,21 +191,19 @@ defmodule Ragex.Analysis.DeadCodeTest do
 
       # Private functions should generally have higher confidence scores
       private_avg =
-        if length(private_dead) > 0 do
-          Enum.sum(Enum.map(private_dead, & &1.confidence)) / length(private_dead)
-        else
-          0.0
+        case private_dead do
+          [] -> 0.0
+          [_ | _] -> Enum.sum(Enum.map(private_dead, & &1.confidence)) / length(private_dead)
         end
 
       public_avg =
-        if length(public_dead) > 0 do
-          Enum.sum(Enum.map(public_dead, & &1.confidence)) / length(public_dead)
-        else
-          0.0
+        case public_dead do
+          [] -> 0.0
+          [_ | _] -> Enum.sum(Enum.map(public_dead, & &1.confidence)) / length(public_dead)
         end
 
       # This might not always be true depending on function names, but generally should be
-      assert private_avg >= public_avg || length(private_dead) == 0 || length(public_dead) == 0
+      assert private_avg >= public_avg || private_dead == [] || public_dead == []
     end
   end
 
@@ -261,7 +259,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
       high_confidence_suggestions =
         Enum.filter(suggestions, fn s -> s.confidence > 0.8 end)
 
-      if length(high_confidence_suggestions) > 0 do
+      if match?([_ | _], high_confidence_suggestions) do
         assert Enum.all?(high_confidence_suggestions, fn s -> s.type == :remove_function end)
       end
     end
@@ -273,7 +271,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
       medium_confidence_suggestions =
         Enum.filter(suggestions, fn s -> s.confidence > 0.5 && s.confidence <= 0.8 end)
 
-      if length(medium_confidence_suggestions) > 0 do
+      if match?([_ | _], medium_confidence_suggestions) do
         assert Enum.all?(medium_confidence_suggestions, fn s -> s.type == :review_function end)
       end
     end
@@ -285,7 +283,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
       low_confidence_suggestions =
         Enum.filter(suggestions, fn s -> s.confidence <= 0.5 end)
 
-      if length(low_confidence_suggestions) > 0 do
+      if match?([_ | _], low_confidence_suggestions) do
         assert Enum.all?(low_confidence_suggestions, fn s -> s.type == :potential_callback end)
       end
     end
@@ -319,7 +317,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
           match?({:module, _}, s.target)
         end)
 
-      assert length(module_suggestions) > 0
+      assert match?([_ | _], module_suggestions)
       # Ungrouped should have more individual function suggestions
       assert length(ungrouped) >= length(grouped)
     end
