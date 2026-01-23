@@ -143,7 +143,8 @@ end
    - Embedding-based similarity search
    - Dead code detection (graph-based + intraprocedural)
    - Dependency analysis and coupling metrics
-   - MCP tools for all analysis features
+   - Impact analysis (risk scoring, test discovery, effort estimation)
+   - MCP tools for all analysis features (13 total)
 
 ## Development Practices
 
@@ -210,17 +211,21 @@ end
   - 10C.6: Visualization (Graphviz, D3, ASCII for impact analysis)
   - 10C.7: MCP tools (preview_refactor, refactor_conflicts, undo_refactor, refactor_history, visualize_impact)
   - 10C.8: Testing (29 tests covering undo, reports, visualization)
-- **Phase 11 Week 2-3**: Code Analysis Features
+- **Phase 11**: Code Analysis & Quality (Complete)
   - Week 2 Day 3: Dead code detection via Metastatic integration (interprocedural + intraprocedural)
   - Week 3 Days 2-3: Code duplication detection (AST-based Type I-IV clones + embedding-based semantic similarity)
-  - Module: `lib/ragex/analysis/duplication.ex` (400 lines)
-  - MCP Tools: `find_duplicates`, `find_similar_code`
-  - Testing: 24 tests, all passing
-  - Documentation: Comprehensive ANALYSIS.md guide
+  - Week 4 Days 1-2: Impact Analysis module (`lib/ragex/analysis/impact.ex` - 640 lines)
+  - Week 4 Day 3: MCP tools implementation (analyze_impact, estimate_refactoring_effort, risk_assessment)
+  - Week 4 Day 3: Comprehensive testing (35 tests for Impact Analysis, all passing)
+  - Week 4 Day 3: Documentation (256 lines in ANALYSIS.md, 58 lines in README.md)
+  - Modules: `lib/ragex/analysis/{duplication,dead_code,dependency_graph,impact}.ex`
+  - MCP Tools: 13 total (find_duplicates, find_similar_code, find_dead_code, analyze_dead_code_patterns, analyze_dependencies, find_circular_dependencies, coupling_report, analyze_quality, quality_report, find_complex_code, analyze_impact, estimate_refactoring_effort, risk_assessment)
+  - Testing: 694 tests total, 0 failures, 25 skipped
+  - Documentation: Comprehensive ANALYSIS.md guide (900+ lines)
 
 ### In Progress 🚧
 
-- **Phase 11 Week 3 Day 4-5**: Integration tests and final documentation updates
+- None! All planned phases complete.
 
 ### Future Work
 
