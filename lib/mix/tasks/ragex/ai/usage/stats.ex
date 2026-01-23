@@ -17,6 +17,7 @@ defmodule Mix.Tasks.Ragex.Ai.Usage.Stats do
   use Mix.Task
   require Logger
   alias Ragex.AI.Usage
+  alias Ragex.CLI.{Colors, Output}
 
   @shortdoc "Display AI usage statistics"
 
@@ -31,7 +32,7 @@ defmodule Mix.Tasks.Ragex.Ai.Usage.Stats do
         # Show all providers
         stats = Usage.get_stats(:all)
 
-        IO.puts("\n=== AI Usage Statistics (All Providers) ===\n")
+        Output.section("AI Usage Statistics (All Providers)")
 
         total_requests = 0
         total_tokens = 0
@@ -41,9 +42,8 @@ defmodule Mix.Tasks.Ragex.Ai.Usage.Stats do
           Enum.reduce(stats, {total_requests, total_tokens, total_cost}, fn {provider,
                                                                              provider_stats},
                                                                             {req, tok, cost} ->
-            IO.puts("--- #{provider} ---")
+            IO.puts("\n" <> Colors.bold("#{provider}"))
             print_provider_stats(provider_stats)
-            IO.puts("")
 
             {
               req + provider_stats.total_requests,
@@ -52,10 +52,17 @@ defmodule Mix.Tasks.Ragex.Ai.Usage.Stats do
             }
           end)
 
-        IO.puts("=== Total Across All Providers ===")
-        IO.puts("Total requests: #{total_requests}")
-        IO.puts("Total tokens: #{format_number(total_tokens)}")
-        IO.puts("Total estimated cost: $#{Float.round(total_cost, 4)}")
+        IO.puts("\n" <> Colors.bold("Total Across All Providers"))
+
+        Output.key_value(
+          [
+            {"Total requests", Colors.highlight(to_string(total_requests))},
+            {"Total tokens", format_number(total_tokens)},
+            {"Estimated cost", "$#{Float.round(total_cost, 4)}"}
+          ],
+          indent: 2
+        )
+
         IO.puts("")
 
       provider_str ->
@@ -63,9 +70,10 @@ defmodule Mix.Tasks.Ragex.Ai.Usage.Stats do
         stats = Usage.get_stats(provider)
 
         if map_size(stats) == 0 do
-          IO.puts("No usage data for provider: #{provider}")
+          IO.puts(Colors.muted("No usage data for provider: #{provider}"))
+          IO.puts("")
         else
-          IO.puts("\n=== AI Usage Statistics (#{provider}) ===\n")
+          Output.section("AI Usage Statistics (#{provider})")
           print_provider_stats(stats)
           IO.puts("")
         end
@@ -73,20 +81,31 @@ defmodule Mix.Tasks.Ragex.Ai.Usage.Stats do
   end
 
   defp print_provider_stats(stats) do
-    IO.puts("Requests: #{stats.total_requests}")
-    IO.puts("Prompt tokens: #{format_number(stats.total_prompt_tokens)}")
-    IO.puts("Completion tokens: #{format_number(stats.total_completion_tokens)}")
-    IO.puts("Total tokens: #{format_number(stats.total_tokens)}")
-    IO.puts("Estimated cost: $#{Float.round(stats.estimated_cost, 4)}")
+    Output.key_value(
+      [
+        {"Requests", Colors.highlight(to_string(stats.total_requests))},
+        {"Prompt tokens", format_number(stats.total_prompt_tokens)},
+        {"Completion tokens", format_number(stats.total_completion_tokens)},
+        {"Total tokens", format_number(stats.total_tokens)},
+        {"Estimated cost", "$#{Float.round(stats.estimated_cost, 4)}"}
+      ],
+      indent: 2
+    )
 
     if map_size(stats.by_model) > 0 do
-      IO.puts("\nBy Model:")
+      IO.puts("\n" <> Colors.muted("By Model:"))
 
       Enum.each(stats.by_model, fn {model, model_stats} ->
-        IO.puts("  #{model}:")
-        IO.puts("    Requests: #{model_stats.requests}")
-        IO.puts("    Tokens: #{format_number(model_stats.total_tokens)}")
-        IO.puts("    Cost: $#{Float.round(model_stats.cost, 4)}")
+        IO.puts("  " <> Colors.info(to_string(model)) <> ":")
+
+        Output.key_value(
+          [
+            {"Requests", model_stats.requests},
+            {"Tokens", format_number(model_stats.total_tokens)},
+            {"Cost", "$#{Float.round(model_stats.cost, 4)}"}
+          ],
+          indent: 4
+        )
       end)
     end
   end

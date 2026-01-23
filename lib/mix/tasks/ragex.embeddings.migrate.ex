@@ -40,6 +40,7 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
 
   alias Ragex.Embeddings.Registry
   alias Ragex.Graph.Store
+  alias Ragex.CLI.{Colors, Output, Prompt}
 
   @impl Mix.Task
   def run(args) do
@@ -72,13 +73,16 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
         migrate_to_model(opts[:model], opts[:force] || false)
 
       true ->
-        Mix.shell().info("Usage: mix ragex.embeddings.migrate [--check|--model MODEL_ID|--clear]")
-        Mix.shell().info("Run 'mix help ragex.embeddings.migrate' for more information")
+        IO.puts(
+          Colors.error("Usage: mix ragex.embeddings.migrate [--check|--model MODEL_ID|--clear]")
+        )
+
+        IO.puts(Colors.muted("Run 'mix help ragex.embeddings.migrate' for more information"))
     end
   end
 
   defp check_status do
-    Mix.shell().info("Checking embedding model status...\n")
+    Output.section("Embedding Model Status")
 
     # Get current configured model
     current_model_id = Application.get_env(:ragex, :embedding_model, Registry.default())
@@ -90,34 +94,54 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
 
     # Show available models
     display_available_models(current_model_id)
-    Mix.shell().info("")
+    IO.puts("")
   end
 
   defp display_configured_model(current_model_id) do
     case Registry.get(current_model_id) do
       {:ok, model_info} ->
-        Mix.shell().info("✓ Configured Model: #{model_info.name}")
-        Mix.shell().info("  ID: #{model_info.id}")
-        Mix.shell().info("  Dimensions: #{model_info.dimensions}")
-        Mix.shell().info("  Type: #{model_info.type}")
-        Mix.shell().info("  Repository: #{model_info.repo}\n")
+        IO.puts(Colors.bold("Configured Model:"))
+
+        Output.key_value(
+          [
+            {"Name", model_info.name},
+            {"ID", Colors.highlight(to_string(model_info.id))},
+            {"Dimensions", model_info.dimensions},
+            {"Type", model_info.type},
+            {"Repository", model_info.repo}
+          ],
+          indent: 2
+        )
+
+        IO.puts("")
 
       {:error, :not_found} ->
-        Mix.shell().error("✗ Invalid model configured: #{inspect(current_model_id)}\n")
+        IO.puts(Colors.error("✗ Invalid model configured: #{inspect(current_model_id)}"))
+        IO.puts("")
     end
   end
 
   defp check_embeddings_status([], _current_model_id) do
-    Mix.shell().info("✓ No embeddings stored yet\n")
+    IO.puts(Colors.muted("✓ No embeddings stored yet"))
+    IO.puts("")
   end
 
   defp check_embeddings_status(embeddings, current_model_id) do
     {sample_type, sample_id, sample_embedding, _text} = hd(embeddings)
     embedding_dims = length(sample_embedding)
 
-    Mix.shell().info("✓ Stored Embeddings: #{length(embeddings)}")
-    Mix.shell().info("  Dimensions: #{embedding_dims}")
-    Mix.shell().info("  Sample: #{sample_type} #{inspect(sample_id)}\n")
+    IO.puts(Colors.bold("Stored Embeddings:"))
+
+    Output.key_value(
+      [
+        {"Count", Colors.highlight(to_string(length(embeddings)))},
+        {"Dimensions", embedding_dims},
+        {"Sample", "#{sample_type} #{inspect(sample_id)}"}
+      ],
+      indent: 2
+    )
+
+    IO.puts("")
 
     check_compatibility(current_model_id, embedding_dims)
   end
@@ -126,9 +150,13 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
     case Registry.get(current_model_id) do
       {:ok, model_info} ->
         if model_info.dimensions == embedding_dims do
-          Mix.shell().info(
-            "✓ Model and embeddings are compatible (#{model_info.dimensions} dimensions)\n"
+          IO.puts(
+            Colors.success(
+              "✓ Model and embeddings are compatible (#{model_info.dimensions} dimensions)"
+            )
           )
+
+          IO.puts("")
         else
           display_incompatibility_error(model_info.dimensions, embedding_dims)
         end
@@ -139,22 +167,35 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
   end
 
   defp display_incompatibility_error(model_dims, embedding_dims) do
-    Mix.shell().error("✗ INCOMPATIBILITY DETECTED!")
-    Mix.shell().error("  Configured model: #{model_dims} dimensions")
-    Mix.shell().error("  Stored embeddings: #{embedding_dims} dimensions")
-    Mix.shell().error("\n  Action required:")
-    Mix.shell().error("    1. Change config to use a compatible model")
-    Mix.shell().error("    2. OR run: mix ragex.embeddings.migrate --clear")
-    Mix.shell().error("    3. Then re-analyze your codebase\n")
+    IO.puts(Colors.error("✗ INCOMPATIBILITY DETECTED!"))
+
+    Output.key_value(
+      [
+        {"Configured model", "#{model_dims} dimensions"},
+        {"Stored embeddings", "#{embedding_dims} dimensions"}
+      ],
+      indent: 2
+    )
+
+    IO.puts("\n" <> Colors.warning("Action required:"))
+
+    Output.list(
+      [
+        "Change config to use a compatible model",
+        "OR run: #{Colors.highlight("mix ragex.embeddings.migrate --clear")}",
+        "Then re-analyze your codebase"
+      ], indent: 4, bullet: "→")
+
+    IO.puts("")
   end
 
   defp display_available_models(current_model_id) do
-    Mix.shell().info("Available Models:")
+    IO.puts(Colors.bold("Available Models:"))
 
     for model <- Registry.all() do
-      marker = if model.id == current_model_id, do: " (current)", else: ""
-      Mix.shell().info("  • #{model.id}#{marker}")
-      Mix.shell().info("    #{model.name} - #{model.dimensions} dims")
+      marker = if model.id == current_model_id, do: Colors.highlight(" (current)"), else: ""
+      IO.puts("  • #{Colors.info(to_string(model.id))}#{marker}")
+      IO.puts(Colors.muted("    #{model.name} - #{model.dimensions} dims"))
     end
   end
 
@@ -171,16 +212,20 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
   end
 
   defp display_unknown_model_error(model_id_str) do
-    Mix.shell().error("✗ Unknown model: #{model_id_str}")
-    Mix.shell().info("\nAvailable models:")
+    IO.puts(Colors.error("✗ Unknown model: #{model_id_str}"))
+    IO.puts("\n" <> Colors.bold("Available models:"))
 
     for model <- Registry.all() do
-      Mix.shell().info("  • #{model.id}")
+      IO.puts("  • #{Colors.info(to_string(model.id))}")
     end
+
+    IO.puts("")
   end
 
   defp perform_migration(model_id, target_model, force) do
-    Mix.shell().info("Migrating to model: #{target_model.name}\n")
+    Output.section("Model Migration")
+    IO.puts(Colors.info("Target model: #{target_model.name}"))
+    IO.puts("")
 
     embeddings = Store.list_embeddings()
     current_model_id = Application.get_env(:ragex, :embedding_model, Registry.default())
@@ -203,50 +248,83 @@ defmodule Mix.Tasks.Ragex.Embeddings.Migrate do
   end
 
   defp display_compatible_migration(model_id) do
-    Mix.shell().info("✓ Models are compatible (same dimensions)")
-    Mix.shell().info("  No migration needed. Update config.exs to:")
-    Mix.shell().info("  config :ragex, :embedding_model, :#{model_id}")
-    Mix.shell().info("\n  Or set environment variable:")
-    Mix.shell().info("  export RAGEX_EMBEDDING_MODEL=#{model_id}\n")
+    IO.puts(Colors.success("✓ Models are compatible (same dimensions)"))
+    IO.puts(Colors.muted("No migration needed. Update config.exs to:"))
+    IO.puts(Colors.highlight("  config :ragex, :embedding_model, :#{model_id}"))
+    IO.puts(Colors.muted("\nOr set environment variable:"))
+    IO.puts(Colors.highlight("  export RAGEX_EMBEDDING_MODEL=#{model_id}"))
+    IO.puts("")
   end
 
   defp display_incompatible_migration(current_model, target_model, model_id) do
-    Mix.shell().error("✗ Dimension mismatch detected!")
-    Mix.shell().error("  Current: #{current_model.dimensions} dimensions")
-    Mix.shell().error("  Target: #{target_model.dimensions} dimensions")
-    Mix.shell().error("\n  You must regenerate embeddings:")
-    Mix.shell().error("    1. Clear existing: mix ragex.embeddings.migrate --clear")
-    Mix.shell().error("    2. Update config.exs: config :ragex, :embedding_model, :#{model_id}")
-    Mix.shell().error("    3. Re-analyze your codebase\n")
+    IO.puts(Colors.error("✗ Dimension mismatch detected!"))
+
+    Output.key_value(
+      [
+        {"Current", "#{current_model.dimensions} dimensions"},
+        {"Target", "#{target_model.dimensions} dimensions"}
+      ],
+      indent: 2
+    )
+
+    IO.puts("\n" <> Colors.warning("You must regenerate embeddings:"))
+
+    Output.list(
+      [
+        "Clear existing: #{Colors.highlight("mix ragex.embeddings.migrate --clear")}",
+        "Update config.exs: #{Colors.highlight("config :ragex, :embedding_model, :#{model_id}")}",
+        "Re-analyze your codebase"
+      ], indent: 4, bullet: "→")
+
+    IO.puts("")
   end
 
   defp display_clean_migration_steps(model_id) do
-    Mix.shell().info("✓ No embeddings to migrate (or --force specified)")
-    Mix.shell().info("\n  Next steps:")
-    Mix.shell().info("    1. Update config.exs:")
-    Mix.shell().info("       config :ragex, :embedding_model, :#{model_id}")
-    Mix.shell().info("    2. Restart server")
-    Mix.shell().info("    3. Analyze your codebase\n")
+    IO.puts(Colors.success("✓ No embeddings to migrate (or --force specified)"))
+    IO.puts("\n" <> Colors.bold("Next steps:"))
+
+    Output.list(
+      [
+        "Update config.exs: #{Colors.highlight("config :ragex, :embedding_model, :#{model_id}")}",
+        "Restart server",
+        "Analyze your codebase"
+      ], indent: 2, bullet: "→")
+
+    IO.puts("")
   end
 
   defp clear_embeddings do
+    Output.section("Clear Embeddings")
+
     embeddings = Store.list_embeddings()
     count = length(embeddings)
 
     if count == 0 do
-      Mix.shell().info("✓ No embeddings to clear")
+      IO.puts(Colors.success("✓ No embeddings to clear"))
+      IO.puts("")
     else
-      Mix.shell().info("Clearing #{count} embeddings...")
+      IO.puts(Colors.info("Found #{count} embeddings"))
+      IO.puts("")
 
-      # Clear embeddings from ETS
-      # Note: This requires adding a clear_embeddings function to Store
-      # For now, we'll just inform the user
-      Mix.shell().info("\n  To clear embeddings:")
-      Mix.shell().info("    1. Stop the server")
-      Mix.shell().info("    2. Embeddings are stored in memory (ETS)")
-      Mix.shell().info("    3. They will be cleared on next restart")
-      Mix.shell().info("\n  Or restart with clean state:")
-      Mix.shell().info("    kill the server process and restart\n")
+      if Prompt.confirm("Clear all embeddings?", default: :no) do
+        IO.puts("\n" <> Colors.bold("To clear embeddings:"))
+
+        Output.list(
+          [
+            "Stop the server",
+            "Embeddings are stored in memory (ETS)",
+            "They will be cleared on next restart"
+          ], indent: 2, bullet: "→")
+
+        IO.puts(
+          "\n" <> Colors.muted("Or restart with clean state: kill the server process and restart")
+        )
+
+        IO.puts("")
+      else
+        IO.puts(Colors.muted("Cancelled."))
+        IO.puts("")
+      end
     end
   end
 end
