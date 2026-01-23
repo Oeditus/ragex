@@ -25,7 +25,12 @@ defmodule Ragex.Analysis.ImpactTest do
 
     # Module DTest defines test functions (calls c1/0)
     Store.add_node(:module, :DTest, %{file: "test/d_test.exs", line: 1})
-    Store.add_node(:function, {:DTest, :test_something, 1}, %{file: "test/d_test.exs", line: 5, visibility: :public})
+
+    Store.add_node(:function, {:DTest, :test_something, 1}, %{
+      file: "test/d_test.exs",
+      line: 5,
+      visibility: :public
+    })
 
     # Add edges: defines relationships
     Store.add_edge({:module, :A}, {:function, :A, :a1, 0}, :defines)
@@ -77,7 +82,7 @@ defmodule Ragex.Analysis.ImpactTest do
       assert shallow.depth == 1
       assert deep.depth == 10
       # Both should find at least the direct caller
-      assert length(shallow.all_affected) >= 1
+      assert match?([_ | _], shallow.all_affected)
     end
 
     test "excludes test modules when include_tests: false" do
@@ -85,15 +90,17 @@ defmodule Ragex.Analysis.ImpactTest do
       {:ok, without_tests} = Impact.analyze_change({:function, :B, :b1, 0}, include_tests: false)
 
       # Count test functions in results
-      test_count_with = Enum.count(with_tests.all_affected, fn
-        {:function, :DTest, _, _} -> true
-        _ -> false
-      end)
+      test_count_with =
+        Enum.count(with_tests.all_affected, fn
+          {:function, :DTest, _, _} -> true
+          _ -> false
+        end)
 
-      test_count_without = Enum.count(without_tests.all_affected, fn
-        {:function, :DTest, _, _} -> true
-        _ -> false
-      end)
+      test_count_without =
+        Enum.count(without_tests.all_affected, fn
+          {:function, :DTest, _, _} -> true
+          _ -> false
+        end)
 
       # Without tests should have fewer or equal test functions
       assert test_count_without <= test_count_with
@@ -153,16 +160,26 @@ defmodule Ragex.Analysis.ImpactTest do
     test "respects custom test patterns" do
       # Add a function that looks like a test but uses different naming
       Store.add_node(:module, :ESpec, %{file: "spec/e_spec.exs", line: 1})
-      Store.add_node(:function, {:ESpec, :it_works, 0}, %{file: "spec/e_spec.exs", line: 5, visibility: :public})
+
+      Store.add_node(:function, {:ESpec, :it_works, 0}, %{
+        file: "spec/e_spec.exs",
+        line: 5,
+        visibility: :public
+      })
+
       Store.add_edge({:module, :ESpec}, {:function, :ESpec, :it_works, 0}, :defines)
       Store.add_edge({:function, :ESpec, :it_works, 0}, {:function, :B, :b1, 0}, :calls)
 
       # Custom patterns should catch "Spec" suffix
-      {:ok, custom_tests} = Impact.find_affected_tests({:function, :B, :b1, 0}, test_patterns: ["Spec", "_test", "Test"])
+      {:ok, custom_tests} =
+        Impact.find_affected_tests({:function, :B, :b1, 0},
+          test_patterns: ["Spec", "_test", "Test"]
+        )
+
       has_spec_custom = Enum.any?(custom_tests, fn {:function, mod, _, _} -> mod == :ESpec end)
 
       # The ESpec module should be found with custom patterns
-      assert has_spec_custom or length(custom_tests) > 0
+      assert has_spec_custom or match?([_ | _], custom_tests)
     end
 
     test "handles functions with no transitive test callers" do
@@ -237,8 +254,8 @@ defmodule Ragex.Analysis.ImpactTest do
       {:ok, extract} = Impact.estimate_effort(:extract_function, {:function, :A, :a1, 0})
 
       # Recommendations should be non-empty
-      assert length(rename.recommendations) > 0
-      assert length(extract.recommendations) > 0
+      assert match?([_ | _], rename.recommendations)
+      assert match?([_ | _], extract.recommendations)
 
       # Recommendations should be strings
       assert Enum.all?(rename.recommendations, &is_binary/1)

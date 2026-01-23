@@ -25,7 +25,7 @@ defmodule Ragex.Analysis.Impact do
       {:ok, risk} = Impact.risk_score({:function, MyModule, :critical, 1})
   """
 
-  alias Ragex.Graph.{Store, Algorithms}
+  alias Ragex.Graph.{Algorithms, Store}
   require Logger
 
   @type node_ref :: {:module, module()} | {:function, module(), atom(), non_neg_integer()}
@@ -212,41 +212,39 @@ defmodule Ragex.Analysis.Impact do
   @spec estimate_effort(atom(), node_ref(), keyword()) ::
           {:ok, effort_estimate()} | {:error, term()}
   def estimate_effort(operation, target, opts \\ []) do
-    try do
-      # Get impact analysis
-      {:ok, impact} = analyze_change(target, depth: 10)
+    # Get impact analysis
+    {:ok, impact} = analyze_change(target, depth: 10)
 
-      # Estimate based on operation type
-      estimate =
-        case operation do
-          :rename_function ->
-            estimate_rename_function(target, impact, opts)
+    # Estimate based on operation type
+    estimate =
+      case operation do
+        :rename_function ->
+          estimate_rename_function(target, impact, opts)
 
-          :rename_module ->
-            estimate_rename_module(target, impact, opts)
+        :rename_module ->
+          estimate_rename_module(target, impact, opts)
 
-          :extract_function ->
-            estimate_extract_function(target, impact, opts)
+        :extract_function ->
+          estimate_extract_function(target, impact, opts)
 
-          :inline_function ->
-            estimate_inline_function(target, impact, opts)
+        :inline_function ->
+          estimate_inline_function(target, impact, opts)
 
-          :move_function ->
-            estimate_move_function(target, impact, opts)
+        :move_function ->
+          estimate_move_function(target, impact, opts)
 
-          :change_signature ->
-            estimate_change_signature(target, impact, opts)
+        :change_signature ->
+          estimate_change_signature(target, impact, opts)
 
-          other ->
-            raise ArgumentError, "Unknown operation: #{other}"
-        end
+        other ->
+          raise ArgumentError, "Unknown operation: #{other}"
+      end
 
-      {:ok, estimate}
-    rescue
-      e ->
-        Logger.error("Failed to estimate refactoring effort: #{inspect(e)}")
-        {:error, {:estimation_failed, Exception.message(e)}}
-    end
+    {:ok, estimate}
+  rescue
+    e ->
+      Logger.error("Failed to estimate refactoring effort: #{inspect(e)}")
+      {:error, {:estimation_failed, Exception.message(e)}}
   end
 
   @doc """

@@ -156,6 +156,7 @@ defmodule Ragex.Analysis.DuplicationTest do
 
       File.write!(file1, code)
       File.write!(file2, code)
+
       File.write!(file3, """
       defmodule Different do
         def other(y), do: y + 1
@@ -165,7 +166,8 @@ defmodule Ragex.Analysis.DuplicationTest do
       {:ok, clones} = Duplication.detect_in_files([file1, file2, file3])
 
       # Should find at least one clone pair (file1 <-> file2)
-      assert length(clones) >= 1
+      assert match?([_ | _], clones)
+
       assert Enum.any?(clones, fn clone ->
                (clone.file1 == file1 and clone.file2 == file2) or
                  (clone.file1 == file2 and clone.file2 == file1)
@@ -224,7 +226,7 @@ defmodule Ragex.Analysis.DuplicationTest do
 
       {:ok, clones} = Duplication.detect_in_files([file1, file2])
 
-      assert length(clones) >= 1
+      assert match?([_ | _], clones)
 
       clone = hd(clones)
       assert clone.clone_type in [:type_i, :type_ii, :type_iii, :type_iv]
@@ -271,8 +273,8 @@ defmodule Ragex.Analysis.DuplicationTest do
 
       # Results should not include files from _build
       refute Enum.any?(clones, fn clone ->
-        String.contains?(clone.file1, "_build") or String.contains?(clone.file2, "_build")
-      end)
+               String.contains?(clone.file1, "_build") or String.contains?(clone.file2, "_build")
+             end)
     end
 
     test "returns empty list for empty directory", %{test_dir: test_dir} do

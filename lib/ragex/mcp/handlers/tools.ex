@@ -5,7 +5,16 @@ defmodule Ragex.MCP.Handlers.Tools do
   Implements the tools/list and tools/call methods.
   """
   alias Ragex.AI.{Cache, Usage}
-  alias Ragex.Analysis.{DeadCode, DependencyGraph, Duplication, Impact, MetastaticBridge, QualityStore}
+
+  alias Ragex.Analysis.{
+    DeadCode,
+    DependencyGraph,
+    Duplication,
+    Impact,
+    MetastaticBridge,
+    QualityStore
+  }
+
   alias Ragex.Analyzers.Directory
   alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
@@ -4057,9 +4066,6 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       {:error, :no_undo_history} ->
         {:ok, %{status: "empty", entries: [], count: 0}}
-
-      {:error, reason} ->
-        {:error, "Failed to retrieve history: #{inspect(reason)}"}
     end
   end
 
@@ -4806,11 +4812,13 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp analyze_impact_tool(_), do: {:error, "Missing required 'target' parameter"}
 
-  defp estimate_refactoring_effort_tool(%{"operation" => operation_str, "target" => target_str} = params) do
+  defp estimate_refactoring_effort_tool(
+         %{"operation" => operation_str, "target" => target_str} = params
+       ) do
     format = Map.get(params, "format", "summary")
 
     operation = String.to_atom(operation_str)
-    
+
     # Parse target string
     case parse_target_string(target_str) do
       {:ok, target} ->
@@ -4853,40 +4861,39 @@ defmodule Ragex.MCP.Handlers.Tools do
   # Helper functions for impact analysis tools
 
   defp parse_target_string(target_str) do
-    cond do
-      # Module.function/arity format
-      String.contains?(target_str, "/") and String.contains?(target_str, ".") ->
-        case String.split(target_str, ".", parts: 2) do
-          [module_str, func_arity] ->
-            case String.split(func_arity, "/") do
-              [func_str, arity_str] ->
-                case Integer.parse(arity_str) do
-                  {arity, ""} ->
-                    module = String.to_existing_atom("Elixir." <> module_str)
-                    function = String.to_atom(func_str)
-                    {:ok, {:function, module, function, arity}}
+    # Module.function/arity format
+    if String.contains?(target_str, "/") and String.contains?(target_str, ".") do
+      case String.split(target_str, ".", parts: 2) do
+        [module_str, func_arity] ->
+          case String.split(func_arity, "/") do
+            [func_str, arity_str] ->
+              case Integer.parse(arity_str) do
+                {arity, ""} ->
+                  module = String.to_existing_atom("Elixir." <> module_str)
+                  function = String.to_atom(func_str)
+                  {:ok, {:function, module, function, arity}}
 
-                  _ ->
-                    {:error, "Invalid arity: #{arity_str}"}
-                end
+                _ ->
+                  {:error, "Invalid arity: #{arity_str}"}
+              end
 
-              _ ->
-                {:error, "Invalid function/arity format"}
-            end
+            _ ->
+              {:error, "Invalid function/arity format"}
+          end
 
-          _ ->
-            {:error, "Invalid module.function format"}
-        end
+        _ ->
+          {:error, "Invalid module.function format"}
+      end
 
       # Module format
-      true ->
-        try do
-          module = String.to_existing_atom("Elixir." <> target_str)
-          {:ok, {:module, module}}
-        rescue
-          ArgumentError ->
-            {:error, "Module not found: #{target_str}"}
-        end
+    else
+      try do
+        module = String.to_existing_atom("Elixir." <> target_str)
+        {:ok, {:module, module}}
+      rescue
+        ArgumentError ->
+          {:error, "Module not found: #{target_str}"}
+      end
     end
   end
 
@@ -4913,14 +4920,14 @@ defmodule Ragex.MCP.Handlers.Tools do
     Target: #{format_node_id(analysis.target)}
     Risk Score: #{Float.round(analysis.risk_score, 4)}
     Importance: #{Float.round(analysis.importance, 4)}
-    
+
     Direct Callers: #{length(analysis.direct_callers)}
     #{Enum.map_join(analysis.direct_callers, "\n", fn caller -> "  - #{format_node_id(caller)}" end)}
-    
+
     All Affected: #{analysis.affected_count}
     #{Enum.map_join(Enum.take(analysis.all_affected, 10), "\n", fn node -> "  - #{format_node_id(node)}" end)}
     #{if analysis.affected_count > 10, do: "  ... and #{analysis.affected_count - 10} more", else: ""}
-    
+
     Recommendations:
     #{Enum.map_join(analysis.recommendations, "\n", fn rec -> "  - #{rec}" end)}
     """
@@ -4958,14 +4965,14 @@ defmodule Ragex.MCP.Handlers.Tools do
     =========================
     Operation: #{estimate.operation}
     Target: #{format_node_id(estimate.target)}
-    
+
     Estimated Changes: #{estimate.estimated_changes} locations
     Complexity: #{estimate.complexity}
     Estimated Time: #{estimate.estimated_time}
-    
+
     Risks:
     #{Enum.map_join(estimate.risks, "\n", fn risk -> "  - #{risk}" end)}
-    
+
     Recommendations:
     #{Enum.map_join(estimate.recommendations, "\n", fn rec -> "  - #{rec}" end)}
     """
@@ -5002,12 +5009,12 @@ defmodule Ragex.MCP.Handlers.Tools do
     ==============
     Target: #{format_node_id(risk.target)}
     Overall Risk: #{Float.round(risk.overall, 4)} (#{risk.level})
-    
+
     Components:
       - Importance: #{Float.round(risk.importance, 4)} (PageRank-based)
       - Coupling: #{Float.round(risk.coupling, 4)} (incoming/outgoing edges)
       - Complexity: #{Float.round(risk.complexity, 4)} (code metrics)
-    
+
     Factors:
     #{format_risk_factors(risk.factors)}
     """
@@ -5506,56 +5513,60 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp format_duplicates_result(clones, "detailed") do
     content =
-      if length(clones) > 0 do
-        by_type =
-          Enum.group_by(clones, & &1.clone_type)
-          |> Enum.map_join("\n", fn {type, group} ->
-            "  #{format_clone_type(type)}: #{length(group)}"
-          end)
+      case clones do
+        [_ | _] ->
+          by_type =
+            Enum.group_by(clones, & &1.clone_type)
+            |> Enum.map_join("\n", fn {type, group} ->
+              "  #{format_clone_type(type)}: #{length(group)}"
+            end)
 
-        pairs =
-          Enum.map_join(clones, "\n\n", fn clone ->
-            """
-            #{clone.file1} <-> #{clone.file2}
-              Type: #{format_clone_type(clone.clone_type)}
-              Similarity: #{Float.round(clone.similarity, 3)}
-            """
-          end)
+          pairs =
+            Enum.map_join(clones, "\n\n", fn clone ->
+              """
+              #{clone.file1} <-> #{clone.file2}
+                Type: #{format_clone_type(clone.clone_type)}
+                Similarity: #{Float.round(clone.similarity, 3)}
+              """
+            end)
 
-        """
-        Code Duplication Report
-        ======================
-        Total Duplicate Pairs: #{length(clones)}
+          """
+          Code Duplication Report
+          ======================
+          Total Duplicate Pairs: #{length(clones)}
 
-        By Clone Type:
-        #{by_type}
+          By Clone Type:
+          #{by_type}
 
-        Duplicate Pairs:
-        #{pairs}
-        """
-      else
-        "No duplicates found."
+          Duplicate Pairs:
+          #{pairs}
+          """
+
+        _ ->
+          "No duplicates found."
       end
 
     {:ok, %{status: "success", total_clones: length(clones), summary: String.trim(content)}}
   end
 
   defp format_duplicates_result(clones, "summary") do
-    if length(clones) > 0 do
-      by_type =
-        Enum.group_by(clones, & &1.clone_type)
-        |> Enum.map_join(", ", fn {type, group} ->
-          "#{length(group)} #{format_clone_type(type)}"
-        end)
+    case clones do
+      [_ | _] ->
+        by_type =
+          Enum.group_by(clones, & &1.clone_type)
+          |> Enum.map_join(", ", fn {type, group} ->
+            "#{length(group)} #{format_clone_type(type)}"
+          end)
 
-      {:ok,
-       %{
-         status: "success",
-         total_clones: length(clones),
-         summary: "Found #{length(clones)} duplicate pairs: #{by_type}"
-       }}
-    else
-      {:ok, %{status: "success", total_clones: 0, summary: "No duplicates found."}}
+        {:ok,
+         %{
+           status: "success",
+           total_clones: length(clones),
+           summary: "Found #{length(clones)} duplicate pairs: #{by_type}"
+         }}
+
+      _ ->
+        {:ok, %{status: "success", total_clones: 0, summary: "No duplicates found."}}
     end
   end
 
@@ -5578,50 +5589,54 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp format_similar_code_result(pairs, "detailed") do
     content =
-      if length(pairs) > 0 do
-        avg_sim =
-          (Enum.sum(Enum.map(pairs, & &1.similarity)) / length(pairs))
-          |> Float.round(3)
+      case pairs do
+        [_ | _] ->
+          avg_sim =
+            (Enum.sum(Enum.map(pairs, & &1.similarity)) / length(pairs))
+            |> Float.round(3)
 
-        pairs_text =
-          Enum.map_join(pairs, "\n\n", fn pair ->
-            """
-            #{format_function_ref(pair.function1)} ~ #{format_function_ref(pair.function2)}
-              Similarity: #{Float.round(pair.similarity, 3)}
-              Method: #{pair.method}
-            """
-          end)
+          pairs_text =
+            Enum.map_join(pairs, "\n\n", fn pair ->
+              """
+              #{format_function_ref(pair.function1)} ~ #{format_function_ref(pair.function2)}
+                Similarity: #{Float.round(pair.similarity, 3)}
+                Method: #{pair.method}
+              """
+            end)
 
-        """
-        Similar Code Report
-        ==================
-        Total Similar Pairs: #{length(pairs)}
-        Average Similarity: #{avg_sim}
+          """
+          Similar Code Report
+          ==================
+          Total Similar Pairs: #{length(pairs)}
+          Average Similarity: #{avg_sim}
 
-        Similar Pairs:
-        #{pairs_text}
-        """
-      else
-        "No similar code found."
+          Similar Pairs:
+          #{pairs_text}
+          """
+
+        _ ->
+          "No similar code found."
       end
 
     {:ok, %{status: "success", total_pairs: length(pairs), summary: String.trim(content)}}
   end
 
   defp format_similar_code_result(pairs, "summary") do
-    if length(pairs) > 0 do
-      avg_sim =
-        (Enum.sum(Enum.map(pairs, & &1.similarity)) / length(pairs))
-        |> Float.round(2)
+    case pairs do
+      [_ | _] ->
+        avg_sim =
+          (Enum.sum(Enum.map(pairs, & &1.similarity)) / length(pairs))
+          |> Float.round(2)
 
-      {:ok,
-       %{
-         status: "success",
-         total_pairs: length(pairs),
-         summary: "Found #{length(pairs)} similar pairs (avg similarity: #{avg_sim})"
-       }}
-    else
-      {:ok, %{status: "success", total_pairs: 0, summary: "No similar code found."}}
+        {:ok,
+         %{
+           status: "success",
+           total_pairs: length(pairs),
+           summary: "Found #{length(pairs)} similar pairs (avg similarity: #{avg_sim})"
+         }}
+
+      _ ->
+        {:ok, %{status: "success", total_pairs: 0, summary: "No similar code found."}}
     end
   end
 

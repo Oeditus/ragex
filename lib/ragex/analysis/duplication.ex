@@ -119,49 +119,47 @@ defmodule Ragex.Analysis.Duplication do
   """
   @spec detect_in_files([String.t()], keyword()) :: {:ok, [clone_pair()]} | {:error, term()}
   def detect_in_files(file_paths, opts \\ []) when is_list(file_paths) do
-    try do
-      # Parse all files
-      documents =
-        file_paths
-        |> Enum.map(fn path ->
-          case MetastaticBridge.parse_file(path) do
-            {:ok, doc} -> {path, doc}
-            {:error, reason} -> {path, {:error, reason}}
-          end
-        end)
-        |> Enum.filter(fn {_path, result} -> not match?({:error, _}, result) end)
-
-      # Compare all pairs
-      clones =
-        for {path1, doc1} <- documents,
-            {path2, doc2} <- documents,
-            path1 < path2 do
-          case Metastatic.Analysis.Duplication.detect(doc1, doc2, opts) do
-            {:ok, result} ->
-              if result.duplicate? do
-                %{
-                  file1: path1,
-                  file2: path2,
-                  clone_type: result.clone_type,
-                  similarity: result.similarity_score,
-                  details: %{
-                    locations: result.locations || [],
-                    summary: result.summary || ""
-                  }
-                }
-              else
-                nil
-              end
-          end
+    # Parse all files
+    documents =
+      file_paths
+      |> Enum.map(fn path ->
+        case MetastaticBridge.parse_file(path) do
+          {:ok, doc} -> {path, doc}
+          {:error, reason} -> {path, {:error, reason}}
         end
-        |> Enum.filter(&(&1 != nil))
+      end)
+      |> Enum.filter(fn {_path, result} -> not match?({:error, _}, result) end)
 
-      {:ok, clones}
-    rescue
-      e ->
-        Logger.error("Failed to detect duplicates in files: #{inspect(e)}")
-        {:error, {:analysis_failed, Exception.message(e)}}
-    end
+    # Compare all pairs
+    clones =
+      for {path1, doc1} <- documents,
+          {path2, doc2} <- documents,
+          path1 < path2 do
+        case Metastatic.Analysis.Duplication.detect(doc1, doc2, opts) do
+          {:ok, result} ->
+            if result.duplicate? do
+              %{
+                file1: path1,
+                file2: path2,
+                clone_type: result.clone_type,
+                similarity: result.similarity_score,
+                details: %{
+                  locations: result.locations || [],
+                  summary: result.summary || ""
+                }
+              }
+            else
+              nil
+            end
+        end
+      end
+      |> Enum.filter(&(&1 != nil))
+
+    {:ok, clones}
+  rescue
+    e ->
+      Logger.error("Failed to detect duplicates in files: #{inspect(e)}")
+      {:error, {:analysis_failed, Exception.message(e)}}
   end
 
   @doc """
@@ -355,11 +353,14 @@ defmodule Ragex.Analysis.Duplication do
   end
 
   defp build_summary(ast_clones, embedding_similar) do
+    ast_clones_count = length(ast_clones)
+    embedding_similar_count = length(embedding_similar)
+
     """
     Duplication Analysis Summary
     ============================
-    AST-Based Clones: #{length(ast_clones)}
-    #{if length(ast_clones) > 0 do
+    AST-Based Clones: #{ast_clones_count}
+    #{if ast_clones_count do
       type_counts = group_by_clone_type(ast_clones)
 
       type_counts |> Enum.map_join("\n", fn {type, count} -> "  - #{format_clone_type(type)}: #{count}" end)
@@ -367,8 +368,8 @@ defmodule Ragex.Analysis.Duplication do
       "  (none)"
     end}
 
-    Embedding-Based Similar Code: #{length(embedding_similar)}
-    #{if length(embedding_similar) > 0 do
+    Embedding-Based Similar Code: #{embedding_similar_count}
+    #{if embedding_similar_count > 0 do
       "  Average similarity: #{average_similarity(embedding_similar)}"
     else
       "  (none)"
