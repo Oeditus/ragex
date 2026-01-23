@@ -34,9 +34,9 @@ defmodule Ragex.Analysis.Duplication do
       {:ok, results} = Duplication.detect_in_directory("lib/")
   """
 
-  alias Ragex.Analysis.MetastaticBridge
-  alias Ragex.Graph.Store
-  alias Ragex.VectorStore
+  alias Metastatic.Analysis.Duplication, as: MetaDuplication
+  alias Ragex.{Analysis.MetastaticBridge, Graph.Store, VectorStore}
+
   require Logger
 
   @type clone_type :: :type_i | :type_ii | :type_iii | :type_iv
@@ -86,7 +86,7 @@ defmodule Ragex.Analysis.Duplication do
 
     with {:ok, doc1} <- MetastaticBridge.parse_file(file1_path),
          {:ok, doc2} <- MetastaticBridge.parse_file(file2_path) do
-      Metastatic.Analysis.Duplication.detect(doc1, doc2, threshold: threshold)
+      MetaDuplication.detect(doc1, doc2, threshold: threshold)
     else
       {:error, reason} = error ->
         Logger.warning(
@@ -135,7 +135,7 @@ defmodule Ragex.Analysis.Duplication do
       for {path1, doc1} <- documents,
           {path2, doc2} <- documents,
           path1 < path2 do
-        case Metastatic.Analysis.Duplication.detect(doc1, doc2, opts) do
+        case MetaDuplication.detect(doc1, doc2, opts) do
           {:ok, result} ->
             if result.duplicate? do
               %{

@@ -2,7 +2,7 @@ defmodule Ragex.Analysis.ImpactTest do
   use ExUnit.Case, async: true
 
   alias Ragex.Analysis.Impact
-  alias Ragex.Graph.Store
+  alias Ragex.Graph.{Algorithms, Store}
 
   setup do
     # Clear graph before each test
@@ -342,7 +342,7 @@ defmodule Ragex.Analysis.ImpactTest do
 
     test "importance reflects PageRank when available" do
       # Run PageRank to populate scores
-      Ragex.Graph.Algorithms.pagerank()
+      Algorithms.pagerank()
 
       {:ok, risk} = Impact.risk_score({:function, :A, :a1, 0})
 

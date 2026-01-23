@@ -25,7 +25,7 @@ defmodule Ragex.Analysis.Impact do
       {:ok, risk} = Impact.risk_score({:function, MyModule, :critical, 1})
   """
 
-  alias Ragex.Graph.{Algorithms, Store}
+  alias Ragex.Graph.Store
   require Logger
 
   @type node_ref :: {:module, module()} | {:function, module(), atom(), non_neg_integer()}

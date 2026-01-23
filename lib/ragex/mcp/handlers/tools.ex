@@ -4797,7 +4797,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           include_tests: include_tests
         ]
 
-        case Ragex.Analysis.Impact.analyze_change(target, opts) do
+        case Impact.analyze_change(target, opts) do
           {:ok, analysis} ->
             format_impact_analysis(analysis, format)
 
@@ -4822,7 +4822,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     # Parse target string
     case parse_target_string(target_str) do
       {:ok, target} ->
-        case Ragex.Analysis.Impact.estimate_effort(operation, target, []) do
+        case Impact.estimate_effort(operation, target, []) do
           {:ok, estimate} ->
             format_effort_estimate(estimate, format)
 
@@ -4843,7 +4843,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     # Parse target string
     case parse_target_string(target_str) do
       {:ok, target} ->
-        case Ragex.Analysis.Impact.risk_score(target) do
+        case Impact.risk_score(target) do
           {:ok, risk} ->
             format_risk_assessment(risk, format)
 
