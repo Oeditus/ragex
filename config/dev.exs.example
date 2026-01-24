@@ -1,0 +1,42 @@
+import Config
+
+# Development environment example configuration
+# Copy this to dev.exs and customize for your setup
+
+# Auto-analyze directories on startup
+# Add your frequently used projects here for instant availability
+config :ragex, :auto_analyze_dirs, [
+  # Example: Current project (useful during development)
+  ".",
+  
+  # Example: Related library in parent directory
+  # "../shared-lib",
+  
+  # Example: Absolute paths to other projects
+  # "/opt/Proyectos/MyProject",
+  # "~/workspace/important-api"
+]
+
+# Embedding model (faster model for development)
+config :ragex, :embedding_model, :all_minilm_l6_v2
+
+# Cache configuration (enable for faster restarts)
+config :ragex, :cache,
+  enabled: true,
+  dir: Path.expand("~/.cache/ragex"),
+  max_age_days: 30
+
+# Editor configuration
+config :ragex, :editor,
+  backup_dir: Path.expand("~/.ragex/backups"),
+  backup_retention: 10,
+  validate_by_default: true,
+  create_backup_by_default: true
+
+# AI Features (optional - requires API keys)
+config :ragex, :ai,
+  enabled: false,  # Set to true and configure API keys to enable
+  default_provider: :deepseek_r1
+
+# Note: You can override these settings with environment variables
+# Example: export RAGEX_EMBEDDING_MODEL=codebert_base

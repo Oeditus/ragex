@@ -127,6 +127,11 @@ config :ragex, :ai_limits,
   max_requests_per_hour: 1000,
   max_tokens_per_day: 100_000
 
+# Auto-analyze directories on startup
+# Add directories to scan and index automatically when Ragex starts
+# Example: ["/opt/Proyectos/MyProject", "/home/user/code"]
+config :ragex, :auto_analyze_dirs, []
+
 # Feature Flags
 config :ragex, :features,
   use_metastatic: true,

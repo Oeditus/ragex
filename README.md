@@ -646,6 +646,19 @@ Run the server (it will listen on both stdin and socket):
 
 **Note**: The stdio server is validated and production-ready. See [STDIO_VALIDATION.md](STDIO_VALIDATION.md) for testing details and MCPHub integration guide.
 
+### Auto-Analyze Directories on Startup
+
+You can configure Ragex to automatically analyze specific directories when it starts. Add to `config/config.exs`:
+
+```elixir
+config :ragex, :auto_analyze_dirs, [
+  "/opt/Proyectos/MyProject",
+  "~/workspace/important-lib"
+]
+```
+
+This pre-loads your frequently used codebases into the knowledge graph, making them immediately available for querying. See [CONFIGURATION.md](stuff/docs/CONFIGURATION.md#auto-analyze-directories) for details.
+
 ### MCP Protocol Example
 
 Initialize the server:

@@ -339,6 +339,129 @@ Models with the **same dimensions** can share embeddings:
 
 You can switch between compatible models without regenerating embeddings!
 
+## Auto-Analyze Directories
+
+### Overview
+
+Ragex can automatically scan and index configured directories when the application starts. This is useful for:
+- Pre-loading commonly used projects into the knowledge graph
+- Ensuring fresh analysis on server startup
+- CI/CD pipelines that need indexed code immediately
+- Development workflows where you work on multiple codebases
+
+### Configuration
+
+**In `config/config.exs`:**
+
+```elixir
+# Auto-analyze directories on startup
+config :ragex, :auto_analyze_dirs, [
+  "/opt/Proyectos/MyProject",
+  "/home/user/code/important-lib",
+  "~/workspace/api-server"
+]
+```
+
+**Default:** `[]` (no automatic analysis)
+
+### Behavior
+
+1. **Startup Phase**: Analysis runs during the `:auto_analyze` start phase
+2. **Non-blocking**: Server starts before analysis completes
+3. **Logging**: Progress logged to stderr (visible in logs)
+4. **Error Handling**: Failures logged as warnings; server continues
+5. **Parallel**: Multiple directories analyzed sequentially
+
+### Example Output
+
+```
+Auto-analyzing 2 configured directories...
+Analyzing directory: /opt/Proyectos/MyProject
+Successfully analyzed /opt/Proyectos/MyProject: 45 files (2 skipped, 0 errors)
+Analyzing directory: /home/user/code/important-lib
+Successfully analyzed /home/user/code/important-lib: 23 files (0 skipped, 0 errors)
+Auto-analysis complete
+```
+
+### Performance Considerations
+
+- **Large codebases**: Initial analysis can take 30-60 seconds per 1,000 files
+- **Embeddings**: Generation adds ~50ms per entity (enable caching to speed up subsequent starts)
+- **Memory**: Each analyzed file adds ~10KB to ETS tables
+- **Recommendation**: Limit to 3-5 active projects, use incremental updates
+
+### Environment-Specific Configuration
+
+**Development:**
+```elixir
+# config/dev.exs
+import Config
+
+config :ragex, :auto_analyze_dirs, [
+  ".",  # Current project
+  "../shared-lib"  # Related library
+]
+```
+
+**Production:**
+```elixir
+# config/prod.exs
+import Config
+
+config :ragex, :auto_analyze_dirs, [
+  "/app/src",  # Main application
+  "/app/vendor/critical-deps"  # Important dependencies
+]
+```
+
+**CI/CD:**
+```elixir
+# config/ci.exs
+import Config
+
+# Analyze entire codebase for comprehensive checks
+config :ragex, :auto_analyze_dirs, [
+  System.get_env("CI_PROJECT_DIR", ".")
+]
+```
+
+### Disabling Auto-Analysis
+
+Set to empty list:
+```elixir
+config :ragex, :auto_analyze_dirs, []
+```
+
+Or override via environment:
+```bash
+export RAGEX_AUTO_ANALYZE="false"
+```
+
+### Combining with File Watcher
+
+Auto-analysis and file watching work together:
+1. **Startup**: Auto-analyze directories (full scan)
+2. **Runtime**: File watcher tracks changes (incremental updates)
+3. **Result**: Always up-to-date knowledge graph
+
+### Troubleshooting
+
+**Issue:** "Failed to analyze directory"
+
+**Solutions:**
+- Check path exists and is readable
+- Verify sufficient disk space for cache
+- Check file permissions
+- Look for syntax errors in source files
+
+**Issue:** Startup takes too long
+
+**Solutions:**
+- Reduce number of configured directories
+- Enable embedding cache (see Cache Configuration)
+- Use file watching for incremental updates instead
+- Consider analyzing on-demand via MCP tools
+
 ## Cache Configuration
 
 ### Enable/Disable Cache

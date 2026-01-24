@@ -22,7 +22,6 @@ defmodule Ragex.AI.Features.Context do
 
   alias Ragex.Graph.{Algorithms, Store}
   alias Ragex.Retrieval.Hybrid
-  alias Ragex.VectorStore
 
   require Logger
 
@@ -404,31 +403,31 @@ defmodule Ragex.AI.Features.Context do
 
   defp build_module_context(module) do
     module_node = Store.find_node(:module, module)
-    functions = Store.list_nodes(:function, :infinity)
-    module_functions = Enum.filter(functions, fn f -> f[:module] == module end)
+    
+    # Get functions for this module using list_functions with module filter
+    # Use large limit instead of :infinity which list_functions doesn't accept
+    module_functions = Store.list_functions(module: module, limit: 10_000)
 
     %{
       module: module_node,
       function_count: length(module_functions),
-      functions: Enum.map(module_functions, & &1[:name])
+      functions: Enum.map(module_functions, fn f -> elem(f.id, 1) end)
     }
   end
 
   defp get_callers({:function, module, name, arity}) do
-    function_ref = {module, name, arity}
+    function_node = {:function, {module, name, arity}}
 
-    Store.list_edges(:calls)
-    |> Enum.filter(fn edge -> edge[:to] == function_ref end)
-    |> Enum.map(fn edge -> edge[:from] end)
+    Store.get_incoming_edges(function_node, :calls)
+    |> Enum.map(fn edge -> edge.from end)
     |> Enum.uniq()
   end
 
   defp get_callees({:function, module, name, arity}) do
-    function_ref = {module, name, arity}
+    function_node = {:function, {module, name, arity}}
 
-    Store.list_edges(:calls)
-    |> Enum.filter(fn edge -> edge[:from] == function_ref end)
-    |> Enum.map(fn edge -> edge[:to] end)
+    Store.get_outgoing_edges(function_node, :calls)
+    |> Enum.map(fn edge -> edge.to end)
     |> Enum.uniq()
   end
 
@@ -442,11 +441,11 @@ defmodule Ragex.AI.Features.Context do
     limit = Keyword.get(opts, :limit, 5)
     name_str = Atom.to_string(name)
 
-    # Simple semantic search for function names
-    case VectorStore.search(name_str, limit: limit * 2, threshold: 0.4) do
+    # Use Hybrid search for function names to find similar patterns
+    case Hybrid.search(name_str, limit: limit * 2, threshold: 0.4) do
       {:ok, results} ->
         results
-        |> Enum.filter(fn result -> result[:type] == :function end)
+        |> Enum.filter(fn result -> result.node_type == :function end)
         |> Enum.take(limit)
 
       _ ->
@@ -455,16 +454,18 @@ defmodule Ragex.AI.Features.Context do
   end
 
   defp get_module_dependencies(module) do
-    Store.list_edges(:imports)
-    |> Enum.filter(fn edge -> edge[:from] == module end)
-    |> Enum.map(fn edge -> edge[:to] end)
+    module_node = {:module, module}
+
+    Store.get_outgoing_edges(module_node, :imports)
+    |> Enum.map(fn edge -> edge.to end)
     |> Enum.uniq()
   end
 
   defp get_module_dependents(module) do
-    Store.list_edges(:imports)
-    |> Enum.filter(fn edge -> edge[:to] == module end)
-    |> Enum.map(fn edge -> edge[:from] end)
+    module_node = {:module, module}
+
+    Store.get_incoming_edges(module_node, :imports)
+    |> Enum.map(fn edge -> edge.from end)
     |> Enum.uniq()
   end
 
@@ -472,10 +473,11 @@ defmodule Ragex.AI.Features.Context do
     limit = Keyword.get(opts, :limit, 5)
     module_str = Atom.to_string(module)
 
-    case VectorStore.search(module_str, limit: limit * 2, threshold: 0.4) do
+    # Use Hybrid search for modules to find similar patterns
+    case Hybrid.search(module_str, limit: limit * 2, threshold: 0.4) do
       {:ok, results} ->
         results
-        |> Enum.filter(fn result -> result[:type] == :module end)
+        |> Enum.filter(fn result -> result.node_type == :module end)
         |> Enum.take(limit)
 
       _ ->
@@ -483,10 +485,35 @@ defmodule Ragex.AI.Features.Context do
     end
   end
 
-  defp find_simpler_alternatives(_function_ref, _metrics, opts) do
-    # [TODO]: Implement when complexity metrics are integrated
-    _limit = Keyword.get(opts, :limit, 3)
-    []
+  defp find_simpler_alternatives({:function, module, name, arity}, metrics, opts) do
+    limit = Keyword.get(opts, :limit, 3)
+    current_complexity = Map.get(metrics, :cyclomatic_complexity, Map.get(metrics, :complexity, 999))
+
+    # Get all functions from the same module or similar modules
+    all_functions = Store.list_functions(module: module, limit: 100)
+
+    # Filter functions with lower complexity (if complexity data available)
+    # Otherwise, find functions with similar names but different implementations
+    all_functions
+    |> Enum.filter(fn f ->
+      {mod, func, ar} = f.id
+      # Exclude self
+      not (mod == module and func == name and ar == arity)
+    end)
+    |> Enum.map(fn f ->
+      {mod, func, ar} = f.id
+      # Get function node to check if it has complexity metadata
+      node_data = Store.find_node(:function, {mod, func, ar})
+      complexity = get_in(node_data, [:metadata, :complexity]) || 0
+      %{function: f, complexity: complexity}
+    end)
+    |> Enum.filter(fn item ->
+      # Only include if complexity is lower and not zero (unknown)
+      item.complexity > 0 and item.complexity < current_complexity
+    end)
+    |> Enum.sort_by(fn item -> item.complexity end)
+    |> Enum.take(limit)
+    |> Enum.map(fn item -> item.function end)
   end
 
   defp get_importance(function_ref) do
@@ -528,7 +555,7 @@ defmodule Ragex.AI.Features.Context do
     #{if match?([_ | _], context.semantic_context) do
       """
       **Similar Patterns Found**:
-      #{Enum.map_join(context.semantic_context, "\n", fn result -> "- #{result[:name]} (similarity: #{Float.round(result[:score], 2)})" end)}
+      #{Enum.map_join(context.semantic_context, "\n", fn result -> format_search_result(result) end)}
       """
     end}
     """
@@ -572,7 +599,7 @@ defmodule Ragex.AI.Features.Context do
     #{if match?([_ | _], graph.similar_functions) do
       """
       **Similar Functions**:
-      #{Enum.map_join(graph.similar_functions, "\n", fn result -> "- #{result[:name]}" end)}
+      #{Enum.map_join(graph.similar_functions, "\n", fn result -> format_search_result(result) end)}
       """
     end}
     """
@@ -615,7 +642,7 @@ defmodule Ragex.AI.Features.Context do
     #{if match?([_ | _], graph.similar_modules) do
       """
       **Similar Modules**:
-      #{Enum.map_join(graph.similar_modules, "\n", fn result -> "- #{result[:name]}" end)}
+      #{Enum.map_join(graph.similar_modules, "\n", fn result -> format_search_result(result) end)}
       """
     end}
     """
@@ -635,9 +662,45 @@ defmodule Ragex.AI.Features.Context do
     #{if match?([_ | _], context.graph_context[:similar_simpler_functions]) do
       """
       **Simpler Alternatives**:
-      #{Enum.map_join(context.graph_context[:similar_simpler_functions], "\n", fn func -> "- #{inspect(func)}" end)}
+      #{Enum.map_join(context.graph_context[:similar_simpler_functions], "\n", fn func -> format_function_ref(func) end)}
       """
     end}
     """
+  end
+
+  # Helper to format search results from Hybrid.search
+  defp format_search_result(result) do
+    # Extract meaningful name from result
+    name =
+      case result do
+        %{node_type: :function, node_id: {module, func, arity}} ->
+          "#{module}.#{func}/#{arity}"
+
+        %{node_type: :module, node_id: module} ->
+          "#{module}"
+
+        %{text: text} when is_binary(text) ->
+          # Truncate long text
+          if String.length(text) > 60 do
+            String.slice(text, 0, 57) <> "..."
+          else
+            text
+          end
+
+        _ ->
+          "unknown"
+      end
+
+    score = Float.round(result.score, 2)
+    "- #{name} (similarity: #{score})"
+  end
+
+  # Helper to format function reference from list_functions
+  defp format_function_ref(%{id: {module, name, arity}}) do
+    "- #{module}.#{name}/#{arity}"
+  end
+
+  defp format_function_ref(other) do
+    "- #{inspect(other)}"
   end
 end
