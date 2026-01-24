@@ -8,6 +8,7 @@ This document covers all configuration options for Ragex, including embedding mo
 - [Configuration Methods](#configuration-methods)
 - [Available Models](#available-models)
 - [Model Selection Guide](#model-selection-guide)
+- [AI Features Configuration](#ai-features-configuration)
 - [Cache Configuration](#cache-configuration)
 - [Migration Guide](#migration-guide)
 - [Performance Tuning](#performance-tuning)
@@ -198,6 +199,93 @@ config :ragex, :embedding_model, :codebert_base
 **Performance:**
 - Embedding generation: ~60ms per entity
 - Memory usage: ~450MB (model + runtime)
+
+---
+
+## AI Features Configuration
+
+Ragex includes AI-powered features for enhanced code analysis (Phases A, B, C).
+
+### Master Switch
+
+```elixir
+config :ragex, :ai,
+  enabled: true,  # Master switch for all AI features
+  default_provider: :deepseek_r1  # or :openai, :anthropic, :ollama
+```
+
+### Feature Flags
+
+```elixir
+config :ragex, :ai_features,
+  # Phase B - High-Priority Features
+  validation_error_explanation: true,
+  refactor_preview_commentary: true,
+  
+  # Phase C - Analysis Features
+  dead_code_refinement: true,
+  duplication_semantic_analysis: true,
+  dependency_insights: true
+```
+
+### Feature-Specific Options
+
+Each feature has optimized defaults for temperature and token limits:
+
+| Feature | Temperature | Max Tokens | Cache TTL |
+|---------|-------------|------------|-----------|
+| Validation Error Explanation | 0.3 | 300 | 7 days |
+| Refactor Preview Commentary | 0.7 | 500 | 1 hour |
+| Dead Code Refinement | 0.6 | 400 | 7 days |
+| Duplication Semantic Analysis | 0.5 | 600 | 3 days |
+| Dependency Insights | 0.6 | 700 | 6 hours |
+
+### Runtime Override
+
+All features support runtime configuration overrides:
+
+```elixir
+# Disable AI globally but enable for specific analysis
+{:ok, dead} = DeadCode.find_unused_exports(ai_refine: true)
+
+# Enable AI globally but disable for specific analysis
+{:ok, clones} = Duplication.detect_in_files(files, ai_analyze: false)
+
+# Override AI provider
+{:ok, insights} = AIInsights.analyze_coupling(data, provider: :openai)
+```
+
+### Graceful Degradation
+
+- All AI features are opt-in and disabled by default
+- When disabled or unavailable, features gracefully return original results
+- No failures or crashes if AI provider is unavailable
+- Cache reduces API calls by 40-60%
+
+### API Keys
+
+AI features require API keys for external providers:
+
+```bash
+# DeepSeek (recommended)
+export DEEPSEEK_API_KEY="sk-..."
+
+# OpenAI
+export OPENAI_API_KEY="sk-..."
+
+# Anthropic
+export ANTHROPIC_API_KEY="sk-..."
+
+# Ollama (local, no key needed)
+export OLLAMA_HOST="http://localhost:11434"
+```
+
+### Documentation
+
+See phase completion documents for detailed usage:
+- `stuff/phases/PHASE_A_AI_FEATURES_FOUNDATION.md`
+- `stuff/phases/PHASE_B_AI_FEATURES_COMPLETE.md`
+- `stuff/phases/PHASE_C_AI_ANALYSIS_COMPLETE.md`
 - Quality: Good for multilingual content
 
 **Supported languages:**

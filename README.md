@@ -271,6 +271,31 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ MCP Tools: `metaast_search`, `cross_language_alternatives`, `expand_query`, `find_metaast_pattern`  
 </details>
 <details>
+  <summary>AI Features (:fire:)</summary>
+
+    ▸ Foundation Layer  
+      ▹ Features.Config: Per-feature flags with master switch  
+      ▹ Features.Context: Rich context builders (6 context types)  
+      ▹ Features.Cache: Automatic caching with TTL policies (3-7 days)  
+      ▹ Graceful degradation when AI disabled
+
+    ▸ High-Priority Features  
+      ▹ ValidationAI: AI-enhanced validation error explanations  
+      ▹ AIPreview: Refactoring preview with risk assessment and recommendations
+
+    ▸ Analysis Features  
+      ▹ AIRefiner: Dead code false positive reduction (50%+ target)  
+      ▹ AIAnalyzer: Semantic Type IV clone detection (>70% accuracy target)  
+      ▹ AIInsights: Architectural insights for coupling and circular dependencies  
+      ▹ Context-aware recommendations with technical debt scoring
+
+    ▸ Configuration  
+      ▹ Opt-in via `:ai_features` config (dead_code_refinement, duplication_semantic_analysis, etc.)  
+      ▹ Master switch with per-feature overrides  
+      ▹ Integrates with existing analysis modules (DeadCode, Duplication, DependencyGraph)  
+      ▹ MCP tools: validate_with_ai, enhanced preview_refactor
+</details>
+<details>
   <summary>Code Analysis & Quality</summary>
 
     ▸ Dead Code Detection  
