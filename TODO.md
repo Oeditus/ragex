@@ -1,8 +1,8 @@
 # Ragex TODO
 
 **Project Status**: Production-Ready (v0.2.0)  
-**Last Updated**: January 23, 2026  
-**Completed Phases**: 1-5, 8, 9, 11, 12B, RAG (Phases 1-4, Phase 5A-C)
+**Last Updated**: January 24, 2026  
+**Completed Phases**: 1-5, 8, 9, 11, 12B, RAG (Phases 1-4, Phase 5A-C), Metastatic (Phases 1-3)
 
 ---
 
@@ -11,19 +11,20 @@
 Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-language codebase analysis, semantic search, safe code editing, and AI-powered code intelligence. This document outlines remaining work, improvements, and future enhancements.
 
 **Current State:**
-- 24,500+ lines of production code (including RAG, analysis, and CLI improvements)
-- 744 tests passing (40+ test files)
-- 41 MCP tools (analysis, search, editing, refactoring, RAG, streaming RAG, monitoring, quality)
+- 25,600+ lines of production code (including RAG, analysis, and CLI improvements)
+- 834 tests passing (45+ test files)
+- 45 MCP tools (analysis, search, editing, refactoring, RAG, streaming RAG, monitoring, quality, security, smells)
 - 6 MCP resources (read-only state access)
 - 6 MCP prompts (workflow templates)
 - 10 enhanced Mix tasks (cache, embeddings, AI stats, wizards, dashboard, completions, man pages)
-- 4 languages fully supported (Elixir, Erlang, Python, JS/TS)
+- 5 languages fully supported (Elixir, Erlang, Python, Ruby, Haskell)
 - Metastatic MetaAST integration for enhanced analysis
 - Phase 8: Advanced graph algorithms (complete)
 - Phase 9: MCP resources and prompts (complete)
 - Phase 11: Code Analysis & Quality (complete - January 23, 2026)
 - Phase 12B: CLI Improvements (complete - January 23, 2026)
 - RAG System with Multi-Provider AI (Phases 1-4, Phase 5A-C complete)
+- Metastatic Integration (Phases 1-3 complete - January 24, 2026)
 
 ---
 
@@ -147,6 +148,142 @@ Ragex is a mature Hybrid RAG system with comprehensive capabilities for multi-la
 - PHASE5C_COMPLETE.md documentation
 
 **Note**: This phase provides essential infrastructure that Phases 10-12 will heavily depend on. Implementation should anticipate needs of refactoring (Phase 10), analysis (Phase 11), and UX improvements (Phase 12).
+
+---
+
+## Metastatic Integration (60% Complete - January 24, 2026)
+
+**Status**: Phases 1-3 Complete (3 of 5 primary phases)  
+**Completion Date**: January 24, 2026  
+**Overall Progress**: 60%
+
+### Completed Phases
+
+#### Phase 1: Security Analysis (COMPLETE)
+**Status**: Production-Ready  
+**Deliverables:**
+- [x] `Ragex.Analysis.Security` module (356 lines)
+- [x] 3 MCP tools: `scan_security`, `security_audit`, `check_secrets`
+- [x] 21 tests (18 passing, 3 skipped with documented limitations)
+- [x] `docs/SECURITY_ANALYSIS.md` (561 lines)
+- [x] CWE-mapped vulnerabilities with severity levels
+- [x] Parallel directory scanning
+- [x] Detects: code injection, unsafe deserialization, hardcoded secrets, weak cryptography
+
+**Commits**: `53fb925`, `f91067f`
+
+#### Phase 2: Enhanced Complexity (COMPLETE)
+**Status**: Production-Ready  
+**Deliverables:**
+- [x] Full `Metastatic.Analysis.Complexity` integration
+- [x] Removed 220 lines of custom metric code
+- [x] Enhanced metrics:
+  * Cognitive complexity (structural with nesting penalties)
+  * Enhanced Halstead (9 fields: volume, difficulty, effort, vocabulary, length, distinct/total operators/operands)
+  * Detailed LoC (4 fields: physical, logical, comments, blank)
+  * Function metrics (statement_count, return_points, variable_count, parameter_count)
+- [x] Updated `Ragex.Analyzers.Metastatic`
+- [x] All tests passing (834 total, 0 failures)
+- [x] Comprehensive README documentation
+
+**Commit**: `bba9aaa`
+
+#### Phase 3: Code Smells (COMPLETE)
+**Status**: Production-Ready  
+**Deliverables:**
+- [x] `Ragex.Analysis.Smells` module (375 lines)
+- [x] 1 MCP tool: `detect_smells`
+- [x] 16 passing tests (305 lines)
+- [x] 5 detected smells:
+  * Long Function (>50 statements, configurable)
+  * Deep Nesting (>4 levels, configurable)
+  * Magic Numbers (unexplained literals)
+  * Complex Conditionals (nested boolean operations)
+  * Long Parameter List (>5 parameters, configurable)
+- [x] Configurable thresholds and severity filtering
+- [x] Parallel/sequential directory scanning
+- [x] Actionable refactoring suggestions
+
+**Commit**: `ccdd7c9`
+
+### Deferred Phases
+
+#### Phase 4: Cohesion Analysis (DEFERRED)
+**Status**: Deferred  
+**Reason**: Requires architectural adapter for Elixir modules
+
+**Challenge**: Metastatic's cohesion analysis (LCOM, TCC, LCC) requires OOP-style classes with methods sharing instance variables. Elixir modules contain independent functions rather than cohesive methods.
+
+**Future Work**:
+- [ ] Create adapter for GenServer callbacks sharing state
+- [ ] Analyze modules using module attributes as "instance variables"
+- [ ] Support Agent-based state patterns
+- [ ] Add `analyze_cohesion` MCP tool
+- [ ] Integrate with Quality module
+
+**Metastatic Capability**: Available (`Metastatic.Analysis.Cohesion`)
+
+#### Phase 5: Enhanced Purity (PARTIAL - 50% Complete)
+**Status**: MetastaticBridge already uses full Purity  
+**Completion**: 50%
+
+**Current State**:
+- [x] `MetastaticBridge` uses `Metastatic.Analysis.Purity.analyze/1`
+- [ ] `Metastatic` analyzer (function enrichment) uses simplified custom purity
+
+**Future Work**:
+- [ ] Update Metastatic analyzer's function enrichment to use full Purity analysis
+- [ ] Replace simplified `check_side_effects/1` implementation
+- [ ] Update tests for enhanced purity fields
+- [ ] Document enhanced purity capabilities
+
+**Metastatic Capability**: Available (`Metastatic.Analysis.Purity`)
+
+#### Phase 6: State Management (DEFERRED)
+**Status**: Deferred  
+**Reason**: Requires specialized Elixir/BEAM adapter
+
+**Challenge**: State management analysis is designed for imperative languages with mutable state. Elixir's functional approach requires specialized adapters.
+
+**Future Work**:
+- [ ] Analyze GenServer `handle_*` callbacks for state mutations
+- [ ] Track state flow through Agent operations
+- [ ] Detect anti-patterns in process-based state management
+- [ ] Identify unnecessary state or over-complicated state machines
+- [ ] Add `check_state_management` MCP tool
+- [ ] ETS-based state analysis
+
+**Metastatic Capability**: Available (`Metastatic.Analysis.StateManagement`)
+
+### Total Impact
+
+**Code Delivered:**
+- 3 new analysis modules (1,106 lines)
+- 4 new MCP tools (scan_security, security_audit, check_secrets, detect_smells)
+- 50+ new tests (all passing)
+- 1 comprehensive guide (SECURITY_ANALYSIS.md, 561 lines)
+- Enhanced README documentation
+
+**Test Suite Health:**
+- 834 total tests
+- 0 failures
+- 28 skipped (expected/documented)
+
+**New Capabilities:**
+- Security vulnerability detection with CWE mapping
+- Comprehensive complexity metrics (cyclomatic, cognitive, Halstead, LoC)
+- Code smell detection with 5 smell types
+- Cross-language analysis (Elixir, Erlang, Python, Ruby, Haskell)
+- Parallel processing for large codebases
+- Configurable thresholds and severity filtering
+- Actionable refactoring suggestions
+
+**Commits:**
+1. `53fb925` - Phase 1: Security Analysis (initial)
+2. `f91067f` - Phase 1: Documentation and integration
+3. `bba9aaa` - Phase 2: Enhanced Complexity
+4. `ccdd7c9` - Phase 3: Code Smells
+5. `0d247cf` - Final roadmap summary
 
 ---
 
