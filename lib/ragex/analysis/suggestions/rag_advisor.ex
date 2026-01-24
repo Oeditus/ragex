@@ -155,12 +155,6 @@ defmodule Ragex.Analysis.Suggestions.RAGAdvisor do
     """
   end
 
-  defp build_pattern_specific_prompt(:split_module, _suggestion) do
-    """
-    Suggest how to identify module boundaries and split responsibilities.
-    """
-  end
-
   defp build_pattern_specific_prompt(:merge_modules, _suggestion) do
     """
     Suggest when merging modules makes sense and how to do it safely.
