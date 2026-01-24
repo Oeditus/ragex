@@ -6597,12 +6597,14 @@ defmodule Ragex.MCP.Handlers.Tools do
                 result.smells
               end
 
+            filtered_smells_len = length(filtered_smells)
+
             %{
               status: "success",
               scan_type: "file",
               path: path,
-              has_smells: length(filtered_smells) > 0,
-              total_smells: length(filtered_smells),
+              has_smells: filtered_smells_len > 0,
+              total_smells: filtered_smells_len,
               by_severity: result.by_severity,
               by_type: result.by_type,
               smells:

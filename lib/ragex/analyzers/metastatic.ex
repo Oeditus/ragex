@@ -50,8 +50,7 @@ defmodule Ragex.Analyzers.Metastatic do
   @behaviour Ragex.Analyzers.Behaviour
 
   require Logger
-  alias Metastatic.{Builder, Document}
-  alias Metastatic.Analysis.Complexity
+  alias Metastatic.{Analysis.Complexity, Builder, Document}
 
   alias Ragex.Analyzers.Elixir, as: ExAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlAnalyzer
