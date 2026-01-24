@@ -43,10 +43,13 @@ defmodule Ragex.Analyzers.MetastaticEnrichmentTest do
       # because the MetaAST structure might be different than expected
       if Map.has_key?(simple_func.metadata, :metastatic) do
         assert is_map(simple_func.metadata.metastatic)
-        assert Map.has_key?(simple_func.metadata.metastatic, :complexity)
-        assert Map.has_key?(simple_func.metadata.metastatic, :purity)
+        # New structure: metrics are flat in the metastatic map
+        assert Map.has_key?(simple_func.metadata.metastatic, :cyclomatic)
+        assert Map.has_key?(simple_func.metadata.metastatic, :cognitive)
+        assert Map.has_key?(simple_func.metadata.metastatic, :max_nesting)
         assert Map.has_key?(simple_func.metadata.metastatic, :halstead)
         assert Map.has_key?(simple_func.metadata.metastatic, :loc)
+        assert Map.has_key?(simple_func.metadata.metastatic, :function_metrics)
       end
     end
 

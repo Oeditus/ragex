@@ -5,9 +5,13 @@ defmodule Ragex.Analyzers.Metastatic do
   Provides richer semantic analysis compared to native regex-based parsers:
   - Cross-language semantic equivalence
   - Purity analysis (detects side effects like I/O operations)
-  - Complexity metrics (cyclomatic complexity, decision points)
-  - Halstead metrics (vocabulary, operators, operands)
-  - Lines of code estimation
+  - Comprehensive complexity metrics:
+    - Cyclomatic complexity (McCabe metric)
+    - Cognitive complexity (structural complexity with nesting penalties)
+    - Maximum nesting depth
+    - Enhanced Halstead metrics (volume, difficulty, effort)
+    - Detailed LoC (physical, logical, comments, blank)
+    - Function-level metrics (statements, returns, variables, parameters)
   - Three-layer MetaAST (M2.1/M2.2/M2.3)
 
   ## Hybrid Approach
@@ -27,10 +31,12 @@ defmodule Ragex.Analyzers.Metastatic do
 
       %{
         metastatic: %{
-          complexity: %{cyclomatic: 3, decision_points: 2},
-          purity: %{pure: false, side_effects: [:io_or_mutation]},
-          halstead: %{unique_operators: 5, unique_operands: 3, vocabulary: 8},
-          loc: %{expressions: 4, estimated: 4}
+          cyclomatic: 3,
+          cognitive: 2,
+          max_nesting: 1,
+          halstead: %{volume: 50.0, difficulty: 2.5, effort: 125.0, ...},
+          loc: %{physical: 10, logical: 8, comments: 2, blank: 0},
+          function_metrics: %{statement_count: 8, return_points: 1, variable_count: 3}
         }
       }
 
@@ -45,6 +51,7 @@ defmodule Ragex.Analyzers.Metastatic do
 
   require Logger
   alias Metastatic.{Builder, Document}
+  alias Metastatic.Analysis.Complexity
 
   alias Ragex.Analyzers.Elixir, as: ExAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlAnalyzer
@@ -120,18 +127,13 @@ defmodule Ragex.Analyzers.Metastatic do
             func
 
           {body, _meta} ->
-            # Calculate metrics from MetaAST body
+            # Calculate comprehensive metrics from MetaAST body
             metrics = calculate_function_metrics(body)
 
             # Merge MetaAST metrics into function metadata
             metadata =
               Map.merge(func.metadata, %{
-                metastatic: %{
-                  complexity: metrics.complexity,
-                  purity: metrics.purity,
-                  halstead: metrics.halstead,
-                  loc: metrics.loc
-                }
+                metastatic: metrics
               })
 
             %{func | metadata: metadata}
@@ -206,215 +208,31 @@ defmodule Ragex.Analyzers.Metastatic do
   end
 
   defp calculate_function_metrics(ast_node) do
-    # Calculate metrics for a single function's AST
-    # These are basic metrics - more sophisticated analysis could be added
+    # Calculate comprehensive metrics using Metastatic.Analysis.Complexity
+    # Create a document for this function's AST
+    doc = Document.new(ast_node, :elixir)
 
-    %{
-      complexity: calculate_complexity(ast_node),
-      purity: analyze_purity(ast_node),
-      halstead: calculate_halstead(ast_node),
-      loc: calculate_loc(ast_node)
-    }
-  end
+    case Complexity.analyze(doc) do
+      {:ok, complexity} ->
+        %{
+          cyclomatic: complexity.cyclomatic,
+          cognitive: complexity.cognitive,
+          max_nesting: complexity.max_nesting,
+          halstead: complexity.halstead,
+          loc: complexity.loc,
+          function_metrics: complexity.function_metrics
+        }
 
-  defp calculate_complexity(ast) do
-    # Calculate cyclomatic complexity by counting decision points
-    # Start at 1, add 1 for each branching construct
-
-    decision_points = count_decision_points(ast, 0)
-
-    %{
-      cyclomatic: 1 + decision_points,
-      decision_points: decision_points
-    }
-  end
-
-  defp count_decision_points(ast, count) do
-    case ast do
-      # Control flow constructs that add complexity
-      {:if, _, _} ->
-        count + 1
-
-      {:case, _, _} ->
-        count + 1
-
-      {:cond, _, _} ->
-        count + 1
-
-      {:and, _, _} ->
-        count + 1
-
-      {:or, _, _} ->
-        count + 1
-
-      {:try, _, _} ->
-        count + 1
-
-      # Recursively count in nested structures
-      tuple when is_tuple(tuple) ->
-        tuple
-        |> Tuple.to_list()
-        |> Enum.reduce(count, &count_decision_points/2)
-
-      list when is_list(list) ->
-        Enum.reduce(list, count, &count_decision_points/2)
-
-      _ ->
-        count
-    end
-  end
-
-  defp analyze_purity(ast) do
-    # Simple purity analysis: check for side effects
-    # A function is pure if it doesn't perform I/O or mutation
-
-    has_side_effects = check_side_effects(ast)
-
-    %{
-      pure: not has_side_effects,
-      side_effects: if(has_side_effects, do: [:io_or_mutation], else: [])
-    }
-  end
-
-  defp check_side_effects(ast) do
-    case ast do
-      # I/O operations
-      {:call, _, :IO, _func, _} ->
-        true
-
-      {:call, _, :File, _func, _} ->
-        true
-
-      {:call, _, :Logger, _func, _} ->
-        true
-
-      # Process operations (message passing)
-      {:call, _, :send, _} ->
-        true
-
-      {:call, _, :receive, _} ->
-        true
-
-      # Recursively check nested structures
-      tuple when is_tuple(tuple) ->
-        tuple
-        |> Tuple.to_list()
-        |> Enum.any?(&check_side_effects/1)
-
-      list when is_list(list) ->
-        Enum.any?(list, &check_side_effects/1)
-
-      _ ->
-        false
-    end
-  end
-
-  defp calculate_halstead(ast) do
-    # Calculate basic Halstead metrics
-    # operators: unique operations, operands: unique data
-
-    operators = count_operators(ast, MapSet.new())
-    operands = count_operands(ast, MapSet.new())
-
-    # unique operators
-    n1 = MapSet.size(operators)
-    # unique operands
-    n2 = MapSet.size(operands)
-
-    %{
-      unique_operators: n1,
-      unique_operands: n2,
-      vocabulary: n1 + n2
-    }
-  end
-
-  defp count_operators(ast, acc) do
-    case ast do
-      # Binary operations
-      {op, _, _, _} when op in [:+, :-, :*, :/, :==, :!=, :<, :>, :and, :or] ->
-        MapSet.put(acc, op)
-
-      # Function calls are operators
-      {:call, _, _mod, func, _args} when is_atom(func) ->
-        MapSet.put(acc, func)
-
-      # Recursively process nested structures
-      tuple when is_tuple(tuple) ->
-        tuple
-        |> Tuple.to_list()
-        |> Enum.reduce(acc, &count_operators/2)
-
-      list when is_list(list) ->
-        Enum.reduce(list, acc, &count_operators/2)
-
-      _ ->
-        acc
-    end
-  end
-
-  defp count_operands(ast, acc) do
-    case ast do
-      # Variables are operands
-      {:variable, name} when is_binary(name) or is_atom(name) ->
-        MapSet.put(acc, name)
-
-      # Literals are operands
-      {:literal, _type, value} ->
-        MapSet.put(acc, value)
-
-      # Recursively process nested structures
-      tuple when is_tuple(tuple) ->
-        tuple
-        |> Tuple.to_list()
-        |> Enum.reduce(acc, &count_operands/2)
-
-      list when is_list(list) ->
-        Enum.reduce(list, acc, &count_operands/2)
-
-      _ ->
-        acc
-    end
-  end
-
-  defp calculate_loc(ast) do
-    # Calculate lines of code (approximation from AST)
-    # Count the number of expression nodes
-
-    expressions = count_expressions(ast, 0)
-
-    %{
-      expressions: expressions,
-      # Rough estimate: assume 1 expression per line on average
-      estimated: max(expressions, 1)
-    }
-  end
-
-  defp count_expressions(ast, count) do
-    case ast do
-      # Expression nodes
-      {:call, _, _, _, _} ->
-        count + 1
-
-      {:if, _, _} ->
-        count + 1
-
-      {:case, _, _} ->
-        count + 1
-
-      {:assignment, _, _, _} ->
-        count + 1
-
-      # Recursively count in nested structures
-      tuple when is_tuple(tuple) ->
-        tuple
-        |> Tuple.to_list()
-        |> Enum.reduce(count, &count_expressions/2)
-
-      list when is_list(list) ->
-        Enum.reduce(list, count, &count_expressions/2)
-
-      _ ->
-        count
+      {:error, _reason} ->
+        # Fallback to basic metrics if analysis fails
+        %{
+          cyclomatic: 1,
+          cognitive: 0,
+          max_nesting: 0,
+          halstead: %{},
+          loc: %{},
+          function_metrics: %{}
+        }
     end
   end
 

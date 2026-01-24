@@ -337,11 +337,28 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ MCP Tools: `analyze_impact`, `estimate_refactoring_effort`, `risk_assessment`
 
     ▸ Quality Metrics (Metastatic Integration)  
-      ▹ Complexity Metrics: Cyclomatic, cognitive, nesting depth  
-      ▹ Halstead Metrics: Difficulty and effort calculations  
-      ▹ Lines of Code: Physical LOC counting  
+      ▹ Complexity Metrics (Full Suite):  
+        • Cyclomatic Complexity: McCabe metric (decision points + 1)  
+        • Cognitive Complexity: Structural complexity with nesting penalties  
+        • Nesting Depth: Maximum nesting level tracking  
+      ▹ Halstead Metrics (Comprehensive):  
+        • Vocabulary: distinct_operators + distinct_operands  
+        • Length: total_operators + total_operands  
+        • Volume: length × log₂(vocabulary)  
+        • Difficulty: (distinct_operators / 2) × (total_operands / distinct_operands)  
+        • Effort: volume × difficulty  
+      ▹ Lines of Code (Detailed):  
+        • Physical Lines: Total lines including blank/comments  
+        • Logical Lines: Executable statements only  
+        • Comments: Comment lines count  
+        • Blank Lines: Whitespace-only lines  
+      ▹ Function Metrics:  
+        • Statement Count: Number of executable statements  
+        • Return Points: Multiple return analysis  
+        • Variable Count: Local variable tracking  
+        • Parameter Count: Function signature complexity  
       ▹ Purity Analysis: Function purity and side-effect detection  
-      ▹ Function Metrics: Per-function analysis  
+      ▹ Per-Function Analysis: Individual function breakdown with all metrics  
       ▹ Project-wide Reports: Aggregated statistics by language  
       ▹ MCP Tools: `analyze_quality`, `quality_report`, `find_complex_code`
 
