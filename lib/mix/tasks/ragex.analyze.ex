@@ -483,12 +483,68 @@ defmodule Mix.Tasks.Ragex.Analyze do
     """
   end
 
-  defp format_markdown_smells(%{smells: smells}) do
-    """
-    ## Code Smells (#{length(smells)})
+  defp format_markdown_smells(%{smells: directory_result}) do
+    # Extract all smells from directory results and flatten
+    all_smells =
+      case directory_result do
+        %{results: results} when is_list(results) ->
+          Enum.flat_map(results, fn file_result ->
+            Enum.map(Map.get(file_result, :smells, []), fn smell ->
+              # Add file path to smell for context
+              Map.put(smell, :file, Map.get(file_result, :path, "unknown"))
+            end)
+          end)
 
-    #{Enum.map_join(smells, "\n", fn smell -> "- **#{smell.type}** (#{smell.severity}): #{smell.location}" end)}
+        smells when is_list(smells) ->
+          smells
+
+        _ ->
+          []
+      end
+
+    # Sort by severity (critical > high > medium > low)
+    sorted_smells = Enum.sort_by(all_smells, &smell_severity_order(&1.severity), :desc)
+
+    # Format location for display
+    formatted_smells =
+      Enum.map(sorted_smells, fn smell ->
+        location =
+          case smell do
+            %{location: %{formatted: fmt}} when is_binary(fmt) -> fmt
+            %{location: loc} when is_map(loc) -> format_smell_location(loc)
+            %{file: file} -> file
+            _ -> "unknown"
+          end
+
+        "- **#{smell.type}** (#{smell.severity}): #{location}"
+      end)
+
     """
+    ## Code Smells (#{length(sorted_smells)})
+
+    #{Enum.join(formatted_smells, "\n")}
+    """
+  end
+
+  defp format_smell_location(location) do
+    module = Map.get(location, :module)
+    function = Map.get(location, :function)
+    arity = Map.get(location, :arity)
+    line = Map.get(location, :line)
+
+    cond do
+      module && function && arity && line ->
+        "#{inspect(module)}.#{function}/#{arity}:#{line}"
+
+      module && function && arity ->
+        "#{inspect(module)}.#{function}/#{arity}"
+
+      line ->
+        "line #{line}"
+
+      true ->
+        "unknown"
+    end
   end
 
   defp format_markdown_duplicates(%{duplicates: duplicates}) do
@@ -522,6 +578,13 @@ defmodule Mix.Tasks.Ragex.Analyze do
     Overall Score: #{metrics.overall_score}/100
     """
   end
+
+  # Helper to get severity order for sorting (higher = more severe)
+  defp smell_severity_order(:critical), do: 4
+  defp smell_severity_order(:high), do: 3
+  defp smell_severity_order(:medium), do: 2
+  defp smell_severity_order(:low), do: 1
+  defp smell_severity_order(_), do: 0
 
   # Format as text
   defp format_text(report) do

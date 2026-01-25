@@ -518,7 +518,11 @@ defmodule Ragex.CLI.Output do
           "#{type}: #{length(items)}"
         end)
 
-      top_smells = all_smells |> Enum.take(12)
+      # Sort by severity (critical > high > medium > low) before taking top 12
+      top_smells =
+        all_smells
+        |> Enum.sort_by(&smell_severity_order(&1.severity), :desc)
+        |> Enum.take(12)
 
       rows =
         Enum.map(top_smells, fn smell ->
@@ -942,4 +946,11 @@ defmodule Ragex.CLI.Output do
         "unknown"
     end
   end
+
+  # Helper to get severity order for sorting (higher = more severe)
+  defp smell_severity_order(:critical), do: 4
+  defp smell_severity_order(:high), do: 3
+  defp smell_severity_order(:medium), do: 2
+  defp smell_severity_order(:low), do: 1
+  defp smell_severity_order(_), do: 0
 end
