@@ -968,38 +968,47 @@ defmodule Ragex.CLI.Output do
 
   # Format duplicate code locations with line numbers
   defp format_duplicate_locations(locations) when is_list(locations) do
-    locations
-    |> Enum.take(2)
-    |> Enum.map(&format_single_duplicate_location/1)
-    |> Enum.join(" ↔ ")
-    |> then(fn str ->
-      if length(locations) > 2 do
-        "#{str} (+#{length(locations) - 2} more)"
-      else
-        str
-      end
-    end)
-  end
+    # Calculate max length per location (80 total - 3 for " ↔ " - reserve for "+N more")
+    max_per_location = div(80 - 3 - 15, 2)
 
-  defp format_single_duplicate_location(%{file: file, line: line}) when is_binary(file) do
-    relative = Path.relative_to_cwd(file)
+    formatted_locs =
+      locations
+      |> Enum.take(2)
+      |> Enum.map(&format_single_duplicate_location(&1, max_per_location))
+      |> Enum.join(" ↔ ")
 
-    if line && is_integer(line) do
-      "#{relative}:#{line}"
+    if length(locations) > 2 do
+      "#{formatted_locs} (+#{length(locations) - 2} more)"
     else
-      relative
+      formatted_locs
     end
   end
 
-  defp format_single_duplicate_location(_), do: "unknown"
+  defp format_single_duplicate_location(%{file: file, line: line}, max_length)
+       when is_binary(file) do
+    relative = Path.relative_to_cwd(file)
+
+    # Format with line number if available
+    full_location =
+      if line && is_integer(line) do
+        "#{relative}:#{line}"
+      else
+        relative
+      end
+
+    # Truncate from the right to preserve filename
+    truncate_from_right(full_location, max_length)
+  end
+
+  defp format_single_duplicate_location(_, _), do: "unknown"
 
   # Truncate from the right, preserving the end of the string (filenames)
   defp truncate_from_right(text, max_length) when is_binary(text) do
     if String.length(text) > max_length do
       # Calculate how much to keep from the end
-      keep_length = max_length - 3
-      # Get the last keep_length characters
-      "..." <> String.slice(text, -keep_length, keep_length)
+      keep_length = max_length - 1
+      # Get the last keep_length characters with ellipsis character
+      "…" <> String.slice(text, -keep_length, keep_length)
     else
       text
     end
