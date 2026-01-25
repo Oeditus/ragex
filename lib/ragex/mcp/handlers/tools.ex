@@ -7,6 +7,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   alias Ragex.AI.{Cache, Usage}
 
   alias Ragex.Analysis.{
+    BusinessLogic,
     DeadCode,
     DependencyGraph,
     Duplication,
@@ -1217,6 +1218,68 @@ defmodule Ragex.MCP.Handlers.Tools do
           }
         },
         %{
+          name: "analyze_business_logic",
+          description:
+            "Analyze files for business logic issues using 20 language-agnostic analyzers - detects anti-patterns like callback hell, missing error handling, N+1 queries, etc.",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              path: %{
+                type: "string",
+                description: "File or directory path to analyze"
+              },
+              analyzers: %{
+                type: "array",
+                description:
+                  "Specific analyzers to run (if not specified, runs all 20 analyzers)",
+                items: %{
+                  type: "string",
+                  enum: [
+                    "callback_hell",
+                    "missing_error_handling",
+                    "silent_error_case",
+                    "swallowing_exception",
+                    "hardcoded_value",
+                    "n_plus_one_query",
+                    "inefficient_filter",
+                    "unmanaged_task",
+                    "telemetry_in_recursive_function",
+                    "missing_telemetry_for_external_http",
+                    "sync_over_async",
+                    "direct_struct_update",
+                    "missing_handle_async",
+                    "blocking_in_plug",
+                    "missing_telemetry_in_auth_plug",
+                    "missing_telemetry_in_liveview_mount",
+                    "missing_telemetry_in_oban_worker",
+                    "missing_preload",
+                    "inline_javascript",
+                    "missing_throttle"
+                  ]
+                }
+              },
+              min_severity: %{
+                type: "string",
+                description: "Minimum severity level to report",
+                enum: ["info", "low", "medium", "high", "critical"],
+                default: "info"
+              },
+              recursive: %{
+                type: "boolean",
+                description: "Recursively analyze directories",
+                default: true
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              }
+            },
+            required: ["path"]
+          }
+        },
+        %{
           name: "find_complex_code",
           description:
             "Find files or functions exceeding complexity thresholds - useful for identifying refactoring candidates",
@@ -2019,6 +2082,9 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "detect_smells" ->
         detect_smells_tool(arguments)
+
+      "analyze_business_logic" ->
+        analyze_business_logic_tool(arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
@@ -6628,6 +6694,145 @@ defmodule Ragex.MCP.Handlers.Tools do
       end
 
     {:ok, result}
+  end
+
+  # Business Logic Analysis Tool - Metastatic Integration
+
+  defp analyze_business_logic_tool(%{"path" => path} = params) do
+    analyzers = parse_analyzer_names(Map.get(params, "analyzers", []))
+    min_severity = Map.get(params, "min_severity", "info") |> String.to_atom()
+    recursive = Map.get(params, "recursive", true)
+    format = Map.get(params, "format", "summary")
+
+    opts = [
+      analyzers: if(analyzers == [], do: :all, else: analyzers),
+      min_severity: min_severity,
+      recursive: recursive
+    ]
+
+    result =
+      if File.dir?(path) do
+        case BusinessLogic.analyze_directory(path, opts) do
+          {:ok, dir_result} ->
+            case format do
+              "json" -> format_bl_json(dir_result, path)
+              "detailed" -> format_bl_detailed(dir_result, path)
+              "summary" -> format_bl_summary(dir_result, path)
+              _ -> format_bl_summary(dir_result, path)
+            end
+
+          {:error, reason} ->
+            %{status: "error", error: inspect(reason)}
+        end
+      else
+        case BusinessLogic.analyze_file(path, opts) do
+          {:ok, file_result} ->
+            case format do
+              "json" -> format_bl_file_json(file_result)
+              "detailed" -> format_bl_file_detailed(file_result)
+              "summary" -> format_bl_file_summary(file_result)
+              _ -> format_bl_file_summary(file_result)
+            end
+
+          {:error, reason} ->
+            %{status: "error", error: inspect(reason)}
+        end
+      end
+
+    {:ok, result}
+  end
+
+  defp parse_analyzer_names(names) when is_list(names), do: Enum.map(names, &String.to_atom/1)
+  defp parse_analyzer_names(_), do: []
+
+  defp format_bl_summary(dir_result, path) do
+    %{
+      status: "success",
+      scan_type: "directory",
+      path: path,
+      total_files: dir_result.total_files,
+      files_with_issues: dir_result.files_with_issues,
+      total_issues: dir_result.total_issues,
+      by_severity: dir_result.by_severity,
+      by_analyzer: dir_result.by_analyzer,
+      summary: dir_result.summary
+    }
+  end
+
+  defp format_bl_detailed(dir_result, path) do
+    %{
+      status: "success",
+      scan_type: "directory",
+      path: path,
+      total_files: dir_result.total_files,
+      files_with_issues: dir_result.files_with_issues,
+      total_issues: dir_result.total_issues,
+      by_severity: dir_result.by_severity,
+      by_analyzer: dir_result.by_analyzer,
+      summary: dir_result.summary,
+      files:
+        dir_result.results
+        |> Enum.filter(& &1.has_issues?)
+        |> Enum.map(fn r ->
+          %{
+            file: r.file,
+            language: r.language,
+            total_issues: r.total_issues,
+            issues: Enum.map(r.issues, &format_bl_issue/1)
+          }
+        end)
+    }
+  end
+
+  defp format_bl_json(dir_result, path) do
+    %{status: "success", scan_type: "directory", path: path, results: dir_result}
+  end
+
+  defp format_bl_file_summary(result) do
+    %{
+      status: "success",
+      scan_type: "file",
+      path: result.file,
+      language: result.language,
+      has_issues: result.has_issues?,
+      total_issues: result.total_issues,
+      by_severity: %{
+        critical: result.critical_count,
+        high: result.high_count,
+        medium: result.medium_count,
+        low: result.low_count,
+        info: result.info_count
+      },
+      by_analyzer: result.by_analyzer,
+      issues: Enum.map(result.issues, &format_bl_issue/1)
+    }
+  end
+
+  defp format_bl_file_detailed(result), do: format_bl_file_summary(result)
+
+  defp format_bl_file_json(result) do
+    %{status: "success", scan_type: "file", path: result.file, result: result}
+  end
+
+  defp format_bl_issue(issue) do
+    base = %{
+      analyzer: issue.analyzer,
+      category: issue.category,
+      severity: issue.severity,
+      description: issue.description
+    }
+
+    base = if issue.suggestion, do: Map.put(base, :suggestion, issue.suggestion), else: base
+
+    if issue.location do
+      Map.put(base, :location, %{
+        line: issue.location.line,
+        column: issue.location.column,
+        function: issue.location.function
+      })
+    else
+      base
+    end
   end
 
   defp format_severity_groups(by_severity) do

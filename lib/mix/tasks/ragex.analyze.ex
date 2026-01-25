@@ -4,6 +4,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   Analyzes a directory using all available Ragex analysis features:
   - Security vulnerability scanning
+  - Business logic analysis (20 analyzers)
   - Code complexity metrics
   - Code smell detection
   - Code duplication detection
@@ -21,6 +22,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     * `--output FILE` - Output file for results (default: stdout)
     * `--format FORMAT` - Output format: text, json, markdown (default: text)
     * `--security` - Include security analysis
+    * `--business-logic` - Include business logic analysis (20 analyzers)
     * `--complexity` - Include complexity analysis
     * `--smells` - Include code smell detection
     * `--duplicates` - Include duplication detection
@@ -57,7 +59,16 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   use Mix.Task
 
-  alias Ragex.Analysis.{DeadCode, DependencyGraph, Duplication, Quality, Security, Smells}
+  alias Ragex.Analysis.{
+    BusinessLogic,
+    DeadCode,
+    DependencyGraph,
+    Duplication,
+    Quality,
+    Security,
+    Smells
+  }
+
   alias Ragex.Analyzers.Directory
   alias Ragex.CLI.{Colors, Output, Progress}
 
@@ -75,6 +86,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
           output: :string,
           format: :string,
           security: :boolean,
+          business_logic: :boolean,
           complexity: :boolean,
           smells: :boolean,
           duplicates: :boolean,
@@ -134,6 +146,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     specific_analyses =
       Keyword.take(opts, [
         :security,
+        :business_logic,
         :complexity,
         :smells,
         :duplicates,
@@ -154,6 +167,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
       min_complexity: Keyword.get(opts, :min_complexity, 10),
       analyses: %{
         security: enable_all or Keyword.get(opts, :security, false),
+        business_logic: enable_all or Keyword.get(opts, :business_logic, false),
         complexity: enable_all or Keyword.get(opts, :complexity, false),
         smells: enable_all or Keyword.get(opts, :smells, false),
         duplicates: enable_all or Keyword.get(opts, :duplicates, false),
@@ -229,8 +243,29 @@ defmodule Mix.Tasks.Ragex.Analyze do
       end
 
     results =
+      if config.analyses.business_logic do
+        Mix.shell().info(Colors.header("Step 2.2: Business Logic Analysis..."))
+
+        progress =
+          if config.verbose, do: Progress.start("Checking business logic"), else: nil
+
+        bl_result = run_business_logic_analysis(config)
+        if progress, do: Progress.stop(progress)
+
+        if config.verbose do
+          Mix.shell().info(
+            Colors.success("  ✓ Found #{bl_result.total_issues} business logic issues")
+          )
+        end
+
+        Map.put(results, :business_logic, bl_result)
+      else
+        results
+      end
+
+    results =
       if config.analyses.complexity do
-        Mix.shell().info(Colors.header("Step 2.2: Complexity Analysis..."))
+        Mix.shell().info(Colors.header("Step 2.3: Complexity Analysis..."))
         progress = if config.verbose, do: Progress.start("Analyzing complexity"), else: nil
         complexity_result = run_complexity_analysis(config)
         if progress, do: Progress.stop(progress)
@@ -250,7 +285,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.smells do
-        Mix.shell().info(Colors.header("Step 2.3: Code Smell Detection..."))
+        Mix.shell().info(Colors.header("Step 2.4: Code Smell Detection..."))
         progress = if config.verbose, do: Progress.start("Detecting code smells"), else: nil
         smells_result = run_smells_analysis(config)
         if progress, do: Progress.stop(progress)
@@ -268,7 +303,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.duplicates do
-        Mix.shell().info(Colors.header("Step 2.4: Duplication Detection..."))
+        Mix.shell().info(Colors.header("Step 2.5: Duplication Detection..."))
         progress = if config.verbose, do: Progress.start("Finding duplicates"), else: nil
         duplicates_result = run_duplicates_analysis(config)
         if progress, do: Progress.stop(progress)
@@ -286,7 +321,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.dead_code do
-        Mix.shell().info(Colors.header("Step 2.5: Dead Code Analysis..."))
+        Mix.shell().info(Colors.header("Step 2.6: Dead Code Analysis..."))
         progress = if config.verbose, do: Progress.start("Finding dead code"), else: nil
         dead_code_result = run_dead_code_analysis(config)
         if progress, do: Progress.stop(progress)
@@ -304,7 +339,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.dependencies do
-        Mix.shell().info(Colors.header("Step 2.6: Dependency Analysis..."))
+        Mix.shell().info(Colors.header("Step 2.7: Dependency Analysis..."))
         progress = if config.verbose, do: Progress.start("Analyzing dependencies"), else: nil
         deps_result = run_dependencies_analysis(config)
         if progress, do: Progress.stop(progress)
@@ -322,7 +357,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.quality do
-        Mix.shell().info(Colors.header("Step 2.7: Quality Metrics..."))
+        Mix.shell().info(Colors.header("Step 2.8: Quality Metrics..."))
         progress = if config.verbose, do: Progress.start("Computing quality metrics"), else: nil
         quality_result = run_quality_analysis(config)
         if progress, do: Progress.stop(progress)
@@ -346,6 +381,22 @@ defmodule Mix.Tasks.Ragex.Analyze do
     case Security.analyze_directory(config.path, severity: config.severity) do
       {:ok, issues} -> %{issues: issues}
       {:error, _} -> %{issues: []}
+    end
+  end
+
+  defp run_business_logic_analysis(config) do
+    severity_map = %{
+      [:low, :medium, :high, :critical] => :low,
+      [:medium, :high, :critical] => :medium,
+      [:high, :critical] => :high,
+      [:critical] => :critical
+    }
+
+    min_severity = Map.get(severity_map, config.severity, :medium)
+
+    case BusinessLogic.analyze_directory(config.path, min_severity: min_severity) do
+      {:ok, result} -> result
+      {:error, _} -> %{total_files: 0, files_with_issues: 0, total_issues: 0, results: []}
     end
   end
 
@@ -456,6 +507,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     Enum.map_join(results, "\n\n", fn {type, data} ->
       case type do
         :security -> format_markdown_security(data)
+        :business_logic -> format_markdown_business_logic(data)
         :complexity -> format_markdown_complexity(data)
         :smells -> format_markdown_smells(data)
         :duplicates -> format_markdown_duplicates(data)
@@ -472,6 +524,36 @@ defmodule Mix.Tasks.Ragex.Analyze do
     ## Security Issues (#{length(issues)})
 
     #{Enum.map_join(issues, "\n", fn issue -> "- **#{issue.type}** (#{issue.severity}): #{issue.file}:#{issue.line} - #{issue.description}" end)}
+    """
+  end
+
+  defp format_markdown_business_logic(data) do
+    total = Map.get(data, :total_issues, 0)
+    files_with_issues = Map.get(data, :files_with_issues, 0)
+    by_severity = Map.get(data, :by_severity, %{})
+    by_analyzer = Map.get(data, :by_analyzer, %{})
+
+    severity_summary =
+      [:critical, :high, :medium, :low, :info]
+      |> Enum.map(fn sev -> "#{sev}: #{Map.get(by_severity, sev, 0)}" end)
+      |> Enum.join(", ")
+
+    analyzer_summary =
+      by_analyzer
+      |> Enum.filter(fn {_name, count} -> count > 0 end)
+      |> Enum.sort_by(fn {_name, count} -> count end, :desc)
+      |> Enum.map(fn {name, count} -> "- **#{name}**: #{count}" end)
+      |> Enum.join("\n")
+
+    """
+    ## Business Logic Issues (#{total})
+
+    Files with issues: #{files_with_issues}  
+    By severity: #{severity_summary}
+
+    ### By Analyzer
+
+    #{analyzer_summary}
     """
   end
 
@@ -673,6 +755,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
             count = length(data.issues)
             color = if count > 0, do: :error, else: :success
             Mix.shell().info(apply(Colors, color, ["  Security Issues: #{count}"]))
+
+          :business_logic ->
+            count = Map.get(data, :total_issues, 0)
+            color = if count > 0, do: :warning, else: :success
+            Mix.shell().info(apply(Colors, color, ["  Business Logic Issues: #{count}"]))
 
           :complexity ->
             count = length(data.complex_functions)

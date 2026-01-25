@@ -349,7 +349,42 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ Filtering: By severity or smell type  
       ▹ MCP Tool: `detect_smells`
 
-    ▸ Quality Metrics (Metastatic Integration)  
+    ▸ Business Logic Analysis (20 Metastatic Analyzers)  
+      ▹ Control Flow Issues:  
+        • Callback Hell: Excessive nested callbacks (default: >3 levels)  
+        • Missing Error Handling: Functions without try/rescue or error tuples  
+        • Silent Error Case: Pattern matches that ignore error tuples  
+        • Swallowing Exception: Rescue clauses without re-raising or logging  
+      ▹ Data & Configuration:  
+        • Hardcoded Value: URLs, secrets, or config values in code  
+        • Direct Struct Update: Using `%{struct | ...}` instead of changesets/contexts  
+        • Missing Preload: Ecto queries without required preloads  
+      ▹ Performance & Scalability:  
+        • N+1 Query: Multiple database queries in iterations  
+        • Inefficient Filter: Filtering after fetching instead of in query  
+        • Unmanaged Task: `Task.start` without supervision  
+        • Blocking in Plug: Slow synchronous operations in plug pipeline  
+        • Sync Over Async: Using sync calls when async is available  
+      ▹ Observability:  
+        • Missing Telemetry for External HTTP: External API calls without telemetry  
+        • Missing Telemetry in Auth Plug: Auth operations without metrics  
+        • Missing Telemetry in LiveView Mount: LiveView lifecycle without tracking  
+        • Missing Telemetry in Oban Worker: Background jobs without observability  
+        • Telemetry in Recursive Function: Performance overhead from recursive telemetry  
+      ▹ Framework-Specific:  
+        • Missing Handle Async: LiveView async results without handlers  
+        • Inline JavaScript: JavaScript in Phoenix templates/LiveView  
+        • Missing Throttle: User-facing actions without rate limiting  
+      ▹ Tier Classification: 4 tiers from pure MetaAST to content analysis  
+      ▹ Actionable Recommendations: Specific fixes for each issue type  
+      ▹ Severity Levels: Critical, high, medium, low, info  
+      ▹ Directory Scanning: Recursive analysis with file type detection  
+      ▹ Filtering: By analyzer, minimum severity, or file patterns  
+      ▹ Reports: Summary with counts by analyzer and severity  
+      ▹ MCP Tool: `analyze_business_logic`  
+      ▹ Mix Task: `mix ragex.analyze --business-logic`
+
+    ▸ Quality Metrics (Metastatic Integration)
       ▹ Complexity Metrics (Full Suite):  
         • Cyclomatic Complexity: McCabe metric (decision points + 1)  
         • Cognitive Complexity: Structural complexity with nesting penalties  
