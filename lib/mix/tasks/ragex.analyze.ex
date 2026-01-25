@@ -572,16 +572,24 @@ defmodule Mix.Tasks.Ragex.Analyze do
               []
           end
 
-        # Format locations with line numbers
+        # Format locations with line numbers and individual truncation
+        # Max length per location (allow reasonable space for each path)
+        max_per_location = 35
+
         loc_str =
           locations
           |> Enum.take(2)
           |> Enum.map(fn %{file: file, line: line} ->
-            if line && is_integer(line) do
-              "#{file}:#{line}"
-            else
-              file
-            end
+            # Format with line number if available
+            full_location =
+              if line && is_integer(line) do
+                "#{file}:#{line}"
+              else
+                file
+              end
+
+            # Truncate from right to preserve filename
+            truncate_from_right_md(full_location, max_per_location)
           end)
           |> Enum.join(" ↔ ")
           |> then(fn str ->
@@ -635,6 +643,18 @@ defmodule Mix.Tasks.Ragex.Analyze do
   defp smell_severity_order(:medium), do: 2
   defp smell_severity_order(:low), do: 1
   defp smell_severity_order(_), do: 0
+
+  # Truncate from the right for markdown, preserving filenames
+  defp truncate_from_right_md(text, max_length) when is_binary(text) do
+    if String.length(text) > max_length do
+      keep_length = max_length - 1
+      "…" <> String.slice(text, -keep_length, keep_length)
+    else
+      text
+    end
+  end
+
+  defp truncate_from_right_md(text, _), do: to_string(text)
 
   # Format as text
   defp format_text(report) do
