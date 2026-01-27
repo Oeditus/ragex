@@ -77,15 +77,18 @@ defmodule Ragex.Analysis.DeadCode do
   ]
 
   # Entry point detection patterns
-  @entry_point_patterns [
-    ~r/^main$/,
-    ~r/^run$/,
-    ~r/^start/,
-    ~r/^handle_/,
-    ~r/^mount$/,
-    ~r/^render$/,
-    ~r/^test_/
-  ]
+  # Note: These are defined as a function to avoid Elixir 1.18 attribute escaping issues
+  defp entry_point_patterns do
+    [
+      ~r/^main$/,
+      ~r/^run$/,
+      ~r/^start/,
+      ~r/^handle_/,
+      ~r/^mount$/,
+      ~r/^render$/,
+      ~r/^test_/
+    ]
+  end
 
   @doc """
   Finds unused public (exported) functions.
@@ -581,7 +584,7 @@ defmodule Ragex.Analysis.DeadCode do
   defp entry_point_pattern?(name) do
     name_str = Atom.to_string(name)
 
-    Enum.any?(@entry_point_patterns, fn pattern ->
+    Enum.any?(entry_point_patterns(), fn pattern ->
       Regex.match?(pattern, name_str)
     end)
   end
