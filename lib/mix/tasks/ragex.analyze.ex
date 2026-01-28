@@ -70,9 +70,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
   }
 
   alias Ragex.Analyzers.Directory
-  alias Ragex.CLI.{Colors, Output, Progress}
 
   @shortdoc "Performs comprehensive code analysis on a directory"
+
+  # Check if CLI modules are available (not available when installed as archive)
+  @has_cli_modules Code.ensure_loaded?(Ragex.CLI.Colors)
 
   @impl Mix.Task
   def run(args) do
@@ -104,19 +106,17 @@ defmodule Mix.Tasks.Ragex.Analyze do
     config = build_config(opts)
 
     if config.verbose do
-      Mix.shell().info(Colors.info("Ragex Comprehensive Analysis"))
+      info_msg("Ragex Comprehensive Analysis")
       Mix.shell().info("")
     end
 
     # Step 1: Analyze directory and build knowledge graph
-    Mix.shell().info(Colors.header("Step 1: Analyzing directory..."))
+    header_msg("Step 1: Analyzing directory...")
     analyze_result = analyze_directory(config)
 
     if config.verbose do
-      Mix.shell().info(
-        Colors.success(
-          "  ✓ Analyzed #{analyze_result.files_analyzed} files (#{analyze_result.entities_found} entities)"
-        )
+      success_msg(
+        "  ✓ Analyzed #{analyze_result.files_analyzed} files (#{analyze_result.entities_found} entities)"
       )
 
       Mix.shell().info("")
@@ -190,11 +190,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Analyze directory
   defp analyze_directory(config) do
-    progress = if config.verbose, do: Progress.start("Analyzing files"), else: nil
-
     result = Directory.analyze_directory(config.path)
-
-    if progress, do: Progress.stop(progress)
 
     case result do
       {:ok, stats} ->
@@ -212,7 +208,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
         }
 
       {:error, reason} ->
-        Mix.shell().error(Colors.error("Failed to analyze directory: #{inspect(reason)}"))
+        error_msg("Failed to analyze directory: #{inspect(reason)}")
         System.halt(1)
     end
   end
@@ -223,18 +219,12 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.security do
-        Mix.shell().info(Colors.header("Step 2.1: Security Analysis..."))
-
-        progress =
-          if config.verbose, do: Progress.start("Scanning for vulnerabilities"), else: nil
+        header_msg("Step 2.1: Security Analysis...")
 
         security_result = run_security_analysis(config)
-        if progress, do: Progress.stop(progress)
 
         if config.verbose do
-          Mix.shell().info(
-            Colors.success("  ✓ Found #{length(security_result.issues)} security issues")
-          )
+          success_msg("  ✓ Found #{length(security_result.issues)} security issues")
         end
 
         Map.put(results, :security, security_result)
@@ -244,18 +234,12 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.business_logic do
-        Mix.shell().info(Colors.header("Step 2.2: Business Logic Analysis..."))
-
-        progress =
-          if config.verbose, do: Progress.start("Checking business logic"), else: nil
+        header_msg("Step 2.2: Business Logic Analysis...")
 
         bl_result = run_business_logic_analysis(config)
-        if progress, do: Progress.stop(progress)
 
         if config.verbose do
-          Mix.shell().info(
-            Colors.success("  ✓ Found #{bl_result.total_issues} business logic issues")
-          )
+          success_msg("  ✓ Found #{bl_result.total_issues} business logic issues")
         end
 
         Map.put(results, :business_logic, bl_result)
@@ -265,16 +249,12 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.complexity do
-        Mix.shell().info(Colors.header("Step 2.3: Complexity Analysis..."))
-        progress = if config.verbose, do: Progress.start("Analyzing complexity"), else: nil
+        header_msg("Step 2.3: Complexity Analysis...")
         complexity_result = run_complexity_analysis(config)
-        if progress, do: Progress.stop(progress)
 
         if config.verbose do
-          Mix.shell().info(
-            Colors.success(
-              "  ✓ Found #{length(complexity_result.complex_functions)} complex functions"
-            )
+          success_msg(
+            "  ✓ Found #{length(complexity_result.complex_functions)} complex functions"
           )
         end
 
@@ -285,15 +265,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.smells do
-        Mix.shell().info(Colors.header("Step 2.4: Code Smell Detection..."))
-        progress = if config.verbose, do: Progress.start("Detecting code smells"), else: nil
+        header_msg("Step 2.4: Code Smell Detection...")
         smells_result = run_smells_analysis(config)
-        if progress, do: Progress.stop(progress)
 
         if config.verbose do
-          Mix.shell().info(
-            Colors.success("  ✓ Found #{length(smells_result.smells)} code smells")
-          )
+          success_msg("  ✓ Found #{length(smells_result.smells)} code smells")
         end
 
         Map.put(results, :smells, smells_result)
@@ -303,15 +279,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.duplicates do
-        Mix.shell().info(Colors.header("Step 2.5: Duplication Detection..."))
-        progress = if config.verbose, do: Progress.start("Finding duplicates"), else: nil
+        header_msg("Step 2.5: Duplication Detection...")
         duplicates_result = run_duplicates_analysis(config)
-        if progress, do: Progress.stop(progress)
 
         if config.verbose do
-          Mix.shell().info(
-            Colors.success("  ✓ Found #{length(duplicates_result.duplicates)} duplicate blocks")
-          )
+          success_msg("  ✓ Found #{length(duplicates_result.duplicates)} duplicate blocks")
         end
 
         Map.put(results, :duplicates, duplicates_result)
@@ -321,15 +293,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.dead_code do
-        Mix.shell().info(Colors.header("Step 2.6: Dead Code Analysis..."))
-        progress = if config.verbose, do: Progress.start("Finding dead code"), else: nil
+        header_msg("Step 2.6: Dead Code Analysis...")
         dead_code_result = run_dead_code_analysis(config)
-        if progress, do: Progress.stop(progress)
 
         if config.verbose do
-          Mix.shell().info(
-            Colors.success("  ✓ Found #{length(dead_code_result.dead_functions)} dead functions")
-          )
+          success_msg("  ✓ Found #{length(dead_code_result.dead_functions)} dead functions")
         end
 
         Map.put(results, :dead_code, dead_code_result)
@@ -339,15 +307,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.dependencies do
-        Mix.shell().info(Colors.header("Step 2.7: Dependency Analysis..."))
-        progress = if config.verbose, do: Progress.start("Analyzing dependencies"), else: nil
+        header_msg("Step 2.7: Dependency Analysis...")
         deps_result = run_dependencies_analysis(config)
-        if progress, do: Progress.stop(progress)
 
         if config.verbose do
-          Mix.shell().info(
-            Colors.success("  ✓ Analyzed #{map_size(deps_result.modules)} modules")
-          )
+          success_msg("  ✓ Analyzed #{map_size(deps_result.modules)} modules")
         end
 
         Map.put(results, :dependencies, deps_result)
@@ -357,15 +321,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     results =
       if config.analyses.quality do
-        Mix.shell().info(Colors.header("Step 2.8: Quality Metrics..."))
-        progress = if config.verbose, do: Progress.start("Computing quality metrics"), else: nil
+        header_msg("Step 2.8: Quality Metrics...")
         quality_result = run_quality_analysis(config)
-        if progress, do: Progress.stop(progress)
 
         if config.verbose do
-          Mix.shell().info(
-            Colors.success("  ✓ Overall quality score: #{quality_result.overall_score}/100")
-          )
+          success_msg("  ✓ Overall quality score: #{quality_result.overall_score}/100")
         end
 
         Map.put(results, :quality, quality_result)
@@ -474,7 +434,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
       file ->
         File.write!(file, content)
-        Mix.shell().info(Colors.success("\n✓ Report written to #{file}"))
+        success_msg("\n✓ Report written to #{file}")
     end
   end
 
@@ -740,62 +700,65 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Format as text
   defp format_text(report) do
-    Output.format_analysis_report(report)
+    if @has_cli_modules do
+      apply(Ragex.CLI.Output, :format_analysis_report, [report])
+    else
+      # Fallback simple text format when CLI modules not available
+      Jason.encode!(report, pretty: true)
+    end
   end
 
   # Print summary
   defp print_summary(config, results) do
     if config.verbose do
       Mix.shell().info("")
-      Mix.shell().info(Colors.header("Summary:"))
+      header_msg("Summary:")
 
       Enum.each(results, fn {type, data} ->
         case type do
           :security ->
             count = length(data.issues)
-            color = if count > 0, do: :error, else: :success
-            Mix.shell().info(apply(Colors, color, ["  Security Issues: #{count}"]))
+            msg = "  Security Issues: #{count}"
+            if count > 0, do: error_msg(msg), else: success_msg(msg)
 
           :business_logic ->
             count = Map.get(data, :total_issues, 0)
-            color = if count > 0, do: :warning, else: :success
-            Mix.shell().info(apply(Colors, color, ["  Business Logic Issues: #{count}"]))
+            msg = "  Business Logic Issues: #{count}"
+            if count > 0, do: warning_msg(msg), else: success_msg(msg)
 
           :complexity ->
             count = length(data.complex_functions)
-            color = if count > 0, do: :warning, else: :success
-            Mix.shell().info(apply(Colors, color, ["  Complex Functions: #{count}"]))
+            msg = "  Complex Functions: #{count}"
+            if count > 0, do: warning_msg(msg), else: success_msg(msg)
 
           :smells ->
             count = length(data.smells)
-            color = if count > 0, do: :warning, else: :success
-            Mix.shell().info(apply(Colors, color, ["  Code Smells: #{count}"]))
+            msg = "  Code Smells: #{count}"
+            if count > 0, do: warning_msg(msg), else: success_msg(msg)
 
           :duplicates ->
             count = length(data.duplicates)
-            color = if count > 0, do: :warning, else: :success
-            Mix.shell().info(apply(Colors, color, ["  Duplicate Blocks: #{count}"]))
+            msg = "  Duplicate Blocks: #{count}"
+            if count > 0, do: warning_msg(msg), else: success_msg(msg)
 
           :dead_code ->
             count = length(data.dead_functions)
-            color = if count > 0, do: :info, else: :success
-            Mix.shell().info(apply(Colors, color, ["  Dead Functions: #{count}"]))
+            msg = "  Dead Functions: #{count}"
+            if count > 0, do: info_msg(msg), else: success_msg(msg)
 
           :dependencies ->
             count = map_size(data.modules)
-            Mix.shell().info(Colors.info("  Modules Analyzed: #{count}"))
+            info_msg("  Modules Analyzed: #{count}")
 
           :quality ->
             score = data.overall_score
+            msg = "  Quality Score: #{score}/100"
 
-            color =
-              cond do
-                score >= 80 -> :success
-                score >= 60 -> :warning
-                true -> :error
-              end
-
-            Mix.shell().info(apply(Colors, color, ["  Quality Score: #{score}/100"]))
+            cond do
+              score >= 80 -> success_msg(msg)
+              score >= 60 -> warning_msg(msg)
+              true -> error_msg(msg)
+            end
 
           _ ->
             :ok
@@ -803,6 +766,47 @@ defmodule Mix.Tasks.Ragex.Analyze do
       end)
 
       Mix.shell().info("")
+    end
+  end
+
+  # Helper functions for colored output that work with or without CLI modules
+  defp header_msg(text) do
+    if @has_cli_modules do
+      Mix.shell().info(apply(Ragex.CLI.Colors, :header, [text]))
+    else
+      Mix.shell().info(text)
+    end
+  end
+
+  defp success_msg(text) do
+    if @has_cli_modules do
+      Mix.shell().info(apply(Ragex.CLI.Colors, :success, [text]))
+    else
+      Mix.shell().info(text)
+    end
+  end
+
+  defp error_msg(text) do
+    if @has_cli_modules do
+      Mix.shell().info(apply(Ragex.CLI.Colors, :error, [text]))
+    else
+      Mix.shell().info(text)
+    end
+  end
+
+  defp warning_msg(text) do
+    if @has_cli_modules do
+      Mix.shell().info(apply(Ragex.CLI.Colors, :warning, [text]))
+    else
+      Mix.shell().info(text)
+    end
+  end
+
+  defp info_msg(text) do
+    if @has_cli_modules do
+      Mix.shell().info(apply(Ragex.CLI.Colors, :info, [text]))
+    else
+      Mix.shell().info(text)
     end
   end
 end
