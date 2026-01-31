@@ -83,6 +83,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     # Start required applications
     Mix.Task.run("app.start")
 
+    # Parse options early to check format
     {opts, _, _} =
       OptionParser.parse(args,
         strict: [
@@ -109,6 +110,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     # Only show progress messages if not JSON format
     show_progress = config.format != "json"
+
+    # Suppress all logger output when outputting JSON
+    if config.format == "json" do
+      Logger.configure(level: :emergency)
+    end
 
     if config.verbose and show_progress do
       info_msg("Ragex Comprehensive Analysis")
