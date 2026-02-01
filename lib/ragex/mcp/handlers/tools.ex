@@ -1313,6 +1313,11 @@ defmodule Ragex.MCP.Handlers.Tools do
                 description: "Sort order for results",
                 enum: ["asc", "desc"],
                 default: "desc"
+              },
+              show_functions: %{
+                type: "boolean",
+                description: "Include per-function complexity breakdown with file:line locations",
+                default: false
               }
             }
           }
@@ -4682,46 +4687,101 @@ defmodule Ragex.MCP.Handlers.Tools do
     comparison = String.to_atom(Map.get(params, "comparison", "gt"))
     limit = Map.get(params, "limit", 20)
     sort_order = String.to_atom(Map.get(params, "sort_order", "desc"))
+    show_functions = Map.get(params, "show_functions", false)
 
-    # Find files exceeding threshold
-    results = QualityStore.find_by_threshold(metric, threshold, comparison)
+    # Get all files from quality store and extract their metrics
+    all_file_results =
+      Store.list_nodes(:quality_metrics, :infinity)
+      |> Enum.map(fn node ->
+        value = Map.get(node.data, metric, 0)
+
+        # Compare against threshold
+        matches =
+          case comparison do
+            :gt -> value > threshold
+            :gte -> value >= threshold
+            :lt -> value < threshold
+            :lte -> value <= threshold
+            :eq -> value == threshold
+            _ -> false
+          end
+
+        if matches do
+          {node.data.path, value, node.data}
+        else
+          nil
+        end
+      end)
+      |> Enum.filter(&(&1 != nil))
 
     # Sort and limit
     sorted =
       case sort_order do
         :asc ->
-          Enum.sort_by(results, fn {_path, value} -> value end)
+          Enum.sort_by(all_file_results, fn {_path, value, _metrics} -> value end)
 
         :desc ->
-          Enum.sort_by(results, fn {_path, value} -> -value end)
+          Enum.sort_by(all_file_results, fn {_path, value, _metrics} -> -value end)
       end
       |> Enum.take(limit)
 
     # Format results
     formatted_results =
-      Enum.map(sorted, fn {path, value} ->
-        metrics = QualityStore.get_metrics(path)
-
-        # Extract language safely
-        language =
-          case metrics do
-            {:error, :not_found} -> "unknown"
-            {:ok, m} when is_map(m) -> Map.get(m, :language, "unknown")
-          end
-
-        all_metrics =
-          case metrics do
-            {:error, :not_found} -> %{}
-            {:ok, m} when is_map(m) -> format_metrics(Map.put(m, :path, path))
-          end
-
-        %{
+      Enum.map(sorted, fn {path, value, metrics} ->
+        base_result = %{
           path: path,
           metric_value: value,
           metric_type: Atom.to_string(metric),
-          language: language,
-          all_metrics: all_metrics
+          language: Atom.to_string(metrics.language || :unknown),
+          all_metrics: format_metrics(Map.put(metrics, :path, path))
         }
+
+        # Optionally include per-function complexity with locations
+        if show_functions do
+          per_function = Map.get(metrics, :per_function, %{})
+
+          functions_with_locations =
+            per_function
+            |> Enum.filter(fn {_func_key, func_metrics} ->
+              func_value = Map.get(func_metrics, metric, 0)
+
+              case comparison do
+                :gt -> func_value > threshold
+                :gte -> func_value >= threshold
+                :lt -> func_value < threshold
+                :lte -> func_value <= threshold
+                :eq -> func_value == threshold
+                _ -> false
+              end
+            end)
+            |> Enum.map(fn {func_key, func_metrics} ->
+              # Parse "Module.function/arity"
+              [module_str, name_arity] = String.split(func_key, ".", parts: 2)
+              [name_str, arity_str] = String.split(name_arity, "/")
+
+              module = String.to_atom(module_str)
+              name = String.to_atom(name_str)
+              arity = String.to_integer(arity_str)
+
+              # Get location from knowledge graph
+              location = get_function_location(module, name, arity)
+
+              %{
+                function: "#{name}/#{arity}",
+                module: module_str,
+                location: location,
+                metric_value: Map.get(func_metrics, metric, 0),
+                cyclomatic: Map.get(func_metrics, :cyclomatic, 0),
+                cognitive: Map.get(func_metrics, :cognitive, 0),
+                nesting: Map.get(func_metrics, :nesting, 0)
+              }
+            end)
+            |> Enum.sort_by(& &1.metric_value, if(sort_order == :desc, do: :desc, else: :asc))
+
+          Map.put(base_result, :functions, functions_with_locations)
+        else
+          base_result
+        end
       end)
 
     {:ok,
@@ -5581,10 +5641,12 @@ defmodule Ragex.MCP.Handlers.Tools do
     locations_formatted =
       Enum.map(result.dead_locations, fn loc ->
         %{
+          file: path,
           type: loc.type,
           reason: loc.reason,
           confidence: loc.confidence,
-          suggestion: loc.suggestion
+          suggestion: loc.suggestion,
+          note: "Line numbers not available (MetaAST limitation)"
         }
       end)
 
@@ -5594,6 +5656,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     File: #{path}
     Has Dead Code: #{result.has_dead_code?}
     Total Dead Statements: #{result.total_dead_statements}
+    Note: Line numbers unavailable (MetaAST limitation - context-based detection only)
 
     #{if result.has_dead_code?, do: "Dead Code Locations:", else: "No dead code found."}
     #{if result.has_dead_code?, do: Enum.map_join(result.dead_locations, "\n", fn loc -> "  - #{loc.type}: #{loc.reason}" end), else: ""}
@@ -5745,7 +5808,8 @@ defmodule Ragex.MCP.Handlers.Tools do
       |> Enum.take(10)
       |> Enum.map_join("\n", fn df ->
         {mod, name, arity} = extract_function_parts(df.function)
-        "  - #{mod}.#{name}/#{arity} (confidence: #{Float.round(df.confidence, 2)})"
+        location = get_function_location(mod, name, arity)
+        "  - #{location}: #{mod}.#{name}/#{arity} (confidence: #{Float.round(df.confidence, 2)})"
       end)
 
     content = """
@@ -5770,9 +5834,11 @@ defmodule Ragex.MCP.Handlers.Tools do
     detailed =
       Enum.map(dead_functions, fn df ->
         {mod, name, arity} = extract_function_parts(df.function)
+        location = get_function_location(mod, name, arity)
 
         %{
           function: "#{mod}.#{name}/#{arity}",
+          location: location,
           module: inspect(mod),
           confidence: df.confidence,
           reason: df.reason,
@@ -5885,6 +5951,28 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp extract_function_parts({:function, module, name, arity}), do: {module, name, arity}
 
+  # Helper to get file:line location for a function
+  defp get_function_location(module, name, arity) do
+    case Store.get_function(module, name, arity) do
+      nil ->
+        # Try to get module file at least
+        case Store.get_module(module) do
+          nil -> "unknown"
+          mod_data -> Map.get(mod_data, :file, "unknown")
+        end
+
+      func_data ->
+        file = Map.get(func_data, :file, "unknown")
+        line = Map.get(func_data, :line)
+
+        if line do
+          "#{file}:#{line}"
+        else
+          file
+        end
+    end
+  end
+
   # Duplication formatting helpers
 
   defp format_duplicate_result(file1, file2, result, "json") do
@@ -5896,11 +5984,14 @@ defmodule Ragex.MCP.Handlers.Tools do
        duplicate: result.duplicate?,
        clone_type: result.clone_type,
        similarity: result.similarity_score,
-       summary: result.summary || ""
+       summary: result.summary || "",
+       locations: format_duplicate_locations(result.locations)
      }}
   end
 
   defp format_duplicate_result(file1, file2, result, "detailed") do
+    locations_text = format_locations_text(result.locations)
+
     content = """
     Duplicate Detection Result
     =========================
@@ -5909,7 +6000,8 @@ defmodule Ragex.MCP.Handlers.Tools do
 
     Duplicate: #{if result.duplicate?, do: "YES", else: "NO"}
     #{if result.duplicate? do
-      "Clone Type: #{format_clone_type(result.clone_type)}\nSimilarity: #{Float.round(result.similarity_score, 3)}\n\nSummary:\n#{result.summary || ""}"
+      locations_part = if locations_text != "", do: "\n\nLocations:\n#{locations_text}", else: ""
+      "Clone Type: #{format_clone_type(result.clone_type)}\nSimilarity: #{Float.round(result.similarity_score, 3)}#{locations_part}\n\nSummary:\n#{result.summary || ""}"
     else
       "These files are not duplicates."
     end}
@@ -5939,11 +6031,14 @@ defmodule Ragex.MCP.Handlers.Tools do
        total_clones: length(clones),
        clones:
          Enum.map(clones, fn clone ->
+           locations = get_in(clone, [:details, :locations]) || []
+
            %{
              file1: clone.file1,
              file2: clone.file2,
              clone_type: clone.clone_type,
-             similarity: clone.similarity
+             similarity: clone.similarity,
+             locations: format_duplicate_locations(locations)
            }
          end)
      }}
@@ -5961,10 +6056,16 @@ defmodule Ragex.MCP.Handlers.Tools do
 
           pairs =
             Enum.map_join(clones, "\n\n", fn clone ->
+              locations = get_in(clone, [:details, :locations]) || []
+              locations_text = format_locations_text(locations)
+
+              locations_part =
+                if locations_text != "", do: "\n    Locations:\n#{locations_text}", else: ""
+
               """
               #{clone.file1} <-> #{clone.file2}
                 Type: #{format_clone_type(clone.clone_type)}
-                Similarity: #{Float.round(clone.similarity, 3)}
+                Similarity: #{Float.round(clone.similarity, 3)}#{locations_part}
               """
             end)
 
@@ -6057,6 +6158,62 @@ defmodule Ragex.MCP.Handlers.Tools do
       end
 
     {:ok, %{status: "success", total_pairs: length(pairs), summary: String.trim(content)}}
+  end
+
+  # Format duplicate locations for JSON output
+  defp format_duplicate_locations([]), do: []
+
+  defp format_duplicate_locations(locations) do
+    Enum.map(locations, fn loc ->
+      case loc do
+        %{file: file, start_line: start_line, end_line: end_line} ->
+          %{
+            file: file,
+            start_line: start_line,
+            end_line: end_line,
+            range: "#{file}:#{start_line}-#{end_line}"
+          }
+
+        %{file: file, line_start: line_start, line_end: line_end} ->
+          %{
+            file: file,
+            start_line: line_start,
+            end_line: line_end,
+            range: "#{file}:#{line_start}-#{line_end}"
+          }
+
+        %{file: file} ->
+          %{file: file, range: file}
+
+        _ ->
+          nil
+      end
+    end)
+    |> Enum.filter(&(&1 != nil))
+  end
+
+  # Format locations as human-readable text
+  defp format_locations_text([]), do: ""
+
+  defp format_locations_text(locations) do
+    locations
+    |> Enum.map(fn loc ->
+      case loc do
+        %{file: file, start_line: start_line, end_line: end_line} ->
+          "      #{file}:#{start_line}-#{end_line}"
+
+        %{file: file, line_start: line_start, line_end: line_end} ->
+          "      #{file}:#{line_start}-#{line_end}"
+
+        %{file: file} ->
+          "      #{file}"
+
+        _ ->
+          nil
+      end
+    end)
+    |> Enum.filter(&(&1 != nil))
+    |> Enum.join("\n")
   end
 
   defp format_similar_code_result(pairs, "summary") do

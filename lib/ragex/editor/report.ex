@@ -152,7 +152,9 @@ defmodule Ragex.Editor.Report do
   defp markdown_conflicts(conflicts) do
     conflict_list =
       Enum.map_join(conflicts, "\n", fn conflict ->
-        "- **#{conflict.type}** (#{conflict.severity}): #{conflict.message}"
+        location = format_conflict_location(conflict)
+        location_part = if location != "", do: " at #{location}", else: ""
+        "- **#{conflict.type}** (#{conflict.severity}): #{conflict.message}#{location_part}"
       end)
 
     """
@@ -249,7 +251,9 @@ defmodule Ragex.Editor.Report do
       type: conflict.type,
       severity: conflict.severity,
       message: conflict.message,
-      location: conflict.location,
+      file: conflict.file,
+      line: conflict.line,
+      location: format_conflict_location(conflict),
       suggestion: conflict.suggestion
     }
   end
@@ -347,9 +351,14 @@ defmodule Ragex.Editor.Report do
   defp html_conflicts(conflicts) do
     conflict_html =
       Enum.map_join(conflicts, "\n", fn conflict ->
+        location = format_conflict_location(conflict)
+
+        location_html =
+          if location != "", do: "<br><code>#{html_escape(location)}</code>", else: ""
+
         """
         <div class="conflict #{conflict.severity}">
-          <strong>#{conflict.type}</strong> (#{conflict.severity}): #{conflict.message}
+          <strong>#{conflict.type}</strong> (#{conflict.severity}): #{conflict.message}#{location_html}
           #{if conflict.suggestion, do: "<br><em>Suggestion: #{conflict.suggestion}</em>", else: ""}
         </div>
         """
@@ -433,4 +442,16 @@ defmodule Ragex.Editor.Report do
 
     result_warnings ++ conflict_warnings
   end
+
+  # Helper to format conflict location
+  defp format_conflict_location(%{file: file, line: line})
+       when not is_nil(file) and not is_nil(line) do
+    "#{file}:#{line}"
+  end
+
+  defp format_conflict_location(%{file: file}) when not is_nil(file) do
+    file
+  end
+
+  defp format_conflict_location(_), do: ""
 end

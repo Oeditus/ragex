@@ -4,13 +4,19 @@ import Config
 # MCP protocol uses stdout for JSON-RPC, so logs MUST go to stderr
 # Using OTP logger (Elixir 1.15+)
 config :logger,
-  level: :info,
+  level: "LOG_LEVEL" |> System.get_env("info") |> String.to_existing_atom(),
   handle_otp_reports: true,
-  handle_sasl_reports: true
-
-config :logger, :default_handler,
-  config: [
-    type: :standard_error
+  handle_sasl_reports: true,
+  default_handler: [
+    # config: [type: :standard_error]
+    config: [
+      file: ~c"ragex.log",
+      filesync_repeat_interval: 5000,
+      file_check: 5000,
+      max_no_bytes: 10_000_000,
+      max_no_files: 5,
+      compress_on_rotate: true
+    ]
   ]
 
 # Embedding Model Configuration
@@ -136,5 +142,12 @@ config :ragex, :auto_analyze_dirs, []
 config :ragex, :features,
   use_metastatic: true,
   fallback_to_native_analyzers: true
+
+# Analysis Configuration
+config :ragex, :analysis,
+  # Enable/disable dead code detection (can be noisy)
+  enable_dead_code_detection: true,
+  # Minimum confidence for dead code reporting (0.0-1.0)
+  dead_code_min_confidence: 0.5
 
 if File.exists?("config/#{Mix.env()}.exs"), do: import_config("#{Mix.env()}.exs")

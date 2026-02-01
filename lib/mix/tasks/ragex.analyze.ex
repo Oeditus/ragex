@@ -201,7 +201,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Analyze directory
   defp analyze_directory(config) do
-    result = Directory.analyze_directory(config.path)
+    # Suppress MCP notifications when outputting structured formats (JSON/Markdown)
+    opts = if config.format in ["json", "markdown"], do: [notify: false], else: []
+    result = Directory.analyze_directory(config.path, opts)
 
     case result do
       {:ok, stats} ->

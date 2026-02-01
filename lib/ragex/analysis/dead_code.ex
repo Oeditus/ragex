@@ -122,33 +122,38 @@ defmodule Ragex.Analysis.DeadCode do
   """
   @spec find_unused_exports(keyword()) :: {:ok, [dead_function()]} | {:error, term()}
   def find_unused_exports(opts \\ []) do
-    min_confidence = Keyword.get(opts, :min_confidence, 0.5)
-    exclude_tests = Keyword.get(opts, :exclude_tests, true)
-    include_callbacks = Keyword.get(opts, :include_callbacks, false)
-    ai_refine = Keyword.get(opts, :ai_refine)
+    # Check if dead code detection is disabled
+    if not dead_code_enabled?() do
+      {:ok, []}
+    else
+      min_confidence = Keyword.get(opts, :min_confidence, get_default_min_confidence())
+      exclude_tests = Keyword.get(opts, :exclude_tests, true)
+      include_callbacks = Keyword.get(opts, :include_callbacks, false)
+      ai_refine = Keyword.get(opts, :ai_refine)
 
-    try do
-      functions = Store.list_nodes(:function, :infinity)
+      try do
+        functions = Store.list_nodes(:function, :infinity)
 
-      dead_functions =
-        functions
-        |> Enum.filter(fn func ->
-          public_function?(func) && should_check_module?(func, exclude_tests)
-        end)
-        |> Enum.map(&analyze_function/1)
-        |> Enum.filter(fn result ->
-          result != nil &&
-            (include_callbacks || result.confidence >= min_confidence) &&
-            result.confidence >= min_confidence
-        end)
-        |> maybe_refine_with_ai(ai_refine, opts)
-        |> Enum.sort_by(& &1.confidence, :desc)
+        dead_functions =
+          functions
+          |> Enum.filter(fn func ->
+            public_function?(func) && should_check_module?(func, exclude_tests)
+          end)
+          |> Enum.map(&analyze_function/1)
+          |> Enum.filter(fn result ->
+            result != nil &&
+              (include_callbacks || result.confidence >= min_confidence) &&
+              result.confidence >= min_confidence
+          end)
+          |> maybe_refine_with_ai(ai_refine, opts)
+          |> Enum.sort_by(& &1.confidence, :desc)
 
-      {:ok, dead_functions}
-    rescue
-      e ->
-        Logger.error("Failed to find unused exports: #{inspect(e)}")
-        {:error, {:analysis_failed, Exception.message(e)}}
+        {:ok, dead_functions}
+      rescue
+        e ->
+          Logger.error("Failed to find unused exports: #{inspect(e)}")
+          {:error, {:analysis_failed, Exception.message(e)}}
+      end
     end
   end
 
@@ -174,30 +179,35 @@ defmodule Ragex.Analysis.DeadCode do
   """
   @spec find_unused_private(keyword()) :: {:ok, [dead_function()]} | {:error, term()}
   def find_unused_private(opts \\ []) do
-    min_confidence = Keyword.get(opts, :min_confidence, 0.7)
-    exclude_tests = Keyword.get(opts, :exclude_tests, true)
-    ai_refine = Keyword.get(opts, :ai_refine)
+    # Check if dead code detection is disabled
+    if not dead_code_enabled?() do
+      {:ok, []}
+    else
+      min_confidence = Keyword.get(opts, :min_confidence, 0.7)
+      exclude_tests = Keyword.get(opts, :exclude_tests, true)
+      ai_refine = Keyword.get(opts, :ai_refine)
 
-    try do
-      functions = Store.list_nodes(:function, :infinity)
+      try do
+        functions = Store.list_nodes(:function, :infinity)
 
-      dead_functions =
-        functions
-        |> Enum.filter(fn func ->
-          private_function?(func) && should_check_module?(func, exclude_tests)
-        end)
-        |> Enum.map(&analyze_function/1)
-        |> Enum.filter(fn result ->
-          result != nil && result.confidence >= min_confidence
-        end)
-        |> maybe_refine_with_ai(ai_refine, opts)
-        |> Enum.sort_by(& &1.confidence, :desc)
+        dead_functions =
+          functions
+          |> Enum.filter(fn func ->
+            private_function?(func) && should_check_module?(func, exclude_tests)
+          end)
+          |> Enum.map(&analyze_function/1)
+          |> Enum.filter(fn result ->
+            result != nil && result.confidence >= min_confidence
+          end)
+          |> maybe_refine_with_ai(ai_refine, opts)
+          |> Enum.sort_by(& &1.confidence, :desc)
 
-      {:ok, dead_functions}
-    rescue
-      e ->
-        Logger.error("Failed to find unused private functions: #{inspect(e)}")
-        {:error, {:analysis_failed, Exception.message(e)}}
+        {:ok, dead_functions}
+      rescue
+        e ->
+          Logger.error("Failed to find unused private functions: #{inspect(e)}")
+          {:error, {:analysis_failed, Exception.message(e)}}
+      end
     end
   end
 
@@ -726,5 +736,17 @@ defmodule Ragex.Analysis.DeadCode do
          {:ok, private} <- find_unused_private() do
       {:ok, exports ++ private}
     end
+  end
+
+  # Configuration helpers
+
+  defp dead_code_enabled? do
+    Application.get_env(:ragex, :analysis, [])
+    |> Keyword.get(:enable_dead_code_detection, true)
+  end
+
+  defp get_default_min_confidence do
+    Application.get_env(:ragex, :analysis, [])
+    |> Keyword.get(:dead_code_min_confidence, 0.5)
   end
 end

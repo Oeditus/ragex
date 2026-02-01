@@ -31,3 +31,5 @@ ragex-*.tar
 /.erl.history/
 
 /priv/parsers/haskell/.stack-work/
+
+ragex.log

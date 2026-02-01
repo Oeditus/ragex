@@ -25,21 +25,32 @@ defmodule Ragex.Analyzers.Directory do
   - `:exclude_patterns` - Patterns to exclude (default: common build dirs)
   - `:incremental` - Enable incremental updates (default: true)
   - `:force_refresh` - Force full refresh even if unchanged (default: false)
+  - `:notify` - Send MCP progress notifications (default: true)
   """
   def analyze_directory(path, opts \\ []) do
     max_depth = Keyword.get(opts, :max_depth, 10)
     exclude_patterns = Keyword.get(opts, :exclude_patterns, default_exclude_patterns())
     incremental = Keyword.get(opts, :incremental, true)
     force_refresh = Keyword.get(opts, :force_refresh, false)
+    notify = Keyword.get(opts, :notify, true)
 
     case File.stat(path) do
       {:ok, %File.Stat{type: :directory}} ->
         files = find_supported_files(path, max_depth, exclude_patterns)
-        analyze_files(files, incremental: incremental, force_refresh: force_refresh)
+
+        analyze_files(files,
+          incremental: incremental,
+          force_refresh: force_refresh,
+          notify: notify
+        )
 
       {:ok, %File.Stat{type: :regular}} ->
         # Single file provided
-        analyze_files([path], incremental: incremental, force_refresh: force_refresh)
+        analyze_files([path],
+          incremental: incremental,
+          force_refresh: force_refresh,
+          notify: notify
+        )
 
       {:error, reason} ->
         {:error, {:file_error, reason}}
@@ -53,10 +64,12 @@ defmodule Ragex.Analyzers.Directory do
 
   - `:incremental` - Skip unchanged files (default: true)
   - `:force_refresh` - Force analysis even if unchanged (default: false)
+  - `:notify` - Send MCP progress notifications (default: true)
   """
   def analyze_files(file_paths, opts \\ []) when is_list(file_paths) do
     incremental = Keyword.get(opts, :incremental, true)
     force_refresh = Keyword.get(opts, :force_refresh, false)
+    notify = Keyword.get(opts, :notify, true)
 
     # Filter files based on incremental mode
     {files_to_analyze, skipped_files} =
@@ -66,11 +79,13 @@ defmodule Ragex.Analyzers.Directory do
         {file_paths, []}
       end
 
-    notify_progress("analysis_start", %{
-      total: length(file_paths),
-      to_analyze: length(files_to_analyze),
-      skipped: length(skipped_files)
-    })
+    if notify do
+      notify_progress("analysis_start", %{
+        total: length(file_paths),
+        to_analyze: length(files_to_analyze),
+        skipped: length(skipped_files)
+      })
+    end
 
     results =
       files_to_analyze
@@ -83,12 +98,14 @@ defmodule Ragex.Analyzers.Directory do
       |> Stream.with_index(1)
       |> Enum.map(fn
         {{:ok, {:ok, result}}, index} ->
-          notify_progress("analysis_file", %{
-            current: index,
-            total: length(files_to_analyze),
-            file: result.file,
-            status: result.status
-          })
+          if notify do
+            notify_progress("analysis_file", %{
+              current: index,
+              total: length(files_to_analyze),
+              file: result.file,
+              status: result.status
+            })
+          end
 
           {:ok, result}
 
@@ -111,12 +128,14 @@ defmodule Ragex.Analyzers.Directory do
         {:error, {file, reason}} -> %{file: file, reason: reason}
       end)
 
-    notify_progress("analysis_complete", %{
-      total: length(file_paths),
-      analyzed: length(files_to_analyze),
-      success: success_count,
-      errors: error_count
-    })
+    if notify do
+      notify_progress("analysis_complete", %{
+        total: length(file_paths),
+        analyzed: length(files_to_analyze),
+        success: success_count,
+        errors: error_count
+      })
+    end
 
     {:ok,
      %{

@@ -429,7 +429,16 @@ defmodule Ragex.Analysis.Smells do
             loc
 
           {loc, func_ctx} when is_map(loc) and is_map(func_ctx) ->
-            Map.merge(func_ctx, loc)
+            # Start with knowledge graph context (has correct line numbers)
+            # Only merge Metastatic location if it provides better info
+            merged = Map.merge(func_ctx, loc)
+
+            # If Metastatic returned line: 1 (likely wrong), prefer knowledge graph line
+            if Map.get(loc, :line) == 1 && Map.get(func_ctx, :line) do
+              Map.put(merged, :line, func_ctx.line)
+            else
+              merged
+            end
         end
 
       # Add formatted location string if we have enough info
@@ -486,41 +495,71 @@ defmodule Ragex.Analysis.Smells do
         _ -> nil
       end
 
-    # If we have a line number, find the function that contains this line
-    if smell_line && match?([_ | _], functions_in_file) do
-      # Find the function whose line is <= smell_line and is the closest
-      # (assumes functions are sorted by line)
-      functions_in_file
-      |> Enum.filter(fn func -> func.line && func.line <= smell_line end)
-      |> Enum.max_by(fn func -> func.line end, fn -> nil end)
-      |> case do
-        nil ->
-          # No function found, return the first function as fallback
-          List.first(functions_in_file)
-          |> case do
-            nil -> nil
-            func -> build_function_context(func)
-          end
+    # If Metastatic returned line 1 (unreliable), try to match by smell type and context
+    cond do
+      smell_line == 1 && match?([_ | _], functions_in_file) ->
+        # Try to find which function actually has the problem
+        match_smell_by_context(smell, functions_in_file)
 
-        func ->
-          build_function_context(func)
-      end
-    else
-      # No line info, can't match accurately
-      # Return the first function as a best guess if available
-      case List.first(functions_in_file) do
-        nil -> nil
-        func -> build_function_context(func)
-      end
+      smell_line && smell_line > 1 && match?([_ | _], functions_in_file) ->
+        # We have a reliable line number, find the function that contains this line
+        # Find the function whose line is <= smell_line and is the closest
+        # (assumes functions are sorted by line)
+        functions_in_file
+        |> Enum.filter(fn func -> func.line && func.line <= smell_line end)
+        |> Enum.max_by(fn func -> func.line end, fn -> nil end)
+        |> case do
+          nil ->
+            # No function found before this line, use first function
+            List.first(functions_in_file)
+            |> case do
+              nil -> nil
+              func -> build_function_context(func)
+            end
+
+          func ->
+            build_function_context(func)
+        end
+
+      true ->
+        # No line info or no functions, return nil or first function as fallback
+        case List.first(functions_in_file) do
+          nil -> nil
+          func -> build_function_context(func)
+        end
     end
   end
 
+  # When Metastatic returns line: 1, we cannot reliably match the smell to a specific function.
+  # This is a limitation of Metastatic's whole-file analysis approach:
+  # - `long_function` and `deep_nesting` are based on file-level metrics
+  # - Metastatic analyzes the entire document as one unit
+  # - It reports total statement count and max nesting across ALL functions
+  #
+  # Future improvements:
+  # 1. Analyze each function separately (requires extracting function ASTs from MetaAST)
+  # 2. Match smell.context metrics (statement_count, max_nesting) against individual
+  #    function data from the knowledge graph
+  #
+  # For now, we return nil to avoid incorrectly attributing file-level smells to the
+  # wrong function. The smell will still be reported with location info from Metastatic.
+  defp match_smell_by_context(_smell, _functions_in_file) do
+    nil
+  end
+
   defp build_function_context(func) do
-    %{
+    ctx = %{
       module: func.module,
       function: func.function,
       arity: func.arity
     }
+
+    # Include line number if available
+    if func.line do
+      Map.put(ctx, :line, func.line)
+    else
+      ctx
+    end
   end
 
   defp format_location_string(location) do

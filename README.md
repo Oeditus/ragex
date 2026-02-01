@@ -1184,7 +1184,8 @@ export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxx"
 - [Usage](stuff/docs/USAGE.md) - Tips on how to use `Ragex`
 - [Configuration](stuff/docs/CONFIGURATION.md) - Embedding model configuration and migration
 - [Persistence](stuff/docs/PERSISTENCE.md) - Embedding cache management and performance
-- [Analysis](stuff/docs/ANALYSIS.md) - Embedding cache management and performance
+- [Analysis](stuff/docs/ANALYSIS.md) - Code analysis features and tools
+- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and error messages
 
 ### Cache Management
 
