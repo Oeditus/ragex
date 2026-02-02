@@ -80,10 +80,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   @impl Mix.Task
   def run(args) do
-    # Start required applications
-    Mix.Task.run("app.start")
-
-    # Parse options early to check format
+    # Parse options early to check format and decide whether to start MCP server
     {opts, _, _} =
       OptionParser.parse(args,
         strict: [
@@ -107,6 +104,15 @@ defmodule Mix.Tasks.Ragex.Analyze do
       )
 
     config = build_config(opts)
+
+    # Disable MCP server for non-interactive formats (prevents hanging)
+    # The server is only needed for interactive MCP client connections
+    if config.format in ["json", "markdown"] do
+      Application.put_env(:ragex, :start_server, false)
+    end
+
+    # Start required applications (with conditional MCP server based on config above)
+    Mix.Task.run("app.start")
 
     # Only show progress messages if not JSON format
     show_progress = config.format != "json"

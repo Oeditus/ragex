@@ -23,7 +23,8 @@ defmodule Ragex.Application do
       end
     end
 
-    children = [
+    # Base children that always start
+    base_children = [
       # Graph store must start before MCP server
       Ragex.Graph.Store,
       # Embedding model for semantic search
@@ -37,12 +38,23 @@ defmodule Ragex.Application do
       # AI response caching
       Ragex.AI.Cache,
       # AI usage tracking and rate limiting
-      Ragex.AI.Usage,
-      # MCP socket server for persistent connections
-      Ragex.MCP.SocketServer,
-      # MCP server handles stdio communication (for stdio-based clients)
-      Ragex.MCP.Server
+      Ragex.AI.Usage
     ]
+
+    # MCP servers only start if :start_server is true (default)
+    mcp_children =
+      if Application.get_env(:ragex, :start_server, true) do
+        [
+          # MCP socket server for persistent connections
+          Ragex.MCP.SocketServer,
+          # MCP server handles stdio communication (for stdio-based clients)
+          Ragex.MCP.Server
+        ]
+      else
+        []
+      end
+
+    children = base_children ++ mcp_children
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
