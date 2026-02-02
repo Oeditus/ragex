@@ -38,6 +38,7 @@ defmodule Ragex.Analysis.Duplication do
 
   alias Ragex.{
     Analysis.Duplication.AIAnalyzer,
+    Analysis.LocationEnricher,
     Analysis.MetastaticBridge,
     Graph.Store,
     VectorStore
@@ -432,25 +433,77 @@ defmodule Ragex.Analysis.Duplication do
 
   # Extract code snippets from duplication result
   defp extract_snippets(result, path1, path2) do
-    # Try to extract code snippets from locations
+    # Try to extract code snippets from locations with actual file reading
     locations = result.locations || []
 
     snippets =
       Enum.map(locations, fn loc ->
         # Location format varies by clone detector
-        # Try to extract file and code
         case loc do
-          %{file: ^path1, code: code} ->
-            %{file: path1, location: path1, code: code}
-
-          %{file: ^path2, code: code} ->
-            %{file: path2, location: path2, code: code}
-
-          %{line_start: line_start, line_end: line_end, file: file, code: code} ->
+          # If Metastatic provided code directly
+          %{file: file, code: code, line_start: line_start, line_end: line_end}
+          when is_binary(code) ->
             %{
               file: file,
               location: "#{file}:#{line_start}-#{line_end}",
+              line_start: line_start,
+              line_end: line_end,
               code: code
+            }
+
+          # If we have line numbers but no code, extract from file
+          %{file: file, line_start: line_start, line_end: line_end}
+          when is_integer(line_start) and is_integer(line_end) ->
+            case LocationEnricher.extract_snippet(file, line_start, line_end) do
+              {:ok, code} ->
+                %{
+                  file: file,
+                  location: "#{file}:#{line_start}-#{line_end}",
+                  line_start: line_start,
+                  line_end: line_end,
+                  code: code
+                }
+
+              {:error, _} ->
+                %{
+                  file: file,
+                  location: "#{file}:#{line_start}-#{line_end}",
+                  line_start: line_start,
+                  line_end: line_end,
+                  code: "(unable to read snippet)"
+                }
+            end
+
+          # Fallback with just line number
+          %{file: file, line: line} when is_integer(line) ->
+            case LocationEnricher.extract_snippet(file, line, line + 5) do
+              {:ok, code} ->
+                %{
+                  file: file,
+                  location: "#{file}:#{line}",
+                  line_start: line,
+                  line_end: line + 5,
+                  code: code
+                }
+
+              {:error, _} ->
+                %{
+                  file: file,
+                  location: "#{file}:#{line}",
+                  line_start: line,
+                  line_end: line,
+                  code: "(unable to read snippet)"
+                }
+            end
+
+          # Just file, try to get function from graph
+          %{file: file} ->
+            %{
+              file: file,
+              location: file,
+              line_start: nil,
+              line_end: nil,
+              code: "(no line information available)"
             }
 
           _ ->
@@ -459,14 +512,51 @@ defmodule Ragex.Analysis.Duplication do
       end)
       |> Enum.filter(&(&1 != nil))
 
-    # If no snippets extracted, create placeholder
+    # If no snippets extracted from locations, try to find duplicated functions via graph
     if Enum.empty?(snippets) do
+      # Fallback: create snippets with attempts to extract from files
       [
-        %{file: path1, location: path1, code: "(code snippet not available)"},
-        %{file: path2, location: path2, code: "(code snippet not available)"}
+        extract_file_snippet(path1),
+        extract_file_snippet(path2)
       ]
     else
       snippets
+    end
+  end
+
+  defp extract_file_snippet(file_path) do
+    # Try to find first function in file and extract its snippet
+    case LocationEnricher.find_function_at_location(file_path, line: 1) do
+      {:ok, func_info} when func_info.line != nil ->
+        # Extract ~10 lines starting from function
+        case LocationEnricher.extract_snippet(file_path, func_info.line, func_info.line + 9) do
+          {:ok, code} ->
+            %{
+              file: file_path,
+              location: "#{file_path}:#{func_info.line}",
+              line_start: func_info.line,
+              line_end: func_info.line + 9,
+              code: code
+            }
+
+          {:error, _} ->
+            %{
+              file: file_path,
+              location: file_path,
+              line_start: nil,
+              line_end: nil,
+              code: "(code snippet not available)"
+            }
+        end
+
+      _ ->
+        %{
+          file: file_path,
+          location: file_path,
+          line_start: nil,
+          line_end: nil,
+          code: "(code snippet not available)"
+        }
     end
   end
 

@@ -5,6 +5,14 @@ defmodule Ragex.Analysis.BusinessLogic do
   Provides unified access to 20 language-agnostic business logic analyzers
   that detect common anti-patterns and issues across multiple languages.
 
+  ## Location Information
+
+  Note: Business logic analyzers operate at the MetaAST (M2) abstraction level,
+  which intentionally abstracts away language-specific details like line numbers.
+  This is what makes them language-agnostic. As a result, precise line/column
+  location information is typically not available. Issues will include file paths
+  and function context when available.
+
   ## Analyzers
 
   ### Tier 1: Pure MetaAST (Language-Agnostic)
@@ -65,6 +73,7 @@ defmodule Ragex.Analysis.BusinessLogic do
   alias Metastatic.{Adapter, Document}
   alias Metastatic.Analysis.Registry
   alias Metastatic.Analysis.Runner
+  alias Ragex.Analysis.LocationEnricher
   require Logger
 
   @type issue :: %{
@@ -356,6 +365,7 @@ defmodule Ragex.Analysis.BusinessLogic do
       report.issues
       |> Enum.map(&format_issue(&1, path))
       |> filter_by_severity(min_severity)
+      |> LocationEnricher.enrich_issues(path)
 
     severity_counts = count_by_severity(issues)
     analyzer_counts = count_by_analyzer(issues)
@@ -385,6 +395,9 @@ defmodule Ragex.Analysis.BusinessLogic do
     # Ragex uses: :critical, :high, :medium, :low, :info
     severity = normalize_severity(meta_issue.severity)
 
+    # Extract location from issue or node metadata
+    location = extract_location(meta_issue)
+
     %{
       analyzer: meta_issue.analyzer,
       category: meta_issue.category,
@@ -393,12 +406,99 @@ defmodule Ragex.Analysis.BusinessLogic do
       description: message,
       suggestion: Map.get(meta_issue, :suggestion),
       context: Map.get(meta_issue, :context, %{}),
-      location: format_location(meta_issue.location),
-      line: get_in(meta_issue, [:location, :line]),
-      column: get_in(meta_issue, [:location, :column]),
+      location: format_location(location),
+      line: if(location, do: Map.get(location, :line), else: nil),
+      column: if(location, do: Map.get(location, :column), else: nil),
       file: file_path
     }
   end
+
+  defp extract_location(meta_issue) do
+    # First try the issue's location field
+    issue_location = Map.get(meta_issue, :location)
+
+    # If location has actual values, use it
+    if issue_location && (issue_location[:line] || issue_location[:column]) do
+      issue_location
+    else
+      # Try to extract from metadata context (Metastatic metadata may include function_name, etc.)
+      metadata = Map.get(meta_issue, :metadata, %{})
+      function_name = Map.get(metadata, :function) || Map.get(metadata, :function_name)
+
+      if function_name do
+        %{
+          line: nil,
+          column: nil,
+          function: function_name
+        }
+      else
+        # Try to extract from node metadata
+        case Map.get(meta_issue, :node) do
+          nil ->
+            nil
+
+          node when is_tuple(node) ->
+            extract_location_from_node(node)
+
+          _ ->
+            nil
+        end
+      end
+    end
+  end
+
+  defp extract_location_from_node(node) do
+    # MetaAST nodes are tuples, metadata is often in the last element
+    # Try to find metadata with line/column information
+    case node do
+      # Pattern: {type, metadata, ...} where metadata is a map
+      {_type, meta, _rest} when is_map(meta) ->
+        extract_meta_location(meta)
+
+      # Pattern: {type, metadata, ...} where metadata is a keyword list
+      {_type, meta, _rest} when is_list(meta) ->
+        extract_meta_location(Map.new(meta))
+
+      # Pattern: {type, value, metadata} for literals
+      {_type, _value, meta} when is_map(meta) ->
+        extract_meta_location(meta)
+
+      # Pattern: {type, value, metadata} where metadata is a keyword list
+      # [{:variable, "Audit"}, {:variable, "id", %{line: 32}}]
+      {_type, _value, meta} when is_list(meta) ->
+        meta =
+          if Keyword.keyword?(meta) do
+            Map.new(meta)
+          else
+            Enum.reduce(meta, %{}, fn
+              {_, _, %{} = meta}, acc -> Map.merge(acc, meta)
+              _, acc -> acc
+            end)
+          end
+
+        extract_meta_location(meta)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp extract_meta_location(meta) when is_map(meta) do
+    line = Map.get(meta, :line) || Map.get(meta, :start_line)
+    column = Map.get(meta, :column) || Map.get(meta, :start_column)
+
+    if line || column do
+      %{
+        line: line,
+        column: column,
+        function: Map.get(meta, :function)
+      }
+    else
+      nil
+    end
+  end
+
+  defp extract_meta_location(_), do: nil
 
   defp format_location(nil), do: nil
 

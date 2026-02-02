@@ -123,9 +123,7 @@ defmodule Ragex.Analysis.DeadCode do
   @spec find_unused_exports(keyword()) :: {:ok, [dead_function()]} | {:error, term()}
   def find_unused_exports(opts \\ []) do
     # Check if dead code detection is disabled
-    if not dead_code_enabled?() do
-      {:ok, []}
-    else
+    if dead_code_enabled?() do
       min_confidence = Keyword.get(opts, :min_confidence, get_default_min_confidence())
       exclude_tests = Keyword.get(opts, :exclude_tests, true)
       include_callbacks = Keyword.get(opts, :include_callbacks, false)
@@ -154,6 +152,8 @@ defmodule Ragex.Analysis.DeadCode do
           Logger.error("Failed to find unused exports: #{inspect(e)}")
           {:error, {:analysis_failed, Exception.message(e)}}
       end
+    else
+      {:ok, []}
     end
   end
 
@@ -180,9 +180,7 @@ defmodule Ragex.Analysis.DeadCode do
   @spec find_unused_private(keyword()) :: {:ok, [dead_function()]} | {:error, term()}
   def find_unused_private(opts \\ []) do
     # Check if dead code detection is disabled
-    if not dead_code_enabled?() do
-      {:ok, []}
-    else
+    if dead_code_enabled?() do
       min_confidence = Keyword.get(opts, :min_confidence, 0.7)
       exclude_tests = Keyword.get(opts, :exclude_tests, true)
       ai_refine = Keyword.get(opts, :ai_refine)
@@ -208,6 +206,8 @@ defmodule Ragex.Analysis.DeadCode do
           Logger.error("Failed to find unused private functions: #{inspect(e)}")
           {:error, {:analysis_failed, Exception.message(e)}}
       end
+    else
+      {:ok, []}
     end
   end
 

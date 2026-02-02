@@ -30,6 +30,7 @@ defmodule Ragex.Analysis.Security do
 
   alias Metastatic.{Adapter, Document}
   alias Metastatic.Analysis.Security, as: MetaSecurity
+  alias Ragex.Analysis.{ASTLocationExtractor, LocationPreservation}
   require Logger
 
   @type vulnerability :: %{
@@ -75,10 +76,13 @@ defmodule Ragex.Analysis.Security do
     language = Keyword.get(opts, :language, detect_language(path))
 
     with {:ok, content} <- File.read(path),
+         # Phase 1: Extract native AST locations BEFORE Metastatic transformation
+         {:ok, location_map} <- ASTLocationExtractor.extract_from_content(content, language),
          {:ok, adapter} <- get_adapter(language),
          {:ok, doc} <- parse_document(adapter, content, language),
          {:ok, meta_result} <- MetaSecurity.analyze(doc, opts) do
-      result = build_result(path, language, meta_result)
+      # Phase 2: Build result with location preservation
+      result = build_result(path, language, meta_result, location_map)
       {:ok, result}
     else
       {:error, reason} = error ->
@@ -201,11 +205,14 @@ defmodule Ragex.Analysis.Security do
     end
   end
 
-  defp build_result(path, language, meta_result) do
+  defp build_result(path, language, meta_result, location_map) do
     vulns =
-      Enum.map(meta_result.vulnerabilities, fn vuln ->
+      meta_result.vulnerabilities
+      |> Enum.map(fn vuln ->
         Map.merge(vuln, %{file: path, language: language})
       end)
+      # Phase 2: First try native AST locations, then fallback to graph enrichment
+      |> LocationPreservation.merge_locations(location_map, path)
 
     severity_counts = count_by_severity(vulns)
 

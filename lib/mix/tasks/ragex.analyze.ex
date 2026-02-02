@@ -76,7 +76,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
   @shortdoc "Performs comprehensive code analysis on a directory"
 
   # Check if CLI modules are available (not available when installed as archive)
-  @has_cli_modules Code.ensure_loaded?(Ragex.CLI.Colors)
+  @has_cli_modules not is_nil(Code.ensure_compiled!(Ragex.CLI.Colors))
 
   @impl Mix.Task
   def run(args) do
@@ -151,10 +151,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
   # Build configuration from options
   defp build_config(opts) do
     path = Keyword.get(opts, :path, File.cwd!())
-    all_analyses = Keyword.get(opts, :all, true)
 
-    # If no specific analyses are selected and --all is not specified, enable all
-    specific_analyses =
+    # Check if user explicitly provided any positive flags
+    positive_analyses =
       Keyword.take(opts, [
         :security,
         :business_logic,
@@ -165,8 +164,22 @@ defmodule Mix.Tasks.Ragex.Analyze do
         :dependencies,
         :quality
       ])
+      |> Enum.filter(fn {_key, value} -> value == true end)
 
-    enable_all = all_analyses or Enum.empty?(specific_analyses)
+    # If --all is explicitly set, use it; otherwise enable all only if no positive flags
+    all_analyses = Keyword.get(opts, :all)
+
+    enable_all =
+      cond do
+        # --all was explicitly provided
+        all_analyses == true -> true
+        # --no-all was explicitly provided
+        all_analyses == false -> false
+        # No positive analyses selected, default to all
+        Enum.empty?(positive_analyses) -> true
+        # Positive analyses selected, don't enable all
+        true -> false
+      end
 
     %{
       path: path,
@@ -177,14 +190,46 @@ defmodule Mix.Tasks.Ragex.Analyze do
       threshold: Keyword.get(opts, :threshold, 0.85),
       min_complexity: Keyword.get(opts, :min_complexity, 10),
       analyses: %{
-        security: enable_all or Keyword.get(opts, :security, false),
-        business_logic: enable_all or Keyword.get(opts, :business_logic, false),
-        complexity: enable_all or Keyword.get(opts, :complexity, false),
-        smells: enable_all or Keyword.get(opts, :smells, false),
-        duplicates: enable_all or Keyword.get(opts, :duplicates, false),
-        dead_code: enable_all or Keyword.get(opts, :dead_code, false),
-        dependencies: enable_all or Keyword.get(opts, :dependencies, false),
-        quality: enable_all or Keyword.get(opts, :quality, false)
+        security:
+          if(enable_all,
+            do: Keyword.get(opts, :security, true),
+            else: Keyword.get(opts, :security, false)
+          ),
+        business_logic:
+          if(enable_all,
+            do: Keyword.get(opts, :business_logic, true),
+            else: Keyword.get(opts, :business_logic, false)
+          ),
+        complexity:
+          if(enable_all,
+            do: Keyword.get(opts, :complexity, true),
+            else: Keyword.get(opts, :complexity, false)
+          ),
+        smells:
+          if(enable_all,
+            do: Keyword.get(opts, :smells, true),
+            else: Keyword.get(opts, :smells, false)
+          ),
+        duplicates:
+          if(enable_all,
+            do: Keyword.get(opts, :duplicates, true),
+            else: Keyword.get(opts, :duplicates, false)
+          ),
+        dead_code:
+          if(enable_all,
+            do: Keyword.get(opts, :dead_code, true),
+            else: Keyword.get(opts, :dead_code, false)
+          ),
+        dependencies:
+          if(enable_all,
+            do: Keyword.get(opts, :dependencies, true),
+            else: Keyword.get(opts, :dependencies, false)
+          ),
+        quality:
+          if(enable_all,
+            do: Keyword.get(opts, :quality, true),
+            else: Keyword.get(opts, :quality, false)
+          )
       }
     }
   end

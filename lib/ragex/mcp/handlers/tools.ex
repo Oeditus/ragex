@@ -6160,6 +6160,25 @@ defmodule Ragex.MCP.Handlers.Tools do
     {:ok, %{status: "success", total_pairs: length(pairs), summary: String.trim(content)}}
   end
 
+  defp format_similar_code_result(pairs, "summary") do
+    case pairs do
+      [_ | _] ->
+        avg_sim =
+          (Enum.sum(Enum.map(pairs, & &1.similarity)) / length(pairs))
+          |> Float.round(2)
+
+        {:ok,
+         %{
+           status: "success",
+           total_pairs: length(pairs),
+           summary: "Found #{length(pairs)} similar pairs (avg similarity: #{avg_sim})"
+         }}
+
+      _ ->
+        {:ok, %{status: "success", total_pairs: 0, summary: "No similar code found."}}
+    end
+  end
+
   # Format duplicate locations for JSON output
   defp format_duplicate_locations([]), do: []
 
@@ -6214,25 +6233,6 @@ defmodule Ragex.MCP.Handlers.Tools do
     end)
     |> Enum.filter(&(&1 != nil))
     |> Enum.join("\n")
-  end
-
-  defp format_similar_code_result(pairs, "summary") do
-    case pairs do
-      [_ | _] ->
-        avg_sim =
-          (Enum.sum(Enum.map(pairs, & &1.similarity)) / length(pairs))
-          |> Float.round(2)
-
-        {:ok,
-         %{
-           status: "success",
-           total_pairs: length(pairs),
-           summary: "Found #{length(pairs)} similar pairs (avg similarity: #{avg_sim})"
-         }}
-
-      _ ->
-        {:ok, %{status: "success", total_pairs: 0, summary: "No similar code found."}}
-    end
   end
 
   defp format_clone_type(:type_i), do: "Type I (Exact)"

@@ -36,7 +36,7 @@ defmodule Ragex.Analysis.Smells do
   require Logger
   alias Metastatic.{Adapter, Document}
   alias Metastatic.Analysis.Smells, as: MetaSmells
-  alias Ragex.Graph.Store
+  alias Ragex.Analysis.LocationEnricher
 
   @type smell_result :: %{
           path: String.t(),
@@ -256,8 +256,8 @@ defmodule Ragex.Analysis.Smells do
   end
 
   defp format_result(path, language, result) do
-    # Enrich smells with knowledge graph function context
-    enriched_smells = enrich_smells_with_function_context(result.smells, path)
+    # Enrich smells with knowledge graph function context using LocationEnricher
+    enriched_smells = LocationEnricher.enrich_issues(result.smells, path)
 
     %{
       path: path,
@@ -406,186 +406,10 @@ defmodule Ragex.Analysis.Smells do
   @spec detect_smells(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
   def detect_smells(path, opts \\ []), do: analyze_directory(path, opts)
 
-  # Private - Enrich smells with knowledge graph context
-
-  defp enrich_smells_with_function_context(smells, file_path) do
-    # Get all functions for this file from the knowledge graph
-    functions_in_file = get_functions_for_file(file_path)
-
-    Enum.map(smells, fn smell ->
-      # Try to find which function this smell belongs to
-      function_context = match_smell_to_function(smell, functions_in_file)
-
-      # Merge the function context with existing location
-      location =
-        case {Map.get(smell, :location), function_context} do
-          {nil, nil} ->
-            nil
-
-          {nil, func_ctx} ->
-            func_ctx
-
-          {loc, nil} ->
-            loc
-
-          {loc, func_ctx} when is_map(loc) and is_map(func_ctx) ->
-            # Start with knowledge graph context (has correct line numbers)
-            # Only merge Metastatic location if it provides better info
-            merged = Map.merge(func_ctx, loc)
-
-            # If Metastatic returned line: 1 (likely wrong), prefer knowledge graph line
-            if Map.get(loc, :line) == 1 && Map.get(func_ctx, :line) do
-              Map.put(merged, :line, func_ctx.line)
-            else
-              merged
-            end
-        end
-
-      # Add formatted location string if we have enough info
-      location_with_formatted =
-        if location do
-          Map.put(location, :formatted, format_location_string(location))
-        else
-          nil
-        end
-
-      Map.put(smell, :location, location_with_formatted)
-    end)
-  end
-
-  defp get_functions_for_file(file_path) do
-    # Normalize file path for comparison
-    normalized_path = Path.expand(file_path)
-
-    # Get all functions from the knowledge graph
-    try do
-      # Use a large limit instead of :infinity since Enum.take doesn't support it
-      Store.list_functions(limit: 100_000)
-      |> Enum.filter(fn func_node ->
-        case func_node.data do
-          %{file: file} when is_binary(file) ->
-            Path.expand(file) == normalized_path
-
-          _ ->
-            false
-        end
-      end)
-      |> Enum.map(fn func_node ->
-        {module, name, arity} = func_node.id
-
-        %{
-          module: module,
-          function: name,
-          arity: arity,
-          line: Map.get(func_node.data, :line),
-          file: Map.get(func_node.data, :file)
-        }
-      end)
-      |> Enum.sort_by(& &1.line, :asc)
-    catch
-      # If Store is not running, return empty list
-      :exit, _ -> []
-    end
-  end
-
-  defp match_smell_to_function(smell, functions_in_file) do
-    smell_line =
-      case Map.get(smell, :location) do
-        %{line: line} when is_integer(line) -> line
-        _ -> nil
-      end
-
-    # If Metastatic returned line 1 (unreliable), try to match by smell type and context
-    cond do
-      smell_line == 1 && match?([_ | _], functions_in_file) ->
-        # Try to find which function actually has the problem
-        match_smell_by_context(smell, functions_in_file)
-
-      smell_line && smell_line > 1 && match?([_ | _], functions_in_file) ->
-        # We have a reliable line number, find the function that contains this line
-        # Find the function whose line is <= smell_line and is the closest
-        # (assumes functions are sorted by line)
-        functions_in_file
-        |> Enum.filter(fn func -> func.line && func.line <= smell_line end)
-        |> Enum.max_by(fn func -> func.line end, fn -> nil end)
-        |> case do
-          nil ->
-            # No function found before this line, use first function
-            List.first(functions_in_file)
-            |> case do
-              nil -> nil
-              func -> build_function_context(func)
-            end
-
-          func ->
-            build_function_context(func)
-        end
-
-      true ->
-        # No line info or no functions, return nil or first function as fallback
-        case List.first(functions_in_file) do
-          nil -> nil
-          func -> build_function_context(func)
-        end
-    end
-  end
-
-  # When Metastatic returns line: 1, we cannot reliably match the smell to a specific function.
-  # This is a limitation of Metastatic's whole-file analysis approach:
-  # - `long_function` and `deep_nesting` are based on file-level metrics
-  # - Metastatic analyzes the entire document as one unit
-  # - It reports total statement count and max nesting across ALL functions
-  #
-  # Future improvements:
-  # 1. Analyze each function separately (requires extracting function ASTs from MetaAST)
-  # 2. Match smell.context metrics (statement_count, max_nesting) against individual
-  #    function data from the knowledge graph
-  #
-  # For now, we return nil to avoid incorrectly attributing file-level smells to the
-  # wrong function. The smell will still be reported with location info from Metastatic.
-  defp match_smell_by_context(_smell, _functions_in_file) do
-    nil
-  end
-
-  defp build_function_context(func) do
-    ctx = %{
-      module: func.module,
-      function: func.function,
-      arity: func.arity
-    }
-
-    # Include line number if available
-    if func.line do
-      Map.put(ctx, :line, func.line)
-    else
-      ctx
-    end
-  end
-
-  defp format_location_string(location) do
-    module = Map.get(location, :module)
-    function = Map.get(location, :function)
-    arity = Map.get(location, :arity)
-    line = Map.get(location, :line)
-
-    cond do
-      module && function && arity && line ->
-        "#{inspect(module)}.#{function}/#{arity}:#{line}"
-
-      module && function && arity ->
-        "#{inspect(module)}.#{function}/#{arity}"
-
-      function && arity && line ->
-        "#{function}/#{arity}:#{line}"
-
-      function && arity ->
-        "#{function}/#{arity}"
-
-      line ->
-        "line #{line}"
-
-      true ->
-        "unknown"
-    end
-  end
+  # NOTE: Legacy enrichment functions removed in favor of LocationEnricher module.
+  # The LocationEnricher provides a more robust approach by:
+  # 1. Extracting function names from Metastatic smell context
+  # 2. Looking up functions directly from knowledge graph by name
+  # 3. Falling back to line-based matching when needed
+  # 4. Providing consistent formatted location strings across all analysis modules
 end

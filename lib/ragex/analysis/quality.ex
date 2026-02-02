@@ -959,9 +959,70 @@ defmodule Ragex.Analysis.Quality do
   """
   @spec find_complex_code(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
   def find_complex_code(path, opts \\ []) do
+    alias Ragex.Graph.Store
+
     with {:ok, _stats} <- analyze_directory(path, opts) do
-      functions = find_complex(opts)
-      {:ok, functions}
+      min_complexity = Keyword.get(opts, :min_complexity, 10)
+
+      # Get all functions from knowledge graph
+      functions = Store.list_functions(limit: 100_000)
+
+      # Filter by complexity and enrich with full metadata
+      complex_functions =
+        functions
+        |> Enum.filter(fn func_node ->
+          # Check if this function's file was analyzed
+          file = Map.get(func_node.data, :file)
+
+          if file do
+            # Get metrics for this file
+            case QualityStore.get_metrics(file) do
+              {:ok, metrics} ->
+                # Get per-function metrics
+                {module, name, arity} = func_node.id
+                per_func = Map.get(metrics, :per_function, %{})
+                func_metrics = Map.get(per_func, {module, name, arity}, %{})
+                complexity = Map.get(func_metrics, :cyclomatic, 0)
+                complexity >= min_complexity
+
+              {:error, _} ->
+                false
+            end
+          else
+            false
+          end
+        end)
+        |> Enum.map(fn func_node ->
+          {module, name, arity} = func_node.id
+          file = Map.get(func_node.data, :file)
+          line = Map.get(func_node.data, :line)
+
+          # Get metrics for detailed complexity info
+          func_metrics =
+            case QualityStore.get_metrics(file) do
+              {:ok, metrics} ->
+                per_func = Map.get(metrics, :per_function, %{})
+                Map.get(per_func, {module, name, arity}, %{})
+
+              {:error, _} ->
+                %{}
+            end
+
+          %{
+            module: module,
+            name: name,
+            arity: arity,
+            file: file,
+            line: line,
+            cyclomatic_complexity: Map.get(func_metrics, :cyclomatic, 0),
+            cognitive_complexity: Map.get(func_metrics, :cognitive),
+            max_nesting: Map.get(func_metrics, :max_nesting),
+            location: if(line, do: "#{file}:#{line}", else: file)
+          }
+        end)
+        |> Enum.sort_by(& &1.cyclomatic_complexity, :desc)
+
+      {:ok, complex_functions}
     end
   end
 
