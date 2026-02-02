@@ -980,9 +980,17 @@ defmodule Ragex.Analysis.Quality do
               {:ok, metrics} ->
                 # Get per-function metrics
                 {module, name, arity} = func_node.id
-                per_func = Map.get(metrics, :per_function, %{})
-                func_metrics = Map.get(per_func, {module, name, arity}, %{})
-                complexity = Map.get(func_metrics, :cyclomatic, 0)
+
+                complexity =
+                  metrics
+                  |> Map.get(:per_function, [])
+                  |> Enum.reduce(0, fn per_func, acc ->
+                    per_func
+                    |> Map.get({module, name, arity}, %{})
+                    |> Map.get(:cyclomatic, 0)
+                    |> Kernel.+(acc)
+                  end)
+
                 complexity >= min_complexity
 
               {:error, _} ->

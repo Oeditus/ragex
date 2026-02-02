@@ -448,40 +448,30 @@ defmodule Ragex.Analysis.BusinessLogic do
   end
 
   defp extract_location_from_node(node) do
-    # MetaAST nodes are tuples, metadata is often in the last element
-    # Try to find metadata with line/column information
-    case node do
-      # Pattern: {type, metadata, ...} where metadata is a map
-      {_type, meta, _rest} when is_map(meta) ->
-        extract_meta_location(meta)
-
-      # Pattern: {type, metadata, ...} where metadata is a keyword list
-      {_type, meta, _rest} when is_list(meta) ->
-        extract_meta_location(Map.new(meta))
-
-      # Pattern: {type, value, metadata} for literals
-      {_type, _value, meta} when is_map(meta) ->
-        extract_meta_location(meta)
-
-      # Pattern: {type, value, metadata} where metadata is a keyword list
-      # [{:variable, "Audit"}, {:variable, "id", %{line: 32}}]
-      {_type, _value, meta} when is_list(meta) ->
-        meta =
-          if Keyword.keyword?(meta) do
-            Map.new(meta)
-          else
-            Enum.reduce(meta, %{}, fn
-              {_, _, %{} = meta}, acc -> Map.merge(acc, meta)
-              _, acc -> acc
-            end)
-          end
-
-        extract_meta_location(meta)
-
-      _ ->
-        nil
-    end
+    # Improved Metastatic embeds line numbers deep in the AST node tree
+    # We need to traverse the entire node to find any metadata with line information
+    find_line_in_node(node)
   end
+
+  # Recursively traverse MetaAST node to find line/column metadata
+  defp find_line_in_node(node) when is_tuple(node) do
+    # Check each element of the tuple
+    node
+    |> Tuple.to_list()
+    |> Enum.find_value(&find_line_in_node/1)
+  end
+
+  defp find_line_in_node(list) when is_list(list) do
+    # Check each element of the list
+    Enum.find_value(list, &find_line_in_node/1)
+  end
+
+  defp find_line_in_node(meta) when is_map(meta) do
+    # Check if this map has line/column info
+    extract_meta_location(meta)
+  end
+
+  defp find_line_in_node(_), do: nil
 
   defp extract_meta_location(meta) when is_map(meta) do
     line = Map.get(meta, :line) || Map.get(meta, :start_line)
