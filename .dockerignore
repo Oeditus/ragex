@@ -1,0 +1,63 @@
+# Git
+.git
+.gitignore
+
+# Elixir build artifacts
+_build/
+deps/
+*.ez
+
+# Generated files
+erl_crash.dump
+*.beam
+.elixir_ls/
+.dialyzer/
+
+# Environment and config
+.env
+.env.*
+*.secret
+
+# Development
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test artifacts
+cover/
+doc/
+test/fixtures/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Cache and temporary files
+tmp/
+temp/
+*.log
+ragex.log
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+README.md
+CHANGELOG.md
+stuff/
+docs/
+nvim-plugin/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Editor backups
+~/.ragex/backups/
+
+# Local cache (will be pre-downloaded in image)
+~/.cache/bumblebee/

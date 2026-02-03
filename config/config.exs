@@ -19,6 +19,10 @@ config :logger,
     ]
   ]
 
+# Bumblebee Configuration
+# Disable progress bars to avoid ANSI escape sequences in MCP stdio output
+config :bumblebee, :progress_bar_enabled, false
+
 # Embedding Model Configuration
 # Choose from: :all_minilm_l6_v2 (default), :all_mpnet_base_v2, :codebert_base, :paraphrase_multilingual
 #
@@ -149,5 +153,7 @@ config :ragex, :analysis,
   enable_dead_code_detection: true,
   # Minimum confidence for dead code reporting (0.0-1.0)
   dead_code_min_confidence: 0.5
+
+config :bumblebee, :progress_bar_enabled, false
 
 if File.exists?("config/#{Mix.env()}.exs"), do: import_config("#{Mix.env()}.exs")

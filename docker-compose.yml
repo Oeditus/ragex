@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  ragex:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ragex:latest
+    container_name: ragex-mcp-server
+    
+    # Environment variables
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RAGEX_EMBEDDING_MODEL=${RAGEX_EMBEDDING_MODEL:-all_minilm_l6_v2}
+      - BUMBLEBEE_CACHE_DIR=/home/ragex/.cache/bumblebee
+      - XLA_TARGET=cpu
+      - EXLA_TARGET=host
+    
+    # Volumes for persistent data
+    volumes:
+      # Cache directory (optional - models are pre-downloaded)
+      - bumblebee-cache:/home/ragex/.cache/bumblebee
+      # Editor backups
+      - ragex-backups:/home/ragex/.ragex/backups
+      # Logs
+      - ./logs:/app/logs
+    
+    # For stdio mode, we typically don't expose ports
+    # Uncomment if using socket server mode
+    # ports:
+    #   - "8080:8080"
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Resource limits (adjust as needed)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    
+    # Health check (if socket server is enabled)
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
+
+volumes:
+  bumblebee-cache:
+    driver: local
+  ragex-backups:
+    driver: local
