@@ -97,6 +97,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- JSON output cleanup for analysis tools to suppress "no issue" indicators
+  - Automatically removes false `has_*?` boolean flags
+  - Removes zero-value count metrics (critical_count, total_issues, etc.)
+  - Removes empty collections (issues: [], by_severity: {})
+  - Applies recursively to nested structures, including individual file results
+  - Preserves structs (DateTime, etc.) without modification
+  - **Filters out entire file results** from `results` arrays when no issues/smells and no errors
+  - Results in 75% size reduction for clean files, cleaner output overall
+  - Affects analyze_business_logic and detect_smells MCP tools
+  - Only shows files with actionable findings or errors in `results` array
+  - See docs/JSON_CLEANUP.md for full details
+
 ### Planned
 - Additional language support (Go, Rust, Java)
 - Cross-language refactoring via Metastatic

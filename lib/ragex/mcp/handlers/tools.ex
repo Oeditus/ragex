@@ -6744,7 +6744,7 @@ defmodule Ragex.MCP.Handlers.Tools do
       if File.dir?(path) do
         case Smells.analyze_directory(path, opts) do
           {:ok, dir_result} ->
-            # Filter by smell types if specified
+            # Filter by smell types if specified, filter out clean files, and clean each file result
             filtered_results =
               if smell_types != [] do
                 smell_types_atoms = Enum.map(smell_types, &String.to_atom/1)
@@ -6757,8 +6757,15 @@ defmodule Ragex.MCP.Handlers.Tools do
                   %{result | smells: filtered_smells, total_smells: length(filtered_smells)}
                 end)
                 |> Enum.reject(&(&1.total_smells == 0))
+                |> Enum.map(&cleanup_no_issues/1)
               else
                 dir_result.results
+                # Filter out files with no smells and no errors
+                |> Enum.reject(fn result ->
+                  not Map.has_key?(result, :error) and
+                    Map.get(result, :has_smells?, false) == false
+                end)
+                |> Enum.map(&cleanup_no_issues/1)
               end
 
             total_smells = Enum.sum(Enum.map(filtered_results, & &1.total_smells))
@@ -6793,7 +6800,7 @@ defmodule Ragex.MCP.Handlers.Tools do
                 end)
               end)
 
-            %{
+            cleanup_no_issues(%{
               status: "success",
               scan_type: "directory",
               path: path,
@@ -6803,8 +6810,9 @@ defmodule Ragex.MCP.Handlers.Tools do
               by_severity: by_severity,
               by_type: by_type,
               smells: all_smells,
+              results: filtered_results,
               summary: dir_result.summary
-            }
+            })
 
           {:error, reason} ->
             %{status: "error", error: inspect(reason)}
@@ -6823,7 +6831,7 @@ defmodule Ragex.MCP.Handlers.Tools do
 
             filtered_smells_len = length(filtered_smells)
 
-            %{
+            cleanup_no_issues(%{
               status: "success",
               scan_type: "file",
               path: path,
@@ -6843,7 +6851,7 @@ defmodule Ragex.MCP.Handlers.Tools do
                   }
                 end),
               summary: result.summary
-            }
+            })
 
           {:error, reason} ->
             %{status: "error", error: inspect(reason)}
@@ -6903,50 +6911,89 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp parse_analyzer_names(_), do: []
 
   defp format_bl_summary(dir_result, path) do
-    %{
+    # Filter results to only include files with issues or errors
+    filtered_results =
+      dir_result.results
+      |> Enum.reject(fn result ->
+        not Map.has_key?(result, :error) and Map.get(result, :has_issues?, false) == false
+      end)
+
+    cleanup_no_issues(%{
       status: "success",
       scan_type: "directory",
       path: path,
       total_files: dir_result.total_files,
-      files_with_issues: dir_result.files_with_issues,
+      files_with_issues: length(filtered_results),
       total_issues: dir_result.total_issues,
       by_severity: dir_result.by_severity,
       by_analyzer: dir_result.by_analyzer,
       summary: dir_result.summary
-    }
+    })
   end
 
   defp format_bl_detailed(dir_result, path) do
-    %{
+    # Filter to only include files with issues or errors
+    filtered_files =
+      dir_result.results
+      |> Enum.reject(fn result ->
+        not Map.has_key?(result, :error) and Map.get(result, :has_issues?, false) == false
+      end)
+      |> Enum.map(fn r ->
+        %{
+          file: r.file,
+          language: r.language,
+          total_issues: r.total_issues,
+          issues: Enum.map(r.issues, &format_bl_issue/1)
+        }
+      end)
+
+    cleanup_no_issues(%{
       status: "success",
       scan_type: "directory",
       path: path,
       total_files: dir_result.total_files,
-      files_with_issues: dir_result.files_with_issues,
+      files_with_issues: length(filtered_files),
       total_issues: dir_result.total_issues,
       by_severity: dir_result.by_severity,
       by_analyzer: dir_result.by_analyzer,
       summary: dir_result.summary,
-      files:
-        dir_result.results
-        |> Enum.filter(& &1.has_issues?)
-        |> Enum.map(fn r ->
-          %{
-            file: r.file,
-            language: r.language,
-            total_issues: r.total_issues,
-            issues: Enum.map(r.issues, &format_bl_issue/1)
-          }
-        end)
-    }
+      files: filtered_files
+    })
   end
 
   defp format_bl_json(dir_result, path) do
-    %{status: "success", scan_type: "directory", path: path, results: dir_result}
+    # Filter out files with no issues and no errors, then clean
+    filtered_results =
+      dir_result.results
+      |> Enum.reject(fn result ->
+        not Map.has_key?(result, :error) and Map.get(result, :has_issues?, false) == false
+      end)
+      |> Enum.map(&cleanup_no_issues/1)
+
+    # Clean the directory result with filtered results
+    cleaned_dir_result =
+      dir_result
+      |> Map.put(:results, filtered_results)
+      |> Map.put(:files_with_issues, length(filtered_results))
+      |> cleanup_no_issues()
+
+    # Return with the cleaned structure embedded
+    cleanup_no_issues(%{
+      status: "success",
+      scan_type: "directory",
+      path: path,
+      total_files: cleaned_dir_result.total_files,
+      files_with_issues: cleaned_dir_result[:files_with_issues],
+      total_issues: cleaned_dir_result[:total_issues],
+      by_severity: cleaned_dir_result[:by_severity],
+      by_analyzer: cleaned_dir_result[:by_analyzer],
+      results: cleaned_dir_result[:results],
+      summary: cleaned_dir_result[:summary]
+    })
   end
 
   defp format_bl_file_summary(result) do
-    %{
+    cleanup_no_issues(%{
       status: "success",
       scan_type: "file",
       path: result.file,
@@ -6962,13 +7009,14 @@ defmodule Ragex.MCP.Handlers.Tools do
       },
       by_analyzer: result.by_analyzer,
       issues: Enum.map(result.issues, &format_bl_issue/1)
-    }
+    })
   end
 
   defp format_bl_file_detailed(result), do: format_bl_file_summary(result)
 
   defp format_bl_file_json(result) do
-    %{status: "success", scan_type: "file", path: result.file, result: result}
+    cleaned_result = cleanup_no_issues(result)
+    %{status: "success", scan_type: "file", path: result.file, result: cleaned_result}
   end
 
   defp format_bl_issue(issue) do
@@ -7042,6 +7090,64 @@ defmodule Ragex.MCP.Handlers.Tools do
       "- **[#{rec.severity}]** #{rec.recommendation}"
     end)
   end
+
+  # Helper function to clean up JSON output by suppressing "no issue" fields
+  defp cleanup_no_issues(data) when is_struct(data) do
+    # Don't try to clean structs (DateTime, etc.) - return as-is
+    data
+  end
+
+  defp cleanup_no_issues(data) when is_map(data) do
+    data
+    |> Enum.reject(fn
+      # Remove boolean flags that are false (has_smells?, has_issues?, etc.)
+      {key, false} when is_atom(key) ->
+        key_str = Atom.to_string(key)
+        String.starts_with?(key_str, "has_") && String.ends_with?(key_str, "?")
+
+      # Remove empty collections
+      {_key, value} when is_list(value) ->
+        Enum.empty?(value)
+
+      {_key, value} when is_map(value) and not is_struct(value) ->
+        map_size(value) == 0
+
+      # Remove zero counts for severity/issue metrics
+      {key, 0} when is_atom(key) ->
+        key in [
+          :critical_count,
+          :high_count,
+          :medium_count,
+          :low_count,
+          :info_count,
+          :total_smells,
+          :total_issues,
+          :files_with_smells,
+          :files_with_issues
+        ]
+
+      # Keep everything else
+      _ ->
+        false
+    end)
+    |> Enum.map(fn
+      # Don't recurse into structs
+      {key, value} when is_struct(value) -> {key, value}
+      # Recursively clean nested maps
+      {key, value} when is_map(value) -> {key, cleanup_no_issues(value)}
+      # Recursively clean lists of maps
+      {key, values} when is_list(values) -> {key, Enum.map(values, &cleanup_no_issues/1)}
+      # Keep other values as-is
+      other -> other
+    end)
+    |> Map.new()
+  end
+
+  defp cleanup_no_issues(data) when is_list(data) do
+    Enum.map(data, &cleanup_no_issues/1)
+  end
+
+  defp cleanup_no_issues(data), do: data
 
   # Format smell location for MCP response
   defp format_smell_location(smell) do
