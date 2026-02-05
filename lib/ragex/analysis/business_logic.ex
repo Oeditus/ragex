@@ -70,9 +70,8 @@ defmodule Ragex.Analysis.BusinessLogic do
       report = BusinessLogic.audit_report(results)
   """
 
-  alias Metastatic.{Adapter, Document}
-  alias Metastatic.Analysis.Registry
-  alias Metastatic.Analysis.Runner
+  alias Metastatic.Adapter
+  alias Metastatic.Analysis.{Registry, Runner}
   alias Ragex.Analysis.LocationEnricher
   require Logger
 
@@ -319,11 +318,7 @@ defmodule Ragex.Analysis.BusinessLogic do
   defp get_adapter(lang), do: {:error, {:unsupported_language, lang}}
 
   defp parse_document(adapter, content, language) do
-    case Adapter.abstract(adapter, content, language) do
-      {:ok, %Document{} = doc} -> {:ok, doc}
-      {:error, _} = error -> error
-      other -> {:error, {:unexpected_parse_result, other}}
-    end
+    Adapter.abstract(adapter, content, language)
   end
 
   defp run_analyzers(doc, :all, config) do

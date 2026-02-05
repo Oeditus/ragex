@@ -36,6 +36,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     * `--threshold FLOAT` - Duplication threshold 0.0-1.0 (default: 0.85)
     * `--min-complexity INT` - Minimum complexity to report (default: 10)
     * `--verbose` - Show detailed progress information
+    * `--with-empty` / `--without-empty` - Include/exclude empty issue reports in output (default: without-empty)
 
   ## Examples
 
@@ -99,7 +100,8 @@ defmodule Mix.Tasks.Ragex.Analyze do
           severity: :string,
           threshold: :float,
           min_complexity: :integer,
-          verbose: :boolean
+          verbose: :boolean,
+          with_empty: :boolean
         ]
       )
 
@@ -195,6 +197,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
       severity: parse_severity(Keyword.get(opts, :severity, "medium")),
       threshold: Keyword.get(opts, :threshold, 0.85),
       min_complexity: Keyword.get(opts, :min_complexity, 10),
+      with_empty: Keyword.get(opts, :with_empty, false),
       analyses: %{
         security:
           if(enable_all,
@@ -469,12 +472,20 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Generate report
   defp generate_report(config, analyze_result, results) do
+    # Filter out empty results if --without-empty (default)
+    filtered_results =
+      if config.with_empty do
+        results
+      else
+        filter_non_empty_results(results)
+      end
+
     %{
       timestamp: DateTime.utc_now(),
       path: config.path,
       files_analyzed: analyze_result.files_analyzed,
       entities: analyze_result.entities_found,
-      results: results,
+      results: filtered_results,
       config: %{
         severity: config.severity,
         threshold: config.threshold,
@@ -482,6 +493,67 @@ defmodule Mix.Tasks.Ragex.Analyze do
       }
     }
   end
+
+  # Filter out empty results and clean up empty file reports within each analysis
+  defp filter_non_empty_results(results) do
+    results
+    |> Enum.map(fn {type, data} -> {type, filter_empty_within_result(type, data)} end)
+    |> Enum.reject(fn {type, data} -> result_is_empty?(type, data) end)
+    |> Map.new()
+  end
+
+  # Filter empty file results within each analysis type
+  defp filter_empty_within_result(:security, %{issues: issues} = data) do
+    filtered = Enum.reject(issues, fn issue ->
+      Map.get(issue, :has_vulnerabilities?, true) == false and
+        Enum.empty?(Map.get(issue, :vulnerabilities, []))
+    end)
+    %{data | issues: filtered}
+  end
+
+  defp filter_empty_within_result(:business_logic, %{results: results} = data) do
+    filtered = Enum.reject(results, fn result ->
+      Map.get(result, :has_issues?, true) == false and
+        Enum.empty?(Map.get(result, :issues, []))
+    end)
+    %{data | results: filtered}
+  end
+
+  defp filter_empty_within_result(:smells, %{smells: smells} = data) do
+    case smells do
+      %{results: results} ->
+        filtered = Enum.reject(results, fn result ->
+          Map.get(result, :has_smells?, true) == false and
+            Enum.empty?(Map.get(result, :smells, []))
+        end)
+        %{data | smells: %{smells | results: filtered}}
+      _ ->
+        data
+    end
+  end
+
+  defp filter_empty_within_result(_type, data), do: data
+
+  # Check if entire result section is empty after filtering
+  defp result_is_empty?(:security, %{issues: issues}), do: Enum.empty?(issues)
+  defp result_is_empty?(:business_logic, data), do: Map.get(data, :total_issues, 0) == 0
+  defp result_is_empty?(:complexity, %{complex_functions: funcs}), do: Enum.empty?(funcs)
+
+  defp result_is_empty?(:smells, %{smells: smells}) do
+    case smells do
+      %{total_smells: 0} -> true
+      %{results: results} -> Enum.all?(results, &(Map.get(&1, :total_smells, 0) == 0))
+      list when is_list(list) -> Enum.empty?(list)
+      _ -> true
+    end
+  end
+
+  defp result_is_empty?(:duplicates, %{duplicates: dups}), do: Enum.empty?(dups)
+  defp result_is_empty?(:dead_code, %{dead_functions: funcs}), do: Enum.empty?(funcs)
+  defp result_is_empty?(:dependencies, %{modules: modules}), do: map_size(modules) == 0
+  # Quality always has a score, never considered "empty"
+  defp result_is_empty?(:quality, _), do: false
+  defp result_is_empty?(_, _), do: false
 
   # Output results
   defp output_results(config, report) do
