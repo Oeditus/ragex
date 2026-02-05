@@ -10,6 +10,7 @@ defmodule Ragex.Analyzers.Directory do
   alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
   alias Ragex.Analyzers.JavaScript, as: JavaScriptAnalyzer
   alias Ragex.Analyzers.Python, as: PythonAnalyzer
+  alias Ragex.Analyzers.Ruby, as: RubyAnalyzer
   alias Ragex.Embeddings.{FileTracker, Helper}
   alias Ragex.Graph.Store
   alias Ragex.MCP.Server
@@ -203,7 +204,8 @@ defmodule Ragex.Analyzers.Directory do
     ext in (ElixirAnalyzer.supported_extensions() ++
               ErlangAnalyzer.supported_extensions() ++
               PythonAnalyzer.supported_extensions() ++
-              JavaScriptAnalyzer.supported_extensions())
+              JavaScriptAnalyzer.supported_extensions() ++
+              RubyAnalyzer.supported_extensions())
   end
 
   defp filter_changed_files(file_paths) do
@@ -252,6 +254,7 @@ defmodule Ragex.Analyzers.Directory do
         ext when ext in [".erl", ".hrl"] -> ErlangAnalyzer
         ".py" -> PythonAnalyzer
         ext when ext in [".js", ".jsx", ".ts", ".tsx", ".mjs"] -> JavaScriptAnalyzer
+        ".rb" -> RubyAnalyzer
         _ -> nil
       end
 
