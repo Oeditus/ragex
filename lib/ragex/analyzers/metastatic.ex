@@ -153,54 +153,48 @@ defmodule Ragex.Analyzers.Metastatic do
 
   defp extract_all_functions(ast, acc \\ []) do
     # Extract all function definitions from the MetaAST
-    # MetaAST uses :language_specific wrappers with metadata
-    # Structure: {:language_specific, :elixir, native_ast, :function_definition, %{function_name: ..., body: ...}}
+    # New 3-tuple format: {:function_def, [name: ..., params: ..., visibility: ...], body}
     # Returns list of {function_name_atom, {body, metadata}} tuples
 
     case ast do
-      # Match language_specific function definitions
-      {:language_specific, _lang, _native_ast, :function_definition, metadata} ->
-        # Extract function name from metadata
-        case Map.get(metadata, :function_name) do
+      # Match new 3-tuple function definitions
+      {:function_def, meta, body} when is_list(meta) ->
+        # Extract function name from metadata keyword list
+        case Keyword.get(meta, :name) do
           name when is_binary(name) ->
             # Convert string name to atom
             func_name = String.to_atom(name)
-            # Get body from metadata
-            body = Map.get(metadata, :body)
+            # Build metadata map from keyword list
+            metadata = %{
+              function_name: name,
+              params: Keyword.get(meta, :params, []),
+              visibility: Keyword.get(meta, :visibility, :public),
+              body: body
+            }
+
             [{func_name, {body, metadata}} | acc]
 
           _ ->
             acc
         end
 
-      # Recursively traverse tuples
-      tuple when is_tuple(tuple) ->
-        tuple
-        |> Tuple.to_list()
-        |> Enum.reduce(acc, &extract_all_functions/2)
+      # Match container nodes (modules) and traverse their body
+      {:container, _meta, body} when is_list(body) ->
+        Enum.reduce(body, acc, &extract_all_functions/2)
+
+      # Match block nodes
+      {:block, _meta, statements} when is_list(statements) ->
+        Enum.reduce(statements, acc, &extract_all_functions/2)
+
+      # Recursively traverse any 3-tuple with list children
+      {_type, _meta, children} when is_list(children) ->
+        Enum.reduce(children, acc, &extract_all_functions/2)
 
       # Recursively traverse lists
       list when is_list(list) ->
         Enum.reduce(list, acc, &extract_all_functions/2)
 
-      # Recursively traverse maps (check metadata and body fields)
-      %{} = map ->
-        # Check if this map itself contains function data
-        acc =
-          case Map.get(map, :body) do
-            {:language_specific, _, _, :function_definition, _} = func_def ->
-              extract_all_functions(func_def, acc)
-
-            _ ->
-              acc
-          end
-
-        # Also traverse all map values
-        map
-        |> Map.values()
-        |> Enum.reduce(acc, &extract_all_functions/2)
-
-      # Skip other nodes
+      # Skip other nodes (literals, variables, etc.)
       _ ->
         acc
     end

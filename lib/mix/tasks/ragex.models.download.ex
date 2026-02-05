@@ -8,7 +8,7 @@ defmodule Mix.Tasks.Ragex.Models.Download do
 
   This task downloads all configured embedding models from HuggingFace and
   stores them in the Bumblebee cache directory. This is useful for:
-  
+
   - Building Docker images with pre-cached models
   - Offline/air-gapped environments
   - Faster startup times (no download delay)
@@ -48,12 +48,15 @@ defmodule Mix.Tasks.Ragex.Models.Download do
 
   @impl Mix.Task
   def run(args) do
-    {opts, _rest} = OptionParser.parse!(args, strict: [
-      all: :boolean,
-      models: :string,
-      cache_dir: :string,
-      quiet: :boolean
-    ])
+    {opts, _rest} =
+      OptionParser.parse!(args,
+        strict: [
+          all: :boolean,
+          models: :string,
+          cache_dir: :string,
+          quiet: :boolean
+        ]
+      )
 
     # Start the application dependencies
     Mix.Task.run("app.start")
@@ -64,7 +67,7 @@ defmodule Mix.Tasks.Ragex.Models.Download do
     end
 
     quiet = Keyword.get(opts, :quiet, false)
-    
+
     unless quiet do
       IO.puts("\nBumblebee Model Downloader")
       IO.puts("=" |> String.duplicate(50))
@@ -72,40 +75,42 @@ defmodule Mix.Tasks.Ragex.Models.Download do
     end
 
     # Determine which models to download
-    models_to_download = cond do
-      opts[:all] ->
-        Registry.all()
-      
-      opts[:models] ->
-        opts[:models]
-        |> String.split(",")
-        |> Enum.map(&String.trim/1)
-        |> Enum.map(&String.to_atom/1)
-        |> Enum.map(&Registry.get!/1)
-      
-      true ->
-        [Registry.get!(Registry.default())]
-    end
+    models_to_download =
+      cond do
+        opts[:all] ->
+          Registry.all()
+
+        opts[:models] ->
+          opts[:models]
+          |> String.split(",")
+          |> Enum.map(&String.trim/1)
+          |> Enum.map(&String.to_atom/1)
+          |> Enum.map(&Registry.get!/1)
+
+        true ->
+          [Registry.get!(Registry.default())]
+      end
 
     unless quiet do
       IO.puts("Models to download: #{length(models_to_download)}\n")
     end
 
     # Download each model
-    results = Enum.map(models_to_download, fn model ->
-      download_model(model, quiet)
-    end)
+    results =
+      Enum.map(models_to_download, fn model ->
+        download_model(model, quiet)
+      end)
 
     # Summary
     success_count = Enum.count(results, &(&1 == :ok))
     failure_count = length(results) - success_count
 
     unless quiet do
-      IO.puts("\n" <> "=" |> String.duplicate(50))
+      IO.puts(("\n" <> "=") |> String.duplicate(50))
       IO.puts("Summary:")
       IO.puts("  Success: #{success_count}")
       IO.puts("  Failed:  #{failure_count}")
-      
+
       if failure_count > 0 do
         IO.puts("\nSome models failed to download. Check the errors above.")
       else
@@ -144,6 +149,7 @@ defmodule Mix.Tasks.Ragex.Models.Download do
           IO.puts("✗")
           IO.puts("  Status: Failed - #{Exception.message(error)}\n")
         end
+
         Logger.error("Failed to download model #{model.name}: #{Exception.message(error)}")
         :error
     end

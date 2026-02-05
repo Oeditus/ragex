@@ -373,7 +373,7 @@ defmodule Ragex.Retrieval.CrossLanguage do
   end
 
   defp meta_ast_matches_pattern?(meta_ast, pattern) do
-    # Simple pattern matching (can be enhanced)
+    # Pattern matching for new 3-tuple format: {type, meta, children}
     case pattern do
       :_ ->
         true
@@ -381,6 +381,22 @@ defmodule Ragex.Retrieval.CrossLanguage do
       ^meta_ast ->
         true
 
+      # Match by type only: {tag, :_, :_}
+      {tag, :_, :_} when is_tuple(meta_ast) and tuple_size(meta_ast) == 3 ->
+        elem(meta_ast, 0) == tag
+
+      # Match by type and metadata key (for op_type, loop_type, etc.)
+      # Pattern: {tag, %{key => value}, :_}
+      {tag, meta_pattern, :_}
+      when is_tuple(meta_ast) and tuple_size(meta_ast) == 3 and is_map(meta_pattern) ->
+        {ast_tag, ast_meta, _} = meta_ast
+
+        ast_tag == tag and
+          Enum.all?(meta_pattern, fn {key, value} ->
+            Keyword.get(ast_meta, key) == value
+          end)
+
+      # Legacy 4-tuple patterns (for backward compatibility)
       {tag, :_, :_, :_} when is_tuple(meta_ast) ->
         elem(meta_ast, 0) == tag
 
@@ -450,10 +466,41 @@ defmodule Ragex.Retrieval.CrossLanguage do
     "#{construct_name} in #{source_lang} is equivalent to this #{target_lang} implementation"
   end
 
-  defp extract_construct_name({:collection_op, op, _, _}), do: "#{op} operation"
-  defp extract_construct_name({:loop, type, _, _}), do: "#{type} loop"
-  defp extract_construct_name({:lambda, _, _, _}), do: "lambda function"
-  defp extract_construct_name({:pattern_match, _, _}), do: "pattern match"
-  defp extract_construct_name({:conditional, _, _, _}), do: "conditional"
+  # New 3-tuple format: {type, keyword_meta, children}
+  defp extract_construct_name({:collection_op, meta, _children}) when is_list(meta) do
+    op = Keyword.get(meta, :op_type, :unknown)
+    "#{op} operation"
+  end
+
+  defp extract_construct_name({:loop, meta, _children}) when is_list(meta) do
+    loop_type = Keyword.get(meta, :loop_type, :unknown)
+    "#{loop_type} loop"
+  end
+
+  defp extract_construct_name({:lambda, _meta, _body}), do: "lambda function"
+  defp extract_construct_name({:pattern_match, _meta, _children}), do: "pattern match"
+  defp extract_construct_name({:conditional, _meta, _children}), do: "conditional"
+
+  defp extract_construct_name({:function_def, meta, _body}) when is_list(meta) do
+    name = Keyword.get(meta, :name, "unknown")
+    "function #{name}"
+  end
+
+  defp extract_construct_name({:function_call, meta, _args}) when is_list(meta) do
+    name = Keyword.get(meta, :name, "unknown")
+    "call to #{name}"
+  end
+
+  defp extract_construct_name({:binary_op, meta, _children}) when is_list(meta) do
+    operator = Keyword.get(meta, :operator, :unknown)
+    "#{operator} operation"
+  end
+
+  defp extract_construct_name({:container, meta, _body}) when is_list(meta) do
+    container_type = Keyword.get(meta, :container_type, :unknown)
+    name = Keyword.get(meta, :name, "unknown")
+    "#{container_type} #{name}"
+  end
+
   defp extract_construct_name(_), do: "construct"
 end

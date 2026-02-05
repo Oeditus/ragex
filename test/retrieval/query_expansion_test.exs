@@ -72,9 +72,10 @@ defmodule Ragex.Retrieval.QueryExpansionTest do
 
   describe "extract_features_from_results/1" do
     test "extracts features from results with MetaAST" do
+      # New 3-tuple format: {type, keyword_meta, children}
       results = [
-        %{meta_ast: {:collection_op, :map, :fn, :coll}},
-        %{meta_ast: {:loop, :while, :cond, :body}}
+        %{meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]}},
+        %{meta_ast: {:loop, [loop_type: :while], [:cond, :body]}}
       ]
 
       features = QueryExpansion.extract_features_from_results(results)
@@ -97,10 +98,10 @@ defmodule Ragex.Retrieval.QueryExpansionTest do
     end
 
     test "limits number of features" do
-      # Create many results
+      # Create many results with new 3-tuple format
       results =
         Enum.map(1..100, fn i ->
-          %{meta_ast: {:collection_op, String.to_atom("op#{i}"), :fn, :coll}}
+          %{meta_ast: {:collection_op, [op_type: String.to_atom("op#{i}")], [:fn, :coll]}}
         end)
 
       features = QueryExpansion.extract_features_from_results(results)

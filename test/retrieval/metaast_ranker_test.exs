@@ -137,21 +137,22 @@ defmodule Ragex.Retrieval.MetaASTRankerTest do
 
   describe "semantically_equivalent?/2" do
     test "returns true for identical MetaAST structures" do
-      result1 = %{meta_ast: {:collection_op, :map, :fn, :coll}}
-      result2 = %{meta_ast: {:collection_op, :map, :fn, :coll}}
+      # New 3-tuple format: {type, keyword_meta, children}
+      result1 = %{meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]}}
+      result2 = %{meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]}}
 
       assert MetaASTRanker.semantically_equivalent?(result1, result2)
     end
 
     test "returns false for different MetaAST structures" do
-      result1 = %{meta_ast: {:collection_op, :map, :fn, :coll}}
-      result2 = %{meta_ast: {:collection_op, :filter, :fn, :coll}}
+      result1 = %{meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]}}
+      result2 = %{meta_ast: {:collection_op, [op_type: :filter], [:fn, :coll]}}
 
       refute MetaASTRanker.semantically_equivalent?(result1, result2)
     end
 
     test "returns false when one result lacks MetaAST" do
-      result1 = %{meta_ast: {:collection_op, :map, :fn, :coll}}
+      result1 = %{meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]}}
       result2 = %{node_id: "test"}
 
       refute MetaASTRanker.semantically_equivalent?(result1, result2)
@@ -160,7 +161,8 @@ defmodule Ragex.Retrieval.MetaASTRankerTest do
 
   describe "extract_semantic_features/1" do
     test "extracts features from collection operations" do
-      result = %{meta_ast: {:collection_op, :map, :fn, :coll}}
+      # New 3-tuple format: {type, keyword_meta, children}
+      result = %{meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]}}
 
       features = MetaASTRanker.extract_semantic_features(result)
 
@@ -170,7 +172,8 @@ defmodule Ragex.Retrieval.MetaASTRankerTest do
     end
 
     test "extracts features from loop constructs" do
-      result = %{meta_ast: {:loop, :while, :cond, :body}}
+      # New 3-tuple format: {type, keyword_meta, children}
+      result = %{meta_ast: {:loop, [loop_type: :while], [:cond, :body]}}
 
       features = MetaASTRanker.extract_semantic_features(result)
 
@@ -190,16 +193,17 @@ defmodule Ragex.Retrieval.MetaASTRankerTest do
 
   describe "find_cross_language_equivalents/2" do
     test "finds equivalent constructs in different languages" do
+      # New 3-tuple format: {type, keyword_meta, children}
       target = %{
-        meta_ast: {:collection_op, :map, :fn, :coll},
+        meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]},
         language: :elixir
       }
 
       all_results = [
         target,
-        %{meta_ast: {:collection_op, :map, :fn, :coll}, language: :python},
-        %{meta_ast: {:collection_op, :map, :fn, :coll}, language: :javascript},
-        %{meta_ast: {:collection_op, :filter, :fn, :coll}, language: :python}
+        %{meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]}, language: :python},
+        %{meta_ast: {:collection_op, [op_type: :map], [:fn, :coll]}, language: :javascript},
+        %{meta_ast: {:collection_op, [op_type: :filter], [:fn, :coll]}, language: :python}
       ]
 
       equivalents = MetaASTRanker.find_cross_language_equivalents(target, all_results)

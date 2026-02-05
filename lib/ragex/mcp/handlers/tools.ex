@@ -4223,18 +4223,30 @@ defmodule Ragex.MCP.Handlers.Tools do
     languages = parse_language_list(Map.get(params, "languages", []))
     limit = Map.get(params, "limit", 20)
 
-    # Parse pattern string (e.g., "collection_op:map" -> {:collection_op, :map, :_, :_})
+    # Parse pattern string (e.g., "collection_op:map" -> {:collection_op, [op_type: :map], :_})
+    # New Metastatic 3-tuple format: {type_atom, keyword_meta, children_or_value}
     pattern =
       case String.split(pattern_str, ":") do
         [tag, op] ->
-          {:"#{tag}", String.to_atom(op), :_, :_}
+          # For patterns like "collection_op:map" or "loop:for"
+          tag_atom = String.to_atom(tag)
+          op_atom = String.to_atom(op)
+
+          meta_key =
+            case tag_atom do
+              :collection_op -> :op_type
+              :loop -> :loop_type
+              :binary_op -> :operator
+              :unary_op -> :operator
+              :comparison -> :operator
+              :logical -> :operator
+              _ -> :type
+            end
+
+          {tag_atom, [{meta_key, op_atom}], :_}
 
         [tag] ->
-          case tag do
-            "lambda" -> {:lambda, :_, :_, :_}
-            "conditional" -> {:conditional, :_, :_, :_}
-            _ -> {:"#{tag}", :_, :_, :_}
-          end
+          {String.to_atom(tag), :_, :_}
 
         _ ->
           :_

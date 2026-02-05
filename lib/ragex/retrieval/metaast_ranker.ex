@@ -306,33 +306,34 @@ defmodule Ragex.Retrieval.MetaASTRanker do
   defp get_complexity(%{depth: depth}) when is_number(depth), do: depth
   defp get_complexity(_), do: 0
 
-  # AST equivalence checking (simplified - compares structure)
+  # AST equivalence checking for new 3-tuple format: {type, meta, children}
   defp asts_equivalent?(ast1, ast2) when is_tuple(ast1) and is_tuple(ast2) do
-    # Compare tuple tags and recursively check elements
-    case {ast1, ast2} do
-      {tag, tag} when is_atom(tag) ->
-        # Same atom tags
-        true
+    case {tuple_size(ast1), tuple_size(ast2)} do
+      # Both are 3-tuples (new MetaAST format)
+      {3, 3} ->
+        {type1, meta1, children1} = ast1
+        {type2, meta2, children2} = ast2
 
-      {{tag1, args1}, {tag2, args2}} ->
-        # Same structure with arguments
-        tag1 == tag2 and length(args1) == length(args2)
+        # Same type and same metadata (including op_type, loop_type, etc.)
+        type1 == type2 and meta1 == meta2 and children1 == children2
 
-      {{tag1, _op1, _rest1}, {tag2, _op2, _rest2}} ->
-        # Similar binary/unary ops (consider different operators as equivalent structure)
-        tag1 == tag2
-
-      _ ->
-        # Direct comparison
+      # Same size tuples - compare directly
+      {n, n} ->
         ast1 == ast2
+
+      # Different sizes - not equivalent
+      _ ->
+        false
     end
   end
 
   defp asts_equivalent?(ast1, ast2), do: ast1 == ast2
 
-  # Feature extraction from AST
-  defp extract_features_from_ast({:collection_op, op, _fn, _coll}) do
+  # Feature extraction from AST (new 3-tuple format)
+  # Format: {type, keyword_meta, children_or_value}
+  defp extract_features_from_ast({:collection_op, meta, _children}) when is_list(meta) do
     base = ["collection", "iteration", "transform"]
+    op = Keyword.get(meta, :op_type)
 
     op_features =
       case op do
@@ -346,11 +347,12 @@ defmodule Ragex.Retrieval.MetaASTRanker do
     base ++ op_features
   end
 
-  defp extract_features_from_ast({:loop, type, _cond, _body}) do
+  defp extract_features_from_ast({:loop, meta, _children}) when is_list(meta) do
     base = ["loop", "iteration", "repeat"]
+    loop_type = Keyword.get(meta, :loop_type)
 
     type_features =
-      case type do
+      case loop_type do
         :while -> ["while", "conditional"]
         :for -> ["for", "iterate"]
         :for_each -> ["foreach", "each", "iterate"]
@@ -360,28 +362,53 @@ defmodule Ragex.Retrieval.MetaASTRanker do
     base ++ type_features
   end
 
-  defp extract_features_from_ast({:lambda, _params, _body, _meta}) do
+  defp extract_features_from_ast({:lambda, _meta, _body}) do
     ["lambda", "function", "closure", "anonymous"]
   end
 
-  defp extract_features_from_ast({:pattern_match, _expr, _clauses}) do
+  defp extract_features_from_ast({:pattern_match, _meta, _children}) do
     ["pattern", "match", "destructure", "case"]
   end
 
-  defp extract_features_from_ast({:binary_op, :arithmetic, op, _left, _right}) do
-    ["arithmetic", "calculation", "math", atom_to_string(op)]
+  defp extract_features_from_ast({:binary_op, meta, _children}) when is_list(meta) do
+    category = Keyword.get(meta, :category)
+    operator = Keyword.get(meta, :operator)
+
+    case category do
+      :arithmetic -> ["arithmetic", "calculation", "math", atom_to_string(operator)]
+      :comparison -> ["comparison", "predicate", "test", atom_to_string(operator)]
+      :boolean -> ["boolean", "logic", atom_to_string(operator)]
+      _ -> ["operation", atom_to_string(operator)]
+    end
   end
 
-  defp extract_features_from_ast({:binary_op, :comparison, op, _left, _right}) do
-    ["comparison", "predicate", "test", atom_to_string(op)]
-  end
-
-  defp extract_features_from_ast({:function_call, fn_name, _args}) do
+  defp extract_features_from_ast({:function_call, meta, _args}) when is_list(meta) do
+    fn_name = Keyword.get(meta, :name, "unknown")
     ["call", "invoke", "function", to_string(fn_name)]
   end
 
-  defp extract_features_from_ast({:conditional, _cond, _then, _else}) do
+  defp extract_features_from_ast({:conditional, _meta, _children}) do
     ["conditional", "branch", "if", "choice"]
+  end
+
+  defp extract_features_from_ast({:function_def, meta, _body}) when is_list(meta) do
+    name = Keyword.get(meta, :name, "unknown")
+    ["function", "definition", "def", to_string(name)]
+  end
+
+  defp extract_features_from_ast({:container, meta, _body}) when is_list(meta) do
+    container_type = Keyword.get(meta, :container_type)
+    name = Keyword.get(meta, :name, "unknown")
+
+    type_features =
+      case container_type do
+        :module -> ["module"]
+        :class -> ["class", "oop"]
+        :namespace -> ["namespace"]
+        _ -> []
+      end
+
+    ["container", to_string(name)] ++ type_features
   end
 
   defp extract_features_from_ast(_ast) do
