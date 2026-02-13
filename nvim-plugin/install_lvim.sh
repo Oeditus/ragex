@@ -10,13 +10,13 @@ echo ""
 
 # Detect LunarVim installation directory
 LVIM_CONFIG_DIR="${LUNARVIM_CONFIG_DIR:-$HOME/.config/lvim}"
-LVIM_RUNTIME_DIR="${LUNARVIM_RUNTIME_DIR:-$HOME/.local/share/lunarvim}"
+LVIM_LAZY_DIR="$HOME/.local/share/lunarvim/lazy"
 
-# Installation directory for LunarVim plugins
-INSTALL_DIR="$LVIM_RUNTIME_DIR/site/pack/user/start/ragex.nvim"
+# Installation directory - LunarVim uses lazy.nvim
+INSTALL_DIR="$LVIM_LAZY_DIR/ragex.nvim"
 
 echo "LunarVim config: $LVIM_CONFIG_DIR"
-echo "LunarVim runtime: $LVIM_RUNTIME_DIR"
+echo "Lazy.nvim plugins: $LVIM_LAZY_DIR"
 echo "Installation directory: $INSTALL_DIR"
 echo ""
 
@@ -28,6 +28,16 @@ if [ ! -d "$LVIM_CONFIG_DIR" ]; then
 fi
 
 echo "✓ LunarVim detected"
+echo ""
+
+# Check if lazy.nvim directory exists
+if [ ! -d "$LVIM_LAZY_DIR" ]; then
+  echo "Error: lazy.nvim directory not found at $LVIM_LAZY_DIR"
+  echo "Please ensure LunarVim is properly installed"
+  exit 1
+fi
+
+echo "✓ lazy.nvim detected"
 echo ""
 
 # Create directory if it doesn't exist
@@ -53,14 +63,26 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "1. Add to your LunarVim config ($LVIM_CONFIG_DIR/config.lua):"
 echo ""
-echo "   -- Ragex integration"
-echo "   require('ragex').setup({"
-echo "     ragex_path = vim.fn.expand('$HOME/Proyectos/Oeditus/ragex'),"
-echo "     socket_path = '/tmp/ragex_mcp.sock',"
-echo "     enabled = true,"
-echo "     debug = false,"
-echo "     auto_analyze = false,"
-echo "   })"
+echo "   -- Add Ragex plugin spec to lvim.plugins"
+echo "   lvim.plugins = {"
+echo "     {"
+echo "       'ragex.nvim',"
+echo "       dir = '$LVIM_LAZY_DIR/ragex.nvim',"
+echo "       dependencies = {"
+echo "         'nvim-lua/plenary.nvim',"
+echo "         'nvim-telescope/telescope.nvim',"
+echo "       },"
+echo "       config = function()"
+echo "         require('ragex').setup({"
+echo "           ragex_path = vim.fn.expand('$HOME/Proyectos/Oeditus/ragex'),"
+echo "           socket_path = '/tmp/ragex_mcp.sock',"
+echo "           enabled = true,"
+echo "           debug = false,"
+echo "           auto_analyze = false,"
+echo "         })"
+echo "       end,"
+echo "     },"
+echo "   }"
 echo ""
 echo "   -- Optional: Add keybindings"
 echo "   lvim.keys.normal_mode['<leader>rs'] = ':Ragex search<CR>'"
