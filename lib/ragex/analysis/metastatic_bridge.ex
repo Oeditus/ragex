@@ -34,6 +34,7 @@ defmodule Ragex.Analysis.MetastaticBridge do
 
   alias Metastatic.{Adapter, Document}
   alias Metastatic.Analysis.{Complexity, Purity}
+  alias Metastatic.Semantic.{Enricher, OpKind}
   require Logger
 
   @type analysis_result :: %{
@@ -81,27 +82,97 @@ defmodule Ragex.Analysis.MetastaticBridge do
   ## Options
 
   - `:language` - Explicit language (default: auto-detect)
+  - `:enrich` - Apply semantic enrichment with OpKind metadata (default: false)
+
+  ## Semantic Enrichment
+
+  When `enrich: true` is passed, the AST is enriched with OpKind semantic
+  metadata that tags function calls with their semantic meaning:
+
+  - Domain: `:db`, `:http`, `:auth`, `:cache`, `:queue`, `:file`, `:external_api`
+  - Operation: `:retrieve`, `:create`, `:update`, `:delete`, `:query`, etc.
+  - Framework: `:ecto`, `:django`, `:requests`, etc.
 
   ## Examples
 
+      # Basic parsing
       {:ok, doc} = MetastaticBridge.parse_file("lib/my_module.ex")
+
+      # With semantic enrichment
+      {:ok, doc} = MetastaticBridge.parse_file("lib/my_module.ex", enrich: true)
       Metastatic.Analysis.DeadCode.analyze(doc)
   """
   @spec parse_file(path :: String.t(), opts :: keyword()) ::
           {:ok, Document.t()} | {:error, term()}
   def parse_file(path, opts \\ []) do
     language = Keyword.get(opts, :language, detect_language(path))
+    enrich = Keyword.get(opts, :enrich, false)
 
     with {:ok, content} <- File.read(path),
          {:ok, adapter} <- get_adapter(language),
          {:ok, doc} <- parse_document(adapter, content, language) do
-      {:ok, doc}
+      if enrich do
+        enriched_ast = Enricher.enrich_tree(doc.ast, language)
+        {:ok, %{doc | ast: enriched_ast}}
+      else
+        {:ok, doc}
+      end
     else
       {:error, reason} = error ->
         Logger.warning("Failed to parse #{path}: #{inspect(reason)}")
         error
     end
   end
+
+  @doc """
+  Extracts semantic operations from a document.
+
+  Returns a list of operations found in the AST, each tagged with:
+  - `:domain` - The operation domain (`:db`, `:http`, `:auth`, etc.)
+  - `:operation` - The specific operation (`:retrieve`, `:create`, etc.)
+  - `:target` - The target entity (e.g., "User" for `Repo.get(User, id)`)
+  - `:framework` - The detected framework (`:ecto`, `:django`, etc.)
+
+  The document should be parsed with `enrich: true` for best results.
+
+  ## Options
+
+  - `:domain` - Filter by specific domain (default: all)
+
+  ## Examples
+
+      {:ok, doc} = MetastaticBridge.parse_file("lib/my_module.ex", enrich: true)
+      {:ok, ops} = MetastaticBridge.extract_operations(doc)
+      {:ok, db_ops} = MetastaticBridge.extract_operations(doc, domain: :db)
+  """
+  @spec extract_operations(Document.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
+  def extract_operations(%Document{ast: ast}, opts \\ []) do
+    domain_filter = Keyword.get(opts, :domain)
+
+    operations = extract_ops_from_ast(ast, [])
+
+    filtered =
+      if domain_filter do
+        Enum.filter(operations, &(&1.domain == domain_filter))
+      else
+        operations
+      end
+
+    {:ok, filtered}
+  rescue
+    e -> {:error, {:extraction_failed, e}}
+  end
+
+  @doc """
+  Returns the list of supported semantic domains.
+
+  ## Examples
+
+      iex> MetastaticBridge.domains()
+      [:db, :http, :auth, :cache, :queue, :file, :external_api]
+  """
+  @spec domains() :: [atom()]
+  def domains, do: [:db, :http, :auth, :cache, :queue, :file, :external_api]
 
   @doc """
   Analyzes a single file for code quality metrics.
@@ -365,5 +436,46 @@ defmodule Ragex.Analysis.MetastaticBridge do
       timestamp: DateTime.utc_now(),
       error: error
     }
+  end
+
+  # Extract semantic operations from AST
+  defp extract_ops_from_ast(ast, acc) do
+    case ast do
+      {:function_call, meta, args} when is_list(meta) ->
+        op = extract_op_from_meta(meta)
+        new_acc = if op, do: [op | acc], else: acc
+        Enum.reduce(args, new_acc, &extract_ops_from_ast/2)
+
+      {:attribute_access, meta, children} when is_list(meta) ->
+        op = extract_op_from_meta(meta)
+        new_acc = if op, do: [op | acc], else: acc
+        Enum.reduce(children, new_acc, &extract_ops_from_ast/2)
+
+      {_type, _meta, children} when is_list(children) ->
+        Enum.reduce(children, acc, &extract_ops_from_ast/2)
+
+      list when is_list(list) ->
+        Enum.reduce(list, acc, &extract_ops_from_ast/2)
+
+      _ ->
+        acc
+    end
+  end
+
+  defp extract_op_from_meta(meta) do
+    case Keyword.get(meta, :op_kind) do
+      nil ->
+        nil
+
+      op_kind when is_list(op_kind) ->
+        %{
+          domain: OpKind.domain(op_kind),
+          operation: OpKind.operation(op_kind),
+          target: OpKind.target(op_kind),
+          framework: Keyword.get(op_kind, :framework),
+          async: Keyword.get(op_kind, :async, false),
+          line: Keyword.get(meta, :line)
+        }
+    end
   end
 end

@@ -15,6 +15,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     MetastaticBridge,
     QualityStore,
     Security,
+    Semantic,
     Smells,
     Suggestions
   }
@@ -1220,7 +1221,7 @@ defmodule Ragex.MCP.Handlers.Tools do
         %{
           name: "analyze_business_logic",
           description:
-            "Analyze files for business logic issues using 20 language-agnostic analyzers - detects anti-patterns like callback hell, missing error handling, N+1 queries, etc.",
+            "Analyze files for business logic issues using 33 language-agnostic analyzers - detects anti-patterns like callback hell, missing error handling, N+1 queries, plus 13 CWE-based security analyzers",
           inputSchema: %{
             type: "object",
             properties: %{
@@ -1231,10 +1232,11 @@ defmodule Ragex.MCP.Handlers.Tools do
               analyzers: %{
                 type: "array",
                 description:
-                  "Specific analyzers to run (if not specified, runs all 20 analyzers)",
+                  "Specific analyzers to run (if not specified, runs all 33 analyzers)",
                 items: %{
                   type: "string",
                   enum: [
+                    # Original 20 analyzers
                     "callback_hell",
                     "missing_error_handling",
                     "silent_error_case",
@@ -1254,7 +1256,21 @@ defmodule Ragex.MCP.Handlers.Tools do
                     "missing_telemetry_in_oban_worker",
                     "missing_preload",
                     "inline_javascript",
-                    "missing_throttle"
+                    "missing_throttle",
+                    # 13 new CWE-based security analyzers
+                    "sql_injection",
+                    "xss_vulnerability",
+                    "ssrf_vulnerability",
+                    "path_traversal",
+                    "insecure_direct_object_reference",
+                    "missing_authentication",
+                    "missing_authorization",
+                    "incorrect_authorization",
+                    "missing_csrf_protection",
+                    "sensitive_data_exposure",
+                    "unrestricted_file_upload",
+                    "improper_input_validation",
+                    "toctou"
                   ]
                 }
               },
@@ -1894,6 +1910,130 @@ defmodule Ragex.MCP.Handlers.Tools do
             },
             required: ["path"]
           }
+        },
+        # Semantic Analysis Tools - OpKind Integration
+        %{
+          name: "semantic_operations",
+          description:
+            "Extract semantic operations (OpKind) from code - identifies database, auth, HTTP, cache, queue, file, and external API operations with framework-specific patterns",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              path: %{
+                type: "string",
+                description: "File or directory path to analyze"
+              },
+              domains: %{
+                type: "array",
+                description: "Filter by semantic domains (empty = all)",
+                items: %{
+                  type: "string",
+                  enum: ["db", "http", "auth", "cache", "queue", "file", "external_api"]
+                }
+              },
+              recursive: %{
+                type: "boolean",
+                description: "Recursively analyze directories",
+                default: true
+              },
+              include_security: %{
+                type: "boolean",
+                description:
+                  "Include security-relevant operations (write, delete, auth operations)",
+                default: true
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              }
+            },
+            required: ["path"]
+          }
+        },
+        %{
+          name: "analyze_security_issues",
+          description:
+            "Run all 13 CWE-based security analyzers to find vulnerabilities - SQL injection, XSS, SSRF, path traversal, authentication/authorization issues, CSRF, data exposure, etc.",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              path: %{
+                type: "string",
+                description: "File or directory path to analyze"
+              },
+              min_severity: %{
+                type: "string",
+                description: "Minimum severity level to report",
+                enum: ["info", "low", "medium", "high", "critical"],
+                default: "low"
+              },
+              recursive: %{
+                type: "boolean",
+                description: "Recursively analyze directories",
+                default: true
+              },
+              categories: %{
+                type: "array",
+                description: "Filter by vulnerability categories (empty = all)",
+                items: %{
+                  type: "string",
+                  enum: [
+                    "injection",
+                    "authentication",
+                    "authorization",
+                    "data_exposure",
+                    "input_validation",
+                    "race_condition"
+                  ]
+                }
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              }
+            },
+            required: ["path"]
+          }
+        },
+        %{
+          name: "semantic_analysis",
+          description:
+            "Full semantic analysis combining OpKind extraction with security assessment - provides comprehensive view of code behavior and risks",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              path: %{
+                type: "string",
+                description: "File or directory path to analyze"
+              },
+              recursive: %{
+                type: "boolean",
+                description: "Recursively analyze directories",
+                default: true
+              },
+              include_operations: %{
+                type: "boolean",
+                description: "Include detailed operation breakdown by domain",
+                default: true
+              },
+              include_security: %{
+                type: "boolean",
+                description: "Include security analysis results",
+                default: true
+              },
+              format: %{
+                type: "string",
+                description: "Output format",
+                enum: ["summary", "detailed", "json"],
+                default: "summary"
+              }
+            },
+            required: ["path"]
+          }
         }
       ]
     }
@@ -2090,6 +2230,15 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "analyze_business_logic" ->
         analyze_business_logic_tool(arguments)
+
+      "semantic_operations" ->
+        semantic_operations_tool(arguments)
+
+      "analyze_security_issues" ->
+        analyze_security_issues_tool(arguments)
+
+      "semantic_analysis" ->
+        semantic_analysis_tool(arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
@@ -7099,5 +7248,484 @@ defmodule Ragex.MCP.Handlers.Tools do
       true ->
         nil
     end
+  end
+
+  # Semantic Operations Tool - OpKind Integration
+
+  defp semantic_operations_tool(%{"path" => path} = params) do
+    domains = params |> Map.get("domains", []) |> Enum.map(&String.to_atom/1)
+    recursive = Map.get(params, "recursive", true)
+    include_security = Map.get(params, "include_security", true)
+    format = Map.get(params, "format", "summary")
+
+    result =
+      if File.dir?(path) do
+        case Semantic.analyze_directory(path, recursive: recursive) do
+          {:ok, dir_result} ->
+            format_semantic_result(
+              dir_result,
+              path,
+              domains,
+              include_security,
+              format,
+              :directory
+            )
+
+          {:error, reason} ->
+            %{status: "error", error: inspect(reason)}
+        end
+      else
+        case Semantic.analyze_file(path) do
+          {:ok, file_result} ->
+            format_semantic_result(file_result, path, domains, include_security, format, :file)
+
+          {:error, reason} ->
+            %{status: "error", error: inspect(reason)}
+        end
+      end
+
+    {:ok, result}
+  end
+
+  defp semantic_operations_tool(_), do: {:error, "path is required"}
+
+  defp format_semantic_result(result, path, domains, include_security, format, scan_type) do
+    operations = result.operations
+
+    # Filter by domains if specified
+    filtered_ops =
+      if domains != [] do
+        Enum.filter(operations, &(&1.domain in domains))
+      else
+        operations
+      end
+
+    # Get security operations if requested
+    security_ops =
+      if include_security do
+        Semantic.security_operations(filtered_ops)
+      else
+        []
+      end
+
+    summary = Semantic.operations_summary(filtered_ops)
+
+    base = %{
+      status: "success",
+      scan_type: scan_type,
+      path: path,
+      total_operations: length(filtered_ops),
+      summary: summary
+    }
+
+    base =
+      if include_security and length(security_ops) > 0 do
+        Map.put(base, :security_relevant, %{
+          count: length(security_ops),
+          operations:
+            Enum.map(security_ops, fn op ->
+              %{
+                domain: op.domain,
+                operation: op.operation,
+                target: op.target,
+                location: format_op_location(op)
+              }
+            end)
+        })
+      else
+        base
+      end
+
+    case format do
+      "json" ->
+        Map.put(base, :operations, filtered_ops)
+
+      "detailed" ->
+        Map.put(
+          base,
+          :operations,
+          Enum.map(filtered_ops, fn op ->
+            %{
+              domain: op.domain,
+              operation: op.operation,
+              target: op.target,
+              async: op.async,
+              framework: op.framework,
+              location: format_op_location(op)
+            }
+          end)
+        )
+
+      _ ->
+        base
+    end
+  end
+
+  defp format_op_location(op) do
+    case Map.get(op, :location) do
+      %{line: line, column: col} -> "#{line}:#{col}"
+      %{line: line} -> "#{line}"
+      _ -> nil
+    end
+  end
+
+  # Security Issues Tool - CWE-based Analyzers
+
+  @security_analyzers [
+    :sql_injection,
+    :xss_vulnerability,
+    :ssrf_vulnerability,
+    :path_traversal,
+    :insecure_direct_object_reference,
+    :missing_authentication,
+    :missing_authorization,
+    :incorrect_authorization,
+    :missing_csrf_protection,
+    :sensitive_data_exposure,
+    :unrestricted_file_upload,
+    :improper_input_validation,
+    :toctou
+  ]
+
+  @security_categories %{
+    injection: [:sql_injection, :xss_vulnerability, :ssrf_vulnerability, :path_traversal],
+    authentication: [:missing_authentication],
+    authorization: [
+      :missing_authorization,
+      :incorrect_authorization,
+      :insecure_direct_object_reference
+    ],
+    data_exposure: [:sensitive_data_exposure],
+    input_validation: [
+      :improper_input_validation,
+      :unrestricted_file_upload,
+      :missing_csrf_protection
+    ],
+    race_condition: [:toctou]
+  }
+
+  defp analyze_security_issues_tool(%{"path" => path} = params) do
+    min_severity = Map.get(params, "min_severity", "low") |> String.to_atom()
+    recursive = Map.get(params, "recursive", true)
+    categories = params |> Map.get("categories", []) |> Enum.map(&String.to_atom/1)
+    format = Map.get(params, "format", "summary")
+
+    # Filter analyzers by category
+    analyzers =
+      if categories != [] do
+        Enum.flat_map(categories, &Map.get(@security_categories, &1, []))
+      else
+        @security_analyzers
+      end
+
+    opts = [
+      analyzers: analyzers,
+      min_severity: min_severity,
+      recursive: recursive
+    ]
+
+    result =
+      if File.dir?(path) do
+        case BusinessLogic.analyze_directory(path, opts) do
+          {:ok, dir_result} ->
+            format_security_result(dir_result, path, format, :directory)
+
+          {:error, reason} ->
+            %{status: "error", error: inspect(reason)}
+        end
+      else
+        case BusinessLogic.analyze_file(path, opts) do
+          {:ok, file_result} ->
+            format_security_result(file_result, path, format, :file)
+
+          {:error, reason} ->
+            %{status: "error", error: inspect(reason)}
+        end
+      end
+
+    {:ok, result}
+  end
+
+  defp analyze_security_issues_tool(_), do: {:error, "path is required"}
+
+  defp format_security_result(result, path, format, :directory) do
+    base = %{
+      status: "success",
+      scan_type: "directory",
+      path: path,
+      total_files: result.total_files,
+      files_with_issues: result.files_with_issues,
+      total_vulnerabilities: result.total_issues,
+      by_severity: result.by_severity,
+      by_cwe: group_by_cwe(result.results),
+      summary: result.summary
+    }
+
+    case format do
+      "json" ->
+        Map.put(base, :results, result)
+
+      "detailed" ->
+        Map.put(
+          base,
+          :vulnerabilities,
+          result.results
+          |> Enum.filter(& &1.has_issues?)
+          |> Enum.flat_map(fn r ->
+            Enum.map(r.issues, fn issue ->
+              %{
+                file: r.file,
+                analyzer: issue.analyzer,
+                severity: issue.severity,
+                description: issue.description,
+                suggestion: issue.suggestion,
+                cwe: get_cwe_for_analyzer(issue.analyzer),
+                location: format_issue_location(issue)
+              }
+            end)
+          end)
+        )
+
+      _ ->
+        base
+    end
+  end
+
+  defp format_security_result(result, path, format, :file) do
+    base = %{
+      status: "success",
+      scan_type: "file",
+      path: path,
+      has_vulnerabilities: result.has_issues?,
+      total_vulnerabilities: result.total_issues,
+      by_severity: %{
+        critical: result.critical_count,
+        high: result.high_count,
+        medium: result.medium_count,
+        low: result.low_count,
+        info: result.info_count
+      }
+    }
+
+    case format do
+      "json" ->
+        Map.put(base, :result, result)
+
+      "detailed" ->
+        Map.put(
+          base,
+          :vulnerabilities,
+          Enum.map(result.issues, fn issue ->
+            %{
+              analyzer: issue.analyzer,
+              severity: issue.severity,
+              description: issue.description,
+              suggestion: issue.suggestion,
+              cwe: get_cwe_for_analyzer(issue.analyzer),
+              location: format_issue_location(issue)
+            }
+          end)
+        )
+
+      _ ->
+        Map.put(
+          base,
+          :vulnerabilities,
+          Enum.map(result.issues, fn issue ->
+            %{
+              analyzer: issue.analyzer,
+              severity: issue.severity,
+              cwe: get_cwe_for_analyzer(issue.analyzer)
+            }
+          end)
+        )
+    end
+  end
+
+  defp group_by_cwe(results) do
+    results
+    |> Enum.filter(& &1.has_issues?)
+    |> Enum.flat_map(& &1.issues)
+    |> Enum.group_by(&get_cwe_for_analyzer(&1.analyzer))
+    |> Enum.map(fn {cwe, issues} -> {cwe, length(issues)} end)
+    |> Map.new()
+  end
+
+  @cwe_mapping %{
+    sql_injection: "CWE-89",
+    xss_vulnerability: "CWE-79",
+    ssrf_vulnerability: "CWE-918",
+    path_traversal: "CWE-22",
+    insecure_direct_object_reference: "CWE-639",
+    missing_authentication: "CWE-306",
+    missing_authorization: "CWE-862",
+    incorrect_authorization: "CWE-863",
+    missing_csrf_protection: "CWE-352",
+    sensitive_data_exposure: "CWE-200",
+    unrestricted_file_upload: "CWE-434",
+    improper_input_validation: "CWE-20",
+    toctou: "CWE-367"
+  }
+
+  defp get_cwe_for_analyzer(analyzer) do
+    Map.get(@cwe_mapping, analyzer, "N/A")
+  end
+
+  defp format_issue_location(issue) do
+    case issue.location do
+      %{line: line, column: col, function: func} when not is_nil(func) ->
+        "#{func}:#{line}:#{col}"
+
+      %{line: line, column: col} ->
+        "#{line}:#{col}"
+
+      %{line: line} ->
+        "line #{line}"
+
+      _ ->
+        nil
+    end
+  end
+
+  # Full Semantic Analysis Tool
+
+  defp semantic_analysis_tool(%{"path" => path} = params) do
+    recursive = Map.get(params, "recursive", true)
+    include_operations = Map.get(params, "include_operations", true)
+    include_security = Map.get(params, "include_security", true)
+    format = Map.get(params, "format", "summary")
+
+    # Run semantic analysis
+    semantic_result =
+      if File.dir?(path) do
+        Semantic.analyze_directory(path, recursive: recursive)
+      else
+        Semantic.analyze_file(path)
+      end
+
+    # Run security analysis if requested
+    security_result =
+      if include_security do
+        opts = [analyzers: @security_analyzers, recursive: recursive]
+
+        if File.dir?(path) do
+          BusinessLogic.analyze_directory(path, opts)
+        else
+          BusinessLogic.analyze_file(path, opts)
+        end
+      else
+        {:ok, nil}
+      end
+
+    result =
+      case {semantic_result, security_result} do
+        {{:ok, sem}, {:ok, sec}} ->
+          build_semantic_analysis_result(
+            path,
+            sem,
+            sec,
+            include_operations,
+            include_security,
+            format
+          )
+
+        {{:error, reason}, _} ->
+          %{status: "error", error: "Semantic analysis failed: #{inspect(reason)}"}
+
+        {_, {:error, reason}} ->
+          %{status: "error", error: "Security analysis failed: #{inspect(reason)}"}
+      end
+
+    {:ok, result}
+  end
+
+  defp semantic_analysis_tool(_), do: {:error, "path is required"}
+
+  defp build_semantic_analysis_result(path, semantic, security, include_ops, include_sec, format) do
+    base = %{
+      status: "success",
+      path: path,
+      semantic: %{
+        total_operations: length(semantic.operations),
+        by_domain: Semantic.operations_summary(semantic.operations)
+      }
+    }
+
+    # Add operations if requested
+    base =
+      if include_ops do
+        security_ops = Semantic.security_operations(semantic.operations)
+
+        operations_data = %{
+          security_relevant_count: length(security_ops),
+          descriptions: Semantic.describe_operations(semantic.operations)
+        }
+
+        operations_data =
+          if format == "detailed" or format == "json" do
+            Map.put(
+              operations_data,
+              :operations,
+              Enum.map(semantic.operations, fn op ->
+                %{
+                  domain: op.domain,
+                  operation: op.operation,
+                  target: op.target,
+                  async: op.async,
+                  framework: op.framework
+                }
+              end)
+            )
+          else
+            operations_data
+          end
+
+        Map.put(base, :operations, operations_data)
+      else
+        base
+      end
+
+    # Add security analysis if requested and available
+    if include_sec and security do
+      vuln_count =
+        case security do
+          %{total_issues: n} when is_integer(n) -> n
+          _ -> 0
+        end
+
+      severity_breakdown =
+        case security do
+          %{by_severity: s} ->
+            s
+
+          %{critical_count: c, high_count: h, medium_count: m, low_count: l, info_count: i} ->
+            %{critical: c, high: h, medium: m, low: l, info: i}
+
+          _ ->
+            %{}
+        end
+
+      security_data = %{
+        total_vulnerabilities: vuln_count,
+        by_severity: severity_breakdown,
+        by_cwe:
+          case security do
+            %{results: results} when is_list(results) -> group_by_cwe(results)
+            %{issues: issues} when is_list(issues) -> group_issues_by_cwe(issues)
+            _ -> %{}
+          end
+      }
+
+      Map.put(base, :security, security_data)
+    else
+      base
+    end
+  end
+
+  defp group_issues_by_cwe(issues) do
+    issues
+    |> Enum.group_by(&get_cwe_for_analyzer(&1.analyzer))
+    |> Enum.map(fn {cwe, issues} -> {cwe, length(issues)} end)
+    |> Map.new()
   end
 end

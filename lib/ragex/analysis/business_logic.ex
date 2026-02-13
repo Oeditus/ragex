@@ -2,8 +2,17 @@ defmodule Ragex.Analysis.BusinessLogic do
   @moduledoc """
   Business logic analysis using Metastatic analyzers.
 
-  Provides unified access to 20 language-agnostic business logic analyzers
-  that detect common anti-patterns and issues across multiple languages.
+  Provides unified access to 33 language-agnostic business logic analyzers
+  that detect common anti-patterns, security vulnerabilities, and issues
+  across multiple languages.
+
+  ## Semantic Analysis with OpKind
+
+  Many analyzers leverage Metastatic's OpKind semantic metadata system for
+  accurate detection. OpKind tags function calls with their semantic meaning:
+  - **Domain**: `:db`, `:http`, `:auth`, `:cache`, `:queue`, `:file`, `:external_api`
+  - **Operation**: `:retrieve`, `:create`, `:update`, `:delete`, `:query`, etc.
+  - **Framework**: `:ecto`, `:django`, `:activerecord`, `:requests`, etc.
 
   ## Location Information
 
@@ -42,6 +51,23 @@ defmodule Ragex.Analysis.BusinessLogic do
   - **MissingPreload** - Database queries without eager loading
   - **InlineJavascript** - Inline scripts in strings (XSS risk)
   - **MissingThrottle** - Expensive operations without rate limiting
+
+  ### Tier 5: Security (CWE-based)
+  - **SQLInjection** - SQL query string concatenation (CWE-89)
+  - **XSSVulnerability** - Cross-site scripting risks (CWE-79)
+  - **SSRFVulnerability** - Server-side request forgery (CWE-918)
+  - **PathTraversal** - Directory traversal attacks (CWE-22)
+  - **InsecureDirectObjectReference** - IDOR vulnerabilities (CWE-639)
+  - **MissingAuthentication** - Unprotected endpoints (CWE-306)
+  - **MissingAuthorization** - Missing access control (CWE-862)
+  - **IncorrectAuthorization** - Flawed access control (CWE-863)
+  - **MissingCSRFProtection** - CSRF vulnerabilities (CWE-352)
+  - **SensitiveDataExposure** - Data leaks in logs/responses (CWE-200)
+  - **UnrestrictedFileUpload** - Unsafe file uploads (CWE-434)
+  - **ImproperInputValidation** - Input validation issues (CWE-20)
+
+  ### Tier 6: Race Conditions
+  - **TOCTOU** - Time-of-check-time-of-use vulnerabilities (CWE-367)
 
   ## Usage
 
@@ -141,7 +167,22 @@ defmodule Ragex.Analysis.BusinessLogic do
     # Tier 4: Content Analysis
     :missing_preload,
     :inline_javascript,
-    :missing_throttle
+    :missing_throttle,
+    # Tier 5: Security (CWE-based)
+    :sql_injection,
+    :xss_vulnerability,
+    :ssrf_vulnerability,
+    :path_traversal,
+    :insecure_direct_object_reference,
+    :missing_authentication,
+    :missing_authorization,
+    :incorrect_authorization,
+    :missing_csrf_protection,
+    :sensitive_data_exposure,
+    :unrestricted_file_upload,
+    :improper_input_validation,
+    # Tier 6: Race Conditions
+    :toctou
   ]
 
   # Map analyzer names to Metastatic modules
@@ -169,7 +210,23 @@ defmodule Ragex.Analysis.BusinessLogic do
       Metastatic.Analysis.BusinessLogic.MissingTelemetryInObanWorker,
     missing_preload: Metastatic.Analysis.BusinessLogic.MissingPreload,
     inline_javascript: Metastatic.Analysis.BusinessLogic.InlineJavascript,
-    missing_throttle: Metastatic.Analysis.BusinessLogic.MissingThrottle
+    missing_throttle: Metastatic.Analysis.BusinessLogic.MissingThrottle,
+    # Security analyzers (CWE-based)
+    sql_injection: Metastatic.Analysis.BusinessLogic.SQLInjection,
+    xss_vulnerability: Metastatic.Analysis.BusinessLogic.XSSVulnerability,
+    ssrf_vulnerability: Metastatic.Analysis.BusinessLogic.SSRFVulnerability,
+    path_traversal: Metastatic.Analysis.BusinessLogic.PathTraversal,
+    insecure_direct_object_reference:
+      Metastatic.Analysis.BusinessLogic.InsecureDirectObjectReference,
+    missing_authentication: Metastatic.Analysis.BusinessLogic.MissingAuthentication,
+    missing_authorization: Metastatic.Analysis.BusinessLogic.MissingAuthorization,
+    incorrect_authorization: Metastatic.Analysis.BusinessLogic.IncorrectAuthorization,
+    missing_csrf_protection: Metastatic.Analysis.BusinessLogic.MissingCSRFProtection,
+    sensitive_data_exposure: Metastatic.Analysis.BusinessLogic.SensitiveDataExposure,
+    unrestricted_file_upload: Metastatic.Analysis.BusinessLogic.UnrestrictedFileUpload,
+    improper_input_validation: Metastatic.Analysis.BusinessLogic.ImproperInputValidation,
+    # Race condition analyzers
+    toctou: Metastatic.Analysis.BusinessLogic.TOCTOU
   }
 
   @doc """
@@ -182,6 +239,81 @@ defmodule Ragex.Analysis.BusinessLogic do
   """
   @spec available_analyzers() :: [atom()]
   def available_analyzers, do: @available_analyzers
+
+  # Recommendations for each analyzer, including CWE references for security analyzers
+  @recommendations %{
+    # Original analyzers
+    callback_hell: "Reduce nesting depth by extracting functions or using `with` statements.",
+    missing_error_handling: "Add explicit error case handling with {:error, _} pattern match.",
+    silent_error_case: "Add logging or proper error propagation in error cases.",
+    swallowing_exception:
+      "Add logging (Logger.error) before rescue clauses that catch exceptions.",
+    hardcoded_value: "Extract hardcoded URLs/IPs to configuration or environment variables.",
+    n_plus_one_query: "Use preloading or batch queries to avoid N+1 query patterns.",
+    inefficient_filter:
+      "Apply filtering at the database level using Ecto queries instead of fetching all records.",
+    unmanaged_task:
+      "Use Task.Supervisor or link tasks to supervision tree for proper error handling.",
+    telemetry_in_recursive_function:
+      "Move telemetry calls outside recursive functions to avoid metric explosion.",
+    missing_telemetry_for_external_http:
+      "Add telemetry spans around HTTP calls for observability.",
+    sync_over_async: "Avoid blocking calls in async contexts; use async patterns consistently.",
+    direct_struct_update: "Use changesets for struct updates to ensure validation.",
+    missing_handle_async:
+      "Handle async results with await, monitor, or trap_exit for reliability.",
+    blocking_in_plug: "Avoid blocking I/O in plugs; offload to background workers.",
+    missing_telemetry_in_auth_plug: "Add telemetry/audit logging for authentication operations.",
+    missing_telemetry_in_liveview_mount:
+      "Add telemetry for LiveView mount operations for debugging.",
+    missing_telemetry_in_oban_worker: "Add telemetry spans in Oban workers for job monitoring.",
+    missing_preload: "Use Repo.preload or include preloads in queries to avoid lazy loading.",
+    inline_javascript:
+      "Move JavaScript to separate files; sanitize any dynamic content to prevent XSS.",
+    missing_throttle: "Add rate limiting for expensive operations to prevent abuse.",
+    # Security analyzers (CWE-based)
+    sql_injection:
+      "CWE-89: Use parameterized queries or Ecto's query DSL; never interpolate user input into SQL strings.",
+    xss_vulnerability:
+      "CWE-79: Escape user-provided content with proper HTML encoding; use Phoenix's automatic escaping.",
+    ssrf_vulnerability:
+      "CWE-918: Validate and whitelist allowed URLs; block internal network ranges.",
+    path_traversal:
+      "CWE-22: Sanitize file paths; use Path.expand with a base directory to prevent directory traversal.",
+    insecure_direct_object_reference:
+      "CWE-639: Implement authorization checks to verify user access to resources.",
+    missing_authentication:
+      "CWE-306: Add authentication middleware to protect sensitive endpoints.",
+    missing_authorization:
+      "CWE-862: Implement authorization checks before accessing protected resources.",
+    incorrect_authorization:
+      "CWE-863: Review authorization logic; ensure proper role/permission checks.",
+    missing_csrf_protection: "CWE-352: Enable CSRF protection for state-changing operations.",
+    sensitive_data_exposure:
+      "CWE-200: Encrypt sensitive data; avoid logging sensitive information.",
+    unrestricted_file_upload:
+      "CWE-434: Validate file types, size limits, and store outside webroot.",
+    improper_input_validation:
+      "CWE-20: Implement strict input validation with allowlists; reject malformed input.",
+    # Race condition analyzers
+    toctou:
+      "CWE-367: Use atomic operations or proper locking; avoid time-of-check-time-of-use patterns."
+  }
+
+  @doc """
+  Returns the recommendation for a specific analyzer.
+
+  For security analyzers, includes CWE reference numbers.
+
+  ## Examples
+
+      iex> Ragex.Analysis.BusinessLogic.recommendation(:sql_injection)
+      "CWE-89: Use parameterized queries or Ecto's query DSL..."
+  """
+  @spec recommendation(atom()) :: String.t()
+  def recommendation(analyzer) when is_atom(analyzer) do
+    Map.get(@recommendations, analyzer, "No recommendation available for #{analyzer}.")
+  end
 
   @doc """
   Analyzes a single file for business logic issues.
@@ -824,6 +956,59 @@ defmodule Ragex.Analysis.BusinessLogic do
 
   defp get_analyzer_recommendation(:missing_throttle, count) do
     "Found #{count} expensive operation(s) without rate limiting. Add throttling to prevent abuse and protect resources."
+  end
+
+  # Security analyzer recommendations
+  defp get_analyzer_recommendation(:sql_injection, count) do
+    "CRITICAL: Found #{count} potential SQL injection(s) (CWE-89). Use parameterized queries instead of string concatenation."
+  end
+
+  defp get_analyzer_recommendation(:xss_vulnerability, count) do
+    "CRITICAL: Found #{count} potential XSS vulnerability/ies (CWE-79). Sanitize user input and use proper output encoding."
+  end
+
+  defp get_analyzer_recommendation(:ssrf_vulnerability, count) do
+    "CRITICAL: Found #{count} potential SSRF vulnerability/ies (CWE-918). Validate and whitelist URLs before making requests."
+  end
+
+  defp get_analyzer_recommendation(:path_traversal, count) do
+    "CRITICAL: Found #{count} path traversal risk(s) (CWE-22). Sanitize file paths and use safe path joining."
+  end
+
+  defp get_analyzer_recommendation(:insecure_direct_object_reference, count) do
+    "HIGH: Found #{count} potential IDOR issue(s) (CWE-639). Verify user authorization for each resource access."
+  end
+
+  defp get_analyzer_recommendation(:missing_authentication, count) do
+    "HIGH: Found #{count} endpoint(s) without authentication (CWE-306). Add authentication middleware."
+  end
+
+  defp get_analyzer_recommendation(:missing_authorization, count) do
+    "HIGH: Found #{count} operation(s) without authorization checks (CWE-862). Implement proper access control."
+  end
+
+  defp get_analyzer_recommendation(:incorrect_authorization, count) do
+    "HIGH: Found #{count} flawed authorization check(s) (CWE-863). Review and fix access control logic."
+  end
+
+  defp get_analyzer_recommendation(:missing_csrf_protection, count) do
+    "HIGH: Found #{count} form(s) without CSRF protection (CWE-352). Add CSRF tokens to state-changing forms."
+  end
+
+  defp get_analyzer_recommendation(:sensitive_data_exposure, count) do
+    "HIGH: Found #{count} potential sensitive data exposure(s) (CWE-200). Remove sensitive data from logs/responses."
+  end
+
+  defp get_analyzer_recommendation(:unrestricted_file_upload, count) do
+    "HIGH: Found #{count} unsafe file upload(s) (CWE-434). Validate file types and use secure storage."
+  end
+
+  defp get_analyzer_recommendation(:improper_input_validation, count) do
+    "MEDIUM: Found #{count} input validation issue(s) (CWE-20). Validate and sanitize all user input."
+  end
+
+  defp get_analyzer_recommendation(:toctou, count) do
+    "MEDIUM: Found #{count} TOCTOU race condition(s) (CWE-367). Use atomic operations or proper locking."
   end
 
   defp get_analyzer_recommendation(analyzer, count) do

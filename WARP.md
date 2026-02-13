@@ -145,7 +145,16 @@ end
    - Dependency analysis and coupling metrics
    - Impact analysis (risk scoring, test discovery, effort estimation)
    - Automated refactoring suggestions (pattern detection, priority ranking, action plans, RAG-powered advice)
-   - MCP tools for all analysis features (15 total)
+   - **Business Logic Analysis** (33 analyzers including 13 CWE-based security analyzers)
+   - **Semantic Analysis** via OpKind (domain extraction, security-relevant operations)
+   - MCP tools for all analysis features (18 total)
+
+10. **Semantic Analysis** (`lib/ragex/analysis/semantic.ex`)
+    - OpKind-based semantic operation extraction
+    - 7 semantic domains: `:db`, `:http`, `:auth`, `:cache`, `:queue`, `:file`, `:external_api`
+    - Security-relevant operation filtering
+    - Framework-specific pattern recognition (Ecto, Phoenix, HTTPoison, etc.)
+    - File and directory analysis with aggregation
 
 9. **AI Features System** (`lib/ragex/ai/features/`)
    - Foundation layer (Config, Context, Cache)
@@ -240,7 +249,7 @@ end
     - Testing: 27 new tests (all passing) - total now 721 tests
     - Documentation: SUGGESTIONS.md (578 lines)
   - All Modules: `lib/ragex/analysis/{duplication,dead_code,dependency_graph,impact,suggestions}.ex` + 4 suggestions submodules
-  - All MCP Tools: 15 total (find_duplicates, find_similar_code, find_dead_code, analyze_dead_code_patterns, analyze_dependencies, find_circular_dependencies, coupling_report, analyze_quality, quality_report, find_complex_code, analyze_impact, estimate_refactoring_effort, risk_assessment, suggest_refactorings, explain_suggestion)
+  - All MCP Tools: 18 total (find_duplicates, find_similar_code, find_dead_code, analyze_dead_code_patterns, analyze_dependencies, find_circular_dependencies, coupling_report, analyze_quality, quality_report, find_complex_code, analyze_impact, estimate_refactoring_effort, risk_assessment, suggest_refactorings, explain_suggestion, semantic_operations, analyze_security_issues, semantic_analysis)
   - Total Testing: 721 tests, 0 failures, 25 skipped
   - Documentation: Comprehensive ANALYSIS.md guide (900+ lines), SUGGESTIONS.md (578 lines)
 - **Phase A**: AI Features Foundation (Complete - ~1,226 lines)
@@ -259,6 +268,24 @@ end
   - AIInsights: Architectural insights for coupling/dependencies (628 lines)
   - Integration: ai_refine, ai_analyze, ai_insights options
   - Documentation: PHASE_C_AI_ANALYSIS_COMPLETE.md
+- **Phase D**: Metastatic OpKind and Security Analyzers Integration (Complete)
+  - **BusinessLogic Module**: Updated to 33 analyzers (from 20)
+    - 20 original business logic analyzers
+    - 13 new CWE-based security analyzers: SQL injection (CWE-89), XSS (CWE-79), SSRF (CWE-918), path traversal (CWE-22), IDOR (CWE-639), missing auth (CWE-306/862/863), CSRF (CWE-352), data exposure (CWE-200), file upload (CWE-434), input validation (CWE-20), TOCTOU (CWE-367)
+    - `recommendation/1` function with CWE-referenced recommendations
+  - **Semantic Module**: New `lib/ragex/analysis/semantic.ex` (~520 lines)
+    - OpKind-based semantic operation extraction from Metastatic
+    - 7 semantic domains: db, http, auth, cache, queue, file, external_api
+    - `parse_file/2`, `analyze_file/2`, `analyze_directory/2`
+    - `extract_operations/2`, `security_operations/1`, `operations_summary/1`, `describe_operations/1`
+  - **MetastaticBridge Updates**: Semantic enrichment option, domain extraction
+  - **3 New MCP Tools**:
+    - `semantic_operations`: Extract OpKind operations with domain filtering
+    - `analyze_security_issues`: Run all 13 CWE-based security analyzers
+    - `semantic_analysis`: Combined semantic + security analysis
+  - **Updated MCP Tool**: `analyze_business_logic` now supports all 33 analyzers
+  - **Testing**: 36 new tests (semantic_test.exs, business_logic_security_test.exs)
+  - Total MCP Tools: 18 (previously 15)
 
 ### In Progress 🚧
 
@@ -735,6 +762,6 @@ For architectural decisions or complex changes:
 
 ---
 
-**Last Updated**: January 24, 2026  
+**Last Updated**: February 13, 2026  
 **Ragex Version**: 0.2.0  
-**Status**: Production-ready (Phases 1-5, 8, 10A, 10C, 11, A, B, C complete)
+**Status**: Production-ready (Phases 1-5, 8, 10A, 10C, 11, A, B, C, D complete)

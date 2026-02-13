@@ -504,29 +504,36 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Filter empty file results within each analysis type
   defp filter_empty_within_result(:security, %{issues: issues} = data) do
-    filtered = Enum.reject(issues, fn issue ->
-      Map.get(issue, :has_vulnerabilities?, true) == false and
-        Enum.empty?(Map.get(issue, :vulnerabilities, []))
-    end)
+    filtered =
+      Enum.reject(issues, fn issue ->
+        Map.get(issue, :has_vulnerabilities?, true) == false and
+          Enum.empty?(Map.get(issue, :vulnerabilities, []))
+      end)
+
     %{data | issues: filtered}
   end
 
   defp filter_empty_within_result(:business_logic, %{results: results} = data) do
-    filtered = Enum.reject(results, fn result ->
-      Map.get(result, :has_issues?, true) == false and
-        Enum.empty?(Map.get(result, :issues, []))
-    end)
+    filtered =
+      Enum.reject(results, fn result ->
+        Map.get(result, :has_issues?, true) == false and
+          Enum.empty?(Map.get(result, :issues, []))
+      end)
+
     %{data | results: filtered}
   end
 
   defp filter_empty_within_result(:smells, %{smells: smells} = data) do
     case smells do
       %{results: results} ->
-        filtered = Enum.reject(results, fn result ->
-          Map.get(result, :has_smells?, true) == false and
-            Enum.empty?(Map.get(result, :smells, []))
-        end)
+        filtered =
+          Enum.reject(results, fn result ->
+            Map.get(result, :has_smells?, true) == false and
+              Enum.empty?(Map.get(result, :smells, []))
+          end)
+
         %{data | smells: %{smells | results: filtered}}
+
       _ ->
         data
     end
