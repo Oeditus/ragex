@@ -9,6 +9,7 @@ local ui = require("ragex.ui")
 local function execute_analysis(method, params, title, formatter)
   local loading = ui.notify_loading("Analyzing...")
   
+  -- Use analyze timeout for all analysis operations (they can be slow)
   core.execute(method, params or {}, function(result, error_type)
     ui.dismiss_notification(loading)
     
@@ -28,7 +29,7 @@ local function execute_analysis(method, params, title, formatter)
     else
       ui.show_float({vim.inspect(data)}, { title = title })
     end
-  end)
+  end, core.config.timeout.analyze)
 end
 
 -- Find duplicates
@@ -235,7 +236,7 @@ end
 -- Refactoring suggestions
 function M.suggest_refactorings(opts)
   opts = opts or {}
-  opts.path = opts.path or vim.fn.getcwd()
+  opts.target = opts.target or vim.fn.getcwd()
   execute_analysis("suggest_refactorings", opts, "Refactoring Suggestions")
 end
 

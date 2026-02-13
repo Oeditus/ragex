@@ -53,11 +53,10 @@ function M.execute(method, params, callback, timeout_ms)
   end
 
   -- Command to send request via socat
-  -- Use socat with proper options to send request and wait for response
-  -- -t0 = no timeout, wait for response
-  -- Use printf with explicit connection management
+  -- Note: No timeout flag on socat - timeout is managed by Lua timer
+  -- This allows long-running operations to complete without premature connection close
   local cmd = string.format(
-    "(printf '%%s\\n' %s; sleep 0.1) | socat -t30 - UNIX-CONNECT:%s 2>&1",
+    "printf '%%s\\n' %s | socat - UNIX-CONNECT:%s",
     vim.fn.shellescape(request),
     M.config.socket_path
   )
