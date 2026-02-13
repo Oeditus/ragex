@@ -160,43 +160,99 @@ Basic test structure.
 - `tests/utils_spec.lua` - Test utils functions
 - `tests/core_spec.lua` - Test core MCP client
 
-## Quick Installation (For Current State)
+## Quick Installation
 
-Even with incomplete implementation, you can install what exists:
+The plugin is now **100% complete** and ready to use!
 
-### Method 1: Manual Install
+### Method 1: Automated Installation Script
+
+#### For NeoVim:
+
+```bash
+cd /path/to/ragex/nvim-plugin
+./install.sh
+```
+
+#### For LunarVim:
+
+```bash
+cd /path/to/ragex/nvim-plugin
+./install_lvim.sh
+```
+
+The LunarVim script will:
+- Detect your LunarVim installation
+- Install to the correct LunarVim plugin directory
+- Provide specific LunarVim configuration instructions
+- Include LunarVim-specific keybinding examples
+
+### Method 2: Manual Install
+
+#### For NeoVim:
 
 ```bash
 # Clone/copy plugin to NeoVim packages
 mkdir -p ~/.local/share/nvim/site/pack/plugins/start
-cp -r /opt/ragex/nvim-plugin ~/.local/share/nvim/site/pack/plugins/start/ragex.nvim
+cp -r /path/to/ragex/nvim-plugin ~/.local/share/nvim/site/pack/plugins/start/ragex.nvim
 
 # Or symlink for development
-ln -s /opt/ragex/nvim-plugin ~/.local/share/nvim/site/pack/plugins/start/ragex.nvim
+ln -s /path/to/ragex/nvim-plugin ~/.local/share/nvim/site/pack/plugins/start/ragex.nvim
 ```
 
-### Method 2: lazy.nvim (NeoVim)
+#### For LunarVim:
+
+```bash
+# Install to LunarVim plugin directory
+mkdir -p ~/.local/share/lunarvim/site/pack/user/start
+cp -r /path/to/ragex/nvim-plugin ~/.local/share/lunarvim/site/pack/user/start/ragex.nvim
+
+# Or symlink for development
+ln -s /path/to/ragex/nvim-plugin ~/.local/share/lunarvim/site/pack/user/start/ragex.nvim
+```
+
+### Method 3: Package Manager (NeoVim)
+
+#### lazy.nvim:
 
 Add to your `~/.config/nvim/lua/plugins/ragex.lua`:
 
 ```lua
 return {
-  dir = "/opt/ragex/nvim-plugin",
+  dir = "/path/to/ragex/nvim-plugin",
   name = "ragex.nvim",
   dependencies = {
-    "nvim-telescope/telescope.nvim",
     "nvim-lua/plenary.nvim",
+    "nvim-telescope/telescope.nvim",
   },
   config = function()
     require("ragex").setup({
-      ragex_path = vim.fn.expand("/opt/ragex"),
-      debug = true,
+      ragex_path = vim.fn.expand("/path/to/ragex"),
+      socket_path = "/tmp/ragex_mcp.sock",
+      enabled = true,
+      debug = false,
     })
   end,
 }
 ```
 
-### Method 3: LunarVim
+#### packer.nvim:
+
+```lua
+use {
+  "/path/to/ragex/nvim-plugin",
+  requires = {
+    "nvim-lua/plenary.nvim",
+    { "nvim-telescope/telescope.nvim", opt = true },
+  },
+  config = function()
+    require("ragex").setup({
+      ragex_path = vim.fn.expand("/path/to/ragex"),
+    })
+  end,
+}
+```
+
+### Method 4: LunarVim Configuration
 
 Add to `~/.config/lvim/config.lua`:
 
