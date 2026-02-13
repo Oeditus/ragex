@@ -156,6 +156,32 @@ function M.risk_assessment(module, func_name, arity)
   execute_analysis("risk_assessment", params, "Risk Assessment")
 end
 
+-- Semantic analysis (Phase D)
+function M.semantic_operations(opts)
+  opts = opts or {}
+  opts.path = opts.path or vim.fn.expand("%:p")
+  execute_analysis("semantic_operations", opts, "Semantic Operations")
+end
+
+function M.analyze_security_issues(opts)
+  opts = opts or {}
+  opts.path = opts.path or vim.fn.getcwd()
+  execute_analysis("analyze_security_issues", opts, "Security Issues (CWE)")
+end
+
+function M.semantic_analysis(opts)
+  opts = opts or {}
+  opts.path = opts.path or vim.fn.getcwd()
+  execute_analysis("semantic_analysis", opts, "Semantic Analysis")
+end
+
+-- Business logic analysis
+function M.analyze_business_logic(opts)
+  opts = opts or {}
+  opts.path = opts.path or vim.fn.getcwd()
+  execute_analysis("analyze_business_logic", opts, "Business Logic Analysis")
+end
+
 -- Security scanning
 function M.scan_security(opts)
   opts = opts or {}

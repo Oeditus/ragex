@@ -37,23 +37,25 @@ function M.execute(method, params, callback, timeout_ms)
   timeout_ms = timeout_ms or default_timeout
 
   -- Build MCP request
-  local request = vim.json.encode({
+  local request = vim.fn.json_encode({
     jsonrpc = "2.0",
     method = "tools/call",
     params = {
       name = method,
-      arguments = params or vim.empty_dict(),
+      arguments = params or {},
     },
     id = vim.fn.rand(),
   })
 
   debug_log("Request: " .. method)
-  debug_log("Params: " .. vim.inspect(params))
+  if M.config.debug then
+    debug_log("Params: " .. vim.inspect(params))
+  end
 
   -- Command to send request via socat
   local cmd = string.format(
     "printf '%%s\\n' %s | socat - UNIX-CONNECT:%s 2>&1",
-    utils.shell_escape(request),
+    vim.fn.shellescape(request),
     M.config.socket_path
   )
 
@@ -79,8 +81,8 @@ function M.execute(method, params, callback, timeout_ms)
               vim.fn.timer_stop(timer)
             end
 
-            debug_log("Response received: " .. result_str:sub(1, 200))
-            local ok, result = pcall(vim.json.decode, result_str)
+            debug_log("Response received")
+            local ok, result = pcall(vim.fn.json_decode, result_str)
             if ok and result then
               callback(result, nil)
             else
@@ -138,8 +140,8 @@ function M.execute(method, params, callback, timeout_ms)
 
     if result_str and result_str ~= "" then
       result_str = result_str:gsub("^%s+", ""):gsub("%s+$", "")
-      debug_log("Sync response: " .. result_str:sub(1, 200))
-      local ok, result = pcall(vim.json.decode, result_str)
+      debug_log("Sync response received")
+      local ok, result = pcall(vim.fn.json_decode, result_str)
       if ok and result then
         return result
       end

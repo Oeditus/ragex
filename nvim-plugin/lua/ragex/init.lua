@@ -230,6 +230,41 @@ function M.risk_assessment(module, func_name, arity)
   return M.analysis.risk_assessment(module, func_name, arity)
 end
 
+-- Semantic analysis (Phase D)
+function M.semantic_operations(opts)
+  return M.analysis.semantic_operations(opts)
+end
+
+function M.analyze_security_issues(opts)
+  return M.analysis.analyze_security_issues(opts)
+end
+
+function M.semantic_analysis(opts)
+  return M.analysis.semantic_analysis(opts)
+end
+
+function M.analyze_business_logic(opts)
+  return M.analysis.analyze_business_logic(opts)
+end
+
+-- Refactoring suggestions
+function M.suggest_refactorings(opts)
+  return M.analysis.suggest_refactorings(opts)
+end
+
+function M.explain_suggestion(suggestion_id)
+  return M.analysis.explain_suggestion(suggestion_id)
+end
+
+-- Preview and validation
+function M.preview_refactor(operation, params)
+  return M.analysis.preview_refactor(operation, params)
+end
+
+function M.validate_with_ai(path, changes)
+  return M.analysis.validate_with_ai(path, changes)
+end
+
 -- Graph algorithm functions
 function M.betweenness_centrality(opts)
   return M.graph.betweenness_centrality(opts)

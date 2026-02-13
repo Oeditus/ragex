@@ -87,6 +87,53 @@ function M.setup()
     elseif subcmd == "export_graph" then
       ragex.graph.export_graph()
     
+    -- Semantic and security analysis (Phase D)
+    elseif subcmd == "semantic_operations" then
+      ragex.semantic_operations()
+    elseif subcmd == "analyze_security_issues" then
+      ragex.analyze_security_issues()
+    elseif subcmd == "semantic_analysis" then
+      ragex.semantic_analysis()
+    elseif subcmd == "analyze_business_logic" then
+      ragex.analyze_business_logic()
+    
+    -- Refactoring suggestions
+    elseif subcmd == "suggest_refactorings" then
+      ragex.suggest_refactorings()
+    elseif subcmd == "explain_suggestion" then
+      local suggestion_id = args[2]
+      if suggestion_id then
+        ragex.explain_suggestion(suggestion_id)
+      else
+        vim.notify("[Ragex] Usage: :Ragex explain_suggestion <id>", vim.log.levels.WARN)
+      end
+    
+    -- Preview and AI features
+    elseif subcmd == "preview_refactor" then
+      vim.notify("[Ragex] preview_refactor requires parameters", vim.log.levels.WARN)
+    elseif subcmd == "validate_with_ai" then
+      ragex.validate_with_ai()
+    
+    -- RAG commands
+    elseif subcmd == "rag_query" then
+      ragex.rag.rag_query()
+    elseif subcmd == "rag_explain" then
+      ragex.rag.rag_explain()
+    elseif subcmd == "rag_suggest" then
+      ragex.rag.rag_suggest()
+    elseif subcmd == "expand_query" then
+      ragex.rag.expand_query()
+    elseif subcmd == "metaast_search" then
+      ragex.rag.metaast_search()
+    
+    -- AI cache management
+    elseif subcmd == "ai_cache_stats" then
+      ragex.analysis.get_ai_cache_stats()
+    elseif subcmd == "ai_usage" then
+      ragex.analysis.get_ai_usage()
+    elseif subcmd == "clear_ai_cache" then
+      ragex.analysis.clear_ai_cache()
+    
     else
       vim.notify("[Ragex] Unknown subcommand: " .. subcmd, vim.log.levels.ERROR)
     end
@@ -136,6 +183,32 @@ function M.setup()
         "closeness_centrality",
         "detect_communities",
         "export_graph",
+        
+        -- Semantic & security analysis
+        "semantic_operations",
+        "analyze_security_issues",
+        "semantic_analysis",
+        "analyze_business_logic",
+        
+        -- Refactoring suggestions
+        "suggest_refactorings",
+        "explain_suggestion",
+        
+        -- Preview & AI features
+        "preview_refactor",
+        "validate_with_ai",
+        
+        -- RAG features
+        "rag_query",
+        "rag_explain",
+        "rag_suggest",
+        "expand_query",
+        "metaast_search",
+        
+        -- AI cache
+        "ai_cache_stats",
+        "ai_usage",
+        "clear_ai_cache",
       }
       
       -- Filter subcommands based on what user has typed
