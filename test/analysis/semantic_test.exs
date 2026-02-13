@@ -250,7 +250,7 @@ defmodule Ragex.Analysis.SemanticTest do
       result = Semantic.security_operations(ops)
 
       # Write and delete operations should be considered security-relevant
-      assert length(result) >= 1
+      assert match?([_ | _], result)
     end
 
     test "identifies auth operations as security-relevant" do

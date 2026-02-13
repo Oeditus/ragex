@@ -350,12 +350,7 @@ defmodule Ragex.Analysis.Semantic do
           nil
         else
           by_op = Enum.frequencies_by(ops, & &1.operation)
-
-          op_details =
-            by_op
-            |> Enum.map(fn {op, count} -> "#{count} #{op}" end)
-            |> Enum.join(", ")
-
+          op_details = Enum.map_join(by_op, ", ", fn {op, count} -> "#{count} #{op}" end)
           "#{length(ops)} #{domain_label(domain)} (#{op_details})"
         end
       end)

@@ -7319,7 +7319,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     }
 
     base =
-      if include_security and length(security_ops) > 0 do
+      if include_security and match?([_ | _], security_ops) do
         Map.put(base, :security_relevant, %{
           count: length(security_ops),
           operations:
