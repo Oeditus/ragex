@@ -155,6 +155,12 @@ defmodule Ragex.Analysis.Suggestions do
     Logger.debug("Gathering analysis data for #{inspect(target)}")
 
     try do
+      # Validate target format
+      unless valid_target?(target) do
+        raise ArgumentError,
+              "Invalid target format: #{inspect(target)}. Expected file path, directory path, {:module, module}, or {:function, module, name, arity}"
+      end
+
       data = %{
         target: target,
         quality: gather_quality_metrics(target),
@@ -167,10 +173,22 @@ defmodule Ragex.Analysis.Suggestions do
       {:ok, data}
     rescue
       e ->
-        Logger.error("Failed to gather analysis data: #{inspect(e)}")
+        Logger.error(
+          "Failed to gather analysis data: #{Exception.format(:error, e, __STACKTRACE__)}"
+        )
+
         {:error, {:analysis_failed, Exception.message(e)}}
     end
   end
+
+  # Validate target format
+  defp valid_target?({:module, module}) when is_atom(module), do: true
+
+  defp valid_target?({:function, module, name, arity})
+       when is_atom(module) and is_atom(name) and is_integer(arity), do: true
+
+  defp valid_target?(path) when is_binary(path), do: true
+  defp valid_target?(_), do: false
 
   defp gather_quality_metrics(target) do
     case target do

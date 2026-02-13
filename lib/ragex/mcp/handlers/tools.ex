@@ -4252,84 +4252,102 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp metaast_search_tool(
          %{"source_language" => source_lang, "source_construct" => construct} = params
        ) do
-    source_language = String.to_atom(source_lang)
-    target_languages = parse_language_list(Map.get(params, "target_languages", []))
-    limit = Map.get(params, "limit", 5)
-    threshold = Map.get(params, "threshold", 0.6)
-    strict = Map.get(params, "strict_equivalence", false)
+    try do
+      source_language = String.to_atom(source_lang)
+      target_languages = parse_language_list(Map.get(params, "target_languages", []))
+      limit = Map.get(params, "limit", 5)
+      threshold = Map.get(params, "threshold", 0.6)
+      strict = Map.get(params, "strict_equivalence", false)
 
-    opts = [
-      limit: limit,
-      threshold: threshold,
-      strict_equivalence: strict
-    ]
+      opts = [
+        limit: limit,
+        threshold: threshold,
+        strict_equivalence: strict
+      ]
 
-    case CrossLanguage.search_equivalent(source_language, construct, target_languages, opts) do
-      {:ok, results} ->
-        formatted_results =
-          Enum.map(results, fn {language, language_results} ->
-            %{
-              language: Atom.to_string(language),
-              matches:
-                Enum.map(language_results, fn result ->
-                  %{
-                    node_id: format_node_id(result.node_id),
-                    score: Float.round(result.score, 4),
-                    code_sample: result[:text] || ""
-                  }
-                end)
-            }
-          end)
+      case CrossLanguage.search_equivalent(source_language, construct, target_languages, opts) do
+        {:ok, results} ->
+          formatted_results =
+            Enum.map(results, fn {language, language_results} ->
+              %{
+                language: Atom.to_string(language),
+                matches:
+                  Enum.map(language_results, fn result ->
+                    %{
+                      node_id: format_node_id(result.node_id),
+                      score: Float.round(result.score, 4),
+                      code_sample: result[:text] || ""
+                    }
+                  end)
+              }
+            end)
 
-        total_matches =
-          Enum.reduce(formatted_results, 0, fn lang, acc -> acc + length(lang.matches) end)
+          total_matches =
+            Enum.reduce(formatted_results, 0, fn lang, acc -> acc + length(lang.matches) end)
 
-        {:ok,
-         %{
-           status: "success",
-           source_language: source_lang,
-           source_construct: construct,
-           results: formatted_results,
-           total_matches: total_matches
-         }}
+          {:ok,
+           %{
+             status: "success",
+             source_language: source_lang,
+             source_construct: construct,
+             results: formatted_results,
+             total_matches: total_matches
+           }}
 
-      {:error, reason} ->
-        {:error, "MetaAST search failed: #{inspect(reason)}"}
+        {:error, reason} ->
+          {:error, "MetaAST search failed: #{inspect(reason)}"}
+      end
+    rescue
+      e ->
+        require Logger
+        Logger.error("MetaAST search error: #{Exception.format(:error, e, __STACKTRACE__)}")
+        {:error, "MetaAST search feature error: #{Exception.message(e)}"}
     end
   end
 
   defp metaast_search_tool(_), do: {:error, "Missing required parameters"}
 
   defp cross_language_alternatives_tool(%{"language" => lang, "code" => code} = params) do
-    language = String.to_atom(lang)
-    target_languages = parse_language_list(Map.get(params, "target_languages", []))
+    try do
+      language = String.to_atom(lang)
+      target_languages = parse_language_list(Map.get(params, "target_languages", []))
 
-    source = %{
-      language: language,
-      code: code
-    }
+      source = %{
+        language: language,
+        code: code
+      }
 
-    case CrossLanguage.suggest_alternatives(source, target_languages) do
-      {:ok, suggestions} ->
-        {:ok,
-         %{
-           status: "success",
-           source_language: lang,
-           alternatives:
-             Enum.map(suggestions, fn suggestion ->
-               %{
-                 language: Atom.to_string(suggestion.language),
-                 node_id: format_node_id(suggestion.node_id),
-                 score: Float.round(suggestion.score, 4),
-                 code_sample: suggestion.code_sample,
-                 explanation: suggestion.explanation
-               }
-             end),
-           count: length(suggestions)
-         }}
+      case CrossLanguage.suggest_alternatives(source, target_languages) do
+        {:ok, suggestions} ->
+          {:ok,
+           %{
+             status: "success",
+             source_language: lang,
+             alternatives:
+               Enum.map(suggestions, fn suggestion ->
+                 %{
+                   language: Atom.to_string(suggestion.language),
+                   node_id: format_node_id(suggestion.node_id),
+                   score: Float.round(suggestion.score, 4),
+                   code_sample: suggestion.code_sample,
+                   explanation: suggestion.explanation
+                 }
+               end),
+             count: length(suggestions)
+           }}
 
-      {:error, reason} ->
-        {:error, "Failed to generate alternatives: #{inspect(reason)}"}
+        {:error, reason} ->
+          {:error, "Failed to generate alternatives: #{inspect(reason)}"}
+      end
+    rescue
+      e ->
+        require Logger
+
+        Logger.error(
+          "Cross-language alternatives error: #{Exception.format(:error, e, __STACKTRACE__)}"
+        )
+
+        {:error, "Cross-language feature error: #{Exception.message(e)}"}
     end
   end
 
@@ -4526,6 +4544,16 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp refactor_conflicts_tool(%{"operation" => operation, "params" => params}) do
+    # Wrap in task with timeout to prevent hanging
+    task = Task.async(fn -> do_check_conflicts(operation, params) end)
+
+    case Task.yield(task, 30_000) || Task.shutdown(task) do
+      {:ok, result} -> result
+      nil -> {:error, "Conflict check timed out after 30 seconds"}
+    end
+  end
+
+  defp do_check_conflicts(operation, params) do
     # Check conflicts based on operation type
     result =
       case operation do
@@ -4534,10 +4562,14 @@ defmodule Ragex.MCP.Handlers.Tools do
                {:ok, _old_name} <- get_required_param(params, "old_name"),
                {:ok, new_name} <- get_required_param(params, "new_name"),
                {:ok, arity} <- get_required_param(params, "arity") do
-            module_atom = String.to_existing_atom("Elixir." <> module)
-            new_atom = String.to_atom(new_name)
+            try do
+              module_atom = String.to_existing_atom("Elixir." <> module)
+              new_atom = String.to_atom(new_name)
 
-            Conflict.check_rename_conflicts(module_atom, new_atom, arity)
+              Conflict.check_rename_conflicts(module_atom, new_atom, arity)
+            rescue
+              ArgumentError -> {:error, "Module #{module} not found in system"}
+            end
           else
             {:error, reason} -> {:error, reason}
           end
@@ -4545,11 +4577,15 @@ defmodule Ragex.MCP.Handlers.Tools do
         "rename_module" ->
           with {:ok, old_name} <- get_required_param(params, "old_name"),
                {:ok, new_name} <- get_required_param(params, "new_name") do
-            old_atom = String.to_existing_atom("Elixir." <> old_name)
-            new_atom = String.to_existing_atom("Elixir." <> new_name)
+            try do
+              old_atom = String.to_atom("Elixir." <> old_name)
+              new_atom = String.to_atom("Elixir." <> new_name)
 
-            # For module rename, check if new name conflicts
-            Conflict.check_rename_conflicts(old_atom, new_atom, 0)
+              # For module rename, check if new name conflicts
+              Conflict.check_rename_conflicts(old_atom, new_atom, 0)
+            rescue
+              ArgumentError -> {:error, "Module #{old_name} or #{new_name} not found in system"}
+            end
           else
             {:error, reason} -> {:error, reason}
           end
@@ -4559,11 +4595,16 @@ defmodule Ragex.MCP.Handlers.Tools do
                {:ok, target_module} <- get_required_param(params, "target_module"),
                {:ok, function} <- get_required_param(params, "function"),
                {:ok, arity} <- get_required_param(params, "arity") do
-            source_atom = String.to_existing_atom("Elixir." <> source_module)
-            target_atom = String.to_existing_atom("Elixir." <> target_module)
-            function_atom = String.to_atom(function)
+            try do
+              source_atom = String.to_atom("Elixir." <> source_module)
+              target_atom = String.to_atom("Elixir." <> target_module)
+              function_atom = String.to_atom(function)
 
-            Conflict.check_move_conflicts(source_atom, target_atom, function_atom, arity)
+              Conflict.check_move_conflicts(source_atom, target_atom, function_atom, arity)
+            rescue
+              ArgumentError ->
+                {:error, "Module #{source_module} or #{target_module} not found in system"}
+            end
           else
             {:error, reason} -> {:error, reason}
           end
@@ -4572,19 +4613,24 @@ defmodule Ragex.MCP.Handlers.Tools do
           with {:ok, source_module} <- get_required_param(params, "source_module"),
                {:ok, new_module} <- get_required_param(params, "new_module"),
                {:ok, functions} <- get_required_param(params, "functions") do
-            source_atom = String.to_existing_atom("Elixir." <> source_module)
-            new_atom = String.to_existing_atom("Elixir." <> new_module)
+            try do
+              source_atom = String.to_atom("Elixir." <> source_module)
+              new_atom = String.to_atom("Elixir." <> new_module)
 
-            case parse_function_list(functions) do
-              {:ok, parsed_functions} ->
-                Conflict.check_extract_module_conflicts(
-                  source_atom,
-                  new_atom,
-                  parsed_functions
-                )
+              case parse_function_list(functions) do
+                {:ok, parsed_functions} ->
+                  Conflict.check_extract_module_conflicts(
+                    source_atom,
+                    new_atom,
+                    parsed_functions
+                  )
 
-              {:error, reason} ->
-                {:error, reason}
+                {:error, reason} ->
+                  {:error, reason}
+              end
+            rescue
+              ArgumentError ->
+                {:error, "Module #{source_module} or #{new_module} not found in system"}
             end
           else
             {:error, reason} -> {:error, reason}
@@ -5363,56 +5409,63 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp find_duplicates_tool(%{"path" => path} = params) do
-    threshold = Map.get(params, "threshold", 0.8)
-    recursive = Map.get(params, "recursive", true)
-    format = Map.get(params, "format", "summary")
-    exclude_patterns = Map.get(params, "exclude_patterns", ["_build", "deps", ".git"])
+    try do
+      threshold = Map.get(params, "threshold", 0.8)
+      recursive = Map.get(params, "recursive", true)
+      format = Map.get(params, "format", "summary")
+      exclude_patterns = Map.get(params, "exclude_patterns", ["_build", "deps", ".git"])
 
-    opts = [
-      threshold: threshold,
-      recursive: recursive,
-      exclude_patterns: exclude_patterns
-    ]
+      opts = [
+        threshold: threshold,
+        recursive: recursive,
+        exclude_patterns: exclude_patterns
+      ]
 
-    # Check if comparing two specific files (comma-separated)
-    case String.split(path, ",") do
-      [file1, file2] ->
-        # Compare two files
-        file1 = String.trim(file1)
-        file2 = String.trim(file2)
+      # Check if comparing two specific files (comma-separated)
+      case String.split(path, ",") do
+        [file1, file2] ->
+          # Compare two files
+          file1 = String.trim(file1)
+          file2 = String.trim(file2)
 
-        case Duplication.detect_between_files(file1, file2, opts) do
-          {:ok, result} ->
-            format_duplicate_result(file1, file2, result, format)
+          case Duplication.detect_between_files(file1, file2, opts) do
+            {:ok, result} ->
+              format_duplicate_result(file1, file2, result, format)
 
-          {:error, reason} ->
-            {:error, "Failed to detect duplicates: #{inspect(reason)}"}
-        end
+            {:error, reason} ->
+              {:error, "Failed to detect duplicates: #{inspect(reason)}"}
+          end
 
-      [single_path] ->
-        # Analyze directory or single file context
-        single_path = String.trim(single_path)
+        [single_path] ->
+          # Analyze directory or single file context
+          single_path = String.trim(single_path)
 
-        cond do
-          File.dir?(single_path) ->
-            case Duplication.detect_in_directory(single_path, opts) do
-              {:ok, clones} ->
-                format_duplicates_result(clones, format)
+          cond do
+            File.dir?(single_path) ->
+              case Duplication.detect_in_directory(single_path, opts) do
+                {:ok, clones} ->
+                  format_duplicates_result(clones, format)
 
-              {:error, reason} ->
-                {:error, "Failed to detect duplicates: #{inspect(reason)}"}
-            end
+                {:error, reason} ->
+                  {:error, "Failed to detect duplicates: #{inspect(reason)}"}
+              end
 
-          File.regular?(single_path) ->
-            {:error,
-             "Single file provided. Please provide a directory or two files separated by comma."}
+            File.regular?(single_path) ->
+              {:error,
+               "Single file provided. For duplicate detection, provide a directory path or two files separated by comma (e.g., 'file1.ex,file2.ex')."}
 
-          true ->
-            {:error, "Path not found: #{single_path}"}
-        end
+            true ->
+              {:error, "Path not found: #{single_path}"}
+          end
 
-      _ ->
-        {:error, "Invalid path format. Use a directory or two files separated by comma."}
+        _ ->
+          {:error, "Invalid path format. Use a directory path or two files separated by comma."}
+      end
+    rescue
+      e ->
+        require Logger
+        Logger.error("Duplicate detection error: #{Exception.format(:error, e, __STACKTRACE__)}")
+        {:error, "Duplicate detection failed: #{Exception.message(e)}"}
     end
   end
 
@@ -7028,33 +7081,49 @@ defmodule Ragex.MCP.Handlers.Tools do
       recursive: recursive
     ]
 
+    # Wrap in task with 120s timeout for Metastatic operations
+    task =
+      Task.async(fn ->
+        if File.dir?(path) do
+          case BusinessLogic.analyze_directory(path, opts) do
+            {:ok, dir_result} ->
+              case format do
+                "json" -> format_bl_json(dir_result, path)
+                "detailed" -> format_bl_detailed(dir_result, path)
+                "summary" -> format_bl_summary(dir_result, path)
+                _ -> format_bl_summary(dir_result, path)
+              end
+
+            {:error, reason} ->
+              %{status: "error", error: inspect(reason)}
+          end
+        else
+          case BusinessLogic.analyze_file(path, opts) do
+            {:ok, file_result} ->
+              case format do
+                "json" -> format_bl_file_json(file_result)
+                "detailed" -> format_bl_file_detailed(file_result)
+                "summary" -> format_bl_file_summary(file_result)
+                _ -> format_bl_file_summary(file_result)
+              end
+
+            {:error, reason} ->
+              %{status: "error", error: inspect(reason)}
+          end
+        end
+      end)
+
     result =
-      if File.dir?(path) do
-        case BusinessLogic.analyze_directory(path, opts) do
-          {:ok, dir_result} ->
-            case format do
-              "json" -> format_bl_json(dir_result, path)
-              "detailed" -> format_bl_detailed(dir_result, path)
-              "summary" -> format_bl_summary(dir_result, path)
-              _ -> format_bl_summary(dir_result, path)
-            end
+      case Task.yield(task, 120_000) || Task.shutdown(task) do
+        {:ok, res} ->
+          res
 
-          {:error, reason} ->
-            %{status: "error", error: inspect(reason)}
-        end
-      else
-        case BusinessLogic.analyze_file(path, opts) do
-          {:ok, file_result} ->
-            case format do
-              "json" -> format_bl_file_json(file_result)
-              "detailed" -> format_bl_file_detailed(file_result)
-              "summary" -> format_bl_file_summary(file_result)
-              _ -> format_bl_file_summary(file_result)
-            end
-
-          {:error, reason} ->
-            %{status: "error", error: inspect(reason)}
-        end
+        nil ->
+          %{
+            status: "error",
+            error:
+              "Business logic analysis timed out after 120 seconds. Try analyzing a smaller directory or specific files."
+          }
       end
 
     {:ok, result}
@@ -7258,30 +7327,46 @@ defmodule Ragex.MCP.Handlers.Tools do
     include_security = Map.get(params, "include_security", true)
     format = Map.get(params, "format", "summary")
 
+    # Wrap in task with 120s timeout for Metastatic operations
+    task =
+      Task.async(fn ->
+        if File.dir?(path) do
+          case Semantic.analyze_directory(path, recursive: recursive) do
+            {:ok, dir_result} ->
+              format_semantic_result(
+                dir_result,
+                path,
+                domains,
+                include_security,
+                format,
+                :directory
+              )
+
+            {:error, reason} ->
+              %{status: "error", error: inspect(reason)}
+          end
+        else
+          case Semantic.analyze_file(path) do
+            {:ok, file_result} ->
+              format_semantic_result(file_result, path, domains, include_security, format, :file)
+
+            {:error, reason} ->
+              %{status: "error", error: inspect(reason)}
+          end
+        end
+      end)
+
     result =
-      if File.dir?(path) do
-        case Semantic.analyze_directory(path, recursive: recursive) do
-          {:ok, dir_result} ->
-            format_semantic_result(
-              dir_result,
-              path,
-              domains,
-              include_security,
-              format,
-              :directory
-            )
+      case Task.yield(task, 120_000) || Task.shutdown(task) do
+        {:ok, res} ->
+          res
 
-          {:error, reason} ->
-            %{status: "error", error: inspect(reason)}
-        end
-      else
-        case Semantic.analyze_file(path) do
-          {:ok, file_result} ->
-            format_semantic_result(file_result, path, domains, include_security, format, :file)
-
-          {:error, reason} ->
-            %{status: "error", error: inspect(reason)}
-        end
+        nil ->
+          %{
+            status: "error",
+            error:
+              "Semantic operations analysis timed out after 120 seconds. Try analyzing a smaller directory or specific files."
+          }
       end
 
     {:ok, result}
@@ -7595,45 +7680,61 @@ defmodule Ragex.MCP.Handlers.Tools do
     include_security = Map.get(params, "include_security", true)
     format = Map.get(params, "format", "summary")
 
-    # Run semantic analysis
-    semantic_result =
-      if File.dir?(path) do
-        Semantic.analyze_directory(path, recursive: recursive)
-      else
-        Semantic.analyze_file(path)
-      end
+    # Wrap in task with 120s timeout for Metastatic operations
+    task =
+      Task.async(fn ->
+        # Run semantic analysis
+        semantic_result =
+          if File.dir?(path) do
+            Semantic.analyze_directory(path, recursive: recursive)
+          else
+            Semantic.analyze_file(path)
+          end
 
-    # Run security analysis if requested
-    security_result =
-      if include_security do
-        opts = [analyzers: @security_analyzers, recursive: recursive]
+        # Run security analysis if requested
+        security_result =
+          if include_security do
+            opts = [analyzers: @security_analyzers, recursive: recursive]
 
-        if File.dir?(path) do
-          BusinessLogic.analyze_directory(path, opts)
-        else
-          BusinessLogic.analyze_file(path, opts)
+            if File.dir?(path) do
+              BusinessLogic.analyze_directory(path, opts)
+            else
+              BusinessLogic.analyze_file(path, opts)
+            end
+          else
+            {:ok, nil}
+          end
+
+        case {semantic_result, security_result} do
+          {{:ok, sem}, {:ok, sec}} ->
+            build_semantic_analysis_result(
+              path,
+              sem,
+              sec,
+              include_operations,
+              include_security,
+              format
+            )
+
+          {{:error, reason}, _} ->
+            %{status: "error", error: "Semantic analysis failed: #{inspect(reason)}"}
+
+          {_, {:error, reason}} ->
+            %{status: "error", error: "Security analysis failed: #{inspect(reason)}"}
         end
-      else
-        {:ok, nil}
-      end
+      end)
 
     result =
-      case {semantic_result, security_result} do
-        {{:ok, sem}, {:ok, sec}} ->
-          build_semantic_analysis_result(
-            path,
-            sem,
-            sec,
-            include_operations,
-            include_security,
-            format
-          )
+      case Task.yield(task, 120_000) || Task.shutdown(task) do
+        {:ok, res} ->
+          res
 
-        {{:error, reason}, _} ->
-          %{status: "error", error: "Semantic analysis failed: #{inspect(reason)}"}
-
-        {_, {:error, reason}} ->
-          %{status: "error", error: "Security analysis failed: #{inspect(reason)}"}
+        nil ->
+          %{
+            status: "error",
+            error:
+              "Semantic analysis timed out after 120 seconds. Try analyzing a smaller directory or specific files."
+          }
       end
 
     {:ok, result}

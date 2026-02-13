@@ -652,12 +652,12 @@ defmodule Ragex.Analysis.DeadCode do
 
   # Conditionally refine confidence scores with AI
   defp maybe_refine_with_ai(dead_functions, ai_refine, opts) do
-    # Only use AI if explicitly enabled or if config enables it
+    # Only use AI if explicitly enabled or if config enables it AND provider is available
     use_ai =
       case ai_refine do
-        true -> true
+        true -> ai_provider_available?()
         false -> false
-        nil -> AIRefiner.enabled?(opts)
+        nil -> AIRefiner.enabled?(opts) && ai_provider_available?()
       end
 
     if use_ai && !Enum.empty?(dead_functions) do
@@ -668,12 +668,20 @@ defmodule Ragex.Analysis.DeadCode do
           Logger.info("AI refinement complete")
           refined
 
-          # {:error, reason} ->
-          #   Logger.warning("AI refinement failed: #{inspect(reason)}, using original results")
-          #   dead_functions
+        {:error, reason} ->
+          Logger.warning("AI refinement failed: #{inspect(reason)}, using original results")
+          dead_functions
       end
     else
       dead_functions
+    end
+  end
+
+  # Check if an AI provider is actually available
+  defp ai_provider_available? do
+    case Ragex.AI.Registry.get_provider() do
+      {:ok, _provider} -> true
+      _ -> false
     end
   end
 
