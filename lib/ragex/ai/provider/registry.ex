@@ -65,9 +65,12 @@ defmodule Ragex.AI.Provider.Registry do
 
   @impl true
   def init(_opts) do
-    # Pre-register known providers
+    # Pre-register all known providers
     providers = %{
-      deepseek_r1: Ragex.AI.Provider.DeepSeekR1
+      deepseek_r1: Ragex.AI.Provider.DeepSeekR1,
+      openai: Ragex.AI.Provider.OpenAI,
+      anthropic: Ragex.AI.Provider.Anthropic,
+      ollama: Ragex.AI.Provider.Ollama
     }
 
     Logger.info("AI Provider Registry started with #{map_size(providers)} providers")

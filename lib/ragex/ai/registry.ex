@@ -21,6 +21,51 @@ defmodule Ragex.AI.Registry do
   alias Ragex.AI.Provider.Registry, as: ProviderRegistry
 
   @doc """
+  Get the default AI provider module from configuration.
+
+  Returns the configured default provider without requiring a provider name.
+  This is the primary method for checking if AI features are available.
+
+  ## Returns
+  - `{:ok, module}` - Default provider module if configured
+  - `:error` - No provider configured or provider not found
+
+  ## Examples
+
+      # Check if AI provider is available
+      case Registry.get_provider() do
+        {:ok, provider} -> provider.generate("query", context, [])
+        :error -> {:error, "No AI provider configured"}
+      end
+
+      # Use with pattern matching
+      if match?({:ok, _}, Registry.get_provider()) do
+        # AI features available
+      end
+
+  ## Configuration
+
+      config :ragex, :ai,
+        default_provider: :openai  # or nil to disable
+  """
+  @spec get_provider() :: {:ok, module()} | :error
+  def get_provider do
+    case Ragex.AI.Config.get_default_provider() do
+      nil ->
+        :error
+
+      provider_name when is_atom(provider_name) ->
+        case ProviderRegistry.get_provider(provider_name) do
+          {:ok, module} -> {:ok, module}
+          {:error, :not_found} -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  @doc """
   Get provider module by name.
 
   Retrieves a registered AI provider module from the registry.
@@ -97,6 +142,28 @@ defmodule Ragex.AI.Registry do
   @spec current() :: module()
   def current do
     ProviderRegistry.current()
+  end
+
+  @doc """
+  Check if an AI provider is available.
+
+  Boolean convenience wrapper around `get_provider/0`.
+
+  ## Returns
+  - `true` - A provider is configured and available
+  - `false` - No provider configured
+
+  ## Examples
+
+      if Registry.provider_available?() do
+        # Use AI features
+      else
+        # Skip AI features
+      end
+  """
+  @spec provider_available?() :: boolean()
+  def provider_available? do
+    match?({:ok, _}, get_provider())
   end
 
   @doc """

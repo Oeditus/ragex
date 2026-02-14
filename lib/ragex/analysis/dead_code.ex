@@ -668,9 +668,9 @@ defmodule Ragex.Analysis.DeadCode do
           Logger.info("AI refinement complete")
           refined
 
-        {:error, reason} ->
-          Logger.warning("AI refinement failed: #{inspect(reason)}, using original results")
-          dead_functions
+          # {:error, reason} ->
+          #   Logger.warning("AI refinement failed: #{inspect(reason)}, using original results")
+          #   dead_functions
       end
     else
       dead_functions

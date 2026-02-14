@@ -4252,103 +4252,99 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp metaast_search_tool(
          %{"source_language" => source_lang, "source_construct" => construct} = params
        ) do
-    try do
-      source_language = String.to_atom(source_lang)
-      target_languages = parse_language_list(Map.get(params, "target_languages", []))
-      limit = Map.get(params, "limit", 5)
-      threshold = Map.get(params, "threshold", 0.6)
-      strict = Map.get(params, "strict_equivalence", false)
+    source_language = String.to_atom(source_lang)
+    target_languages = parse_language_list(Map.get(params, "target_languages", []))
+    limit = Map.get(params, "limit", 5)
+    threshold = Map.get(params, "threshold", 0.6)
+    strict = Map.get(params, "strict_equivalence", false)
 
-      opts = [
-        limit: limit,
-        threshold: threshold,
-        strict_equivalence: strict
-      ]
+    opts = [
+      limit: limit,
+      threshold: threshold,
+      strict_equivalence: strict
+    ]
 
-      case CrossLanguage.search_equivalent(source_language, construct, target_languages, opts) do
-        {:ok, results} ->
-          formatted_results =
-            Enum.map(results, fn {language, language_results} ->
-              %{
-                language: Atom.to_string(language),
-                matches:
-                  Enum.map(language_results, fn result ->
-                    %{
-                      node_id: format_node_id(result.node_id),
-                      score: Float.round(result.score, 4),
-                      code_sample: result[:text] || ""
-                    }
-                  end)
-              }
-            end)
+    case CrossLanguage.search_equivalent(source_language, construct, target_languages, opts) do
+      {:ok, results} ->
+        formatted_results =
+          Enum.map(results, fn {language, language_results} ->
+            %{
+              language: Atom.to_string(language),
+              matches:
+                Enum.map(language_results, fn result ->
+                  %{
+                    node_id: format_node_id(result.node_id),
+                    score: Float.round(result.score, 4),
+                    code_sample: result[:text] || ""
+                  }
+                end)
+            }
+          end)
 
-          total_matches =
-            Enum.reduce(formatted_results, 0, fn lang, acc -> acc + length(lang.matches) end)
+        total_matches =
+          Enum.reduce(formatted_results, 0, fn lang, acc -> acc + length(lang.matches) end)
 
-          {:ok,
-           %{
-             status: "success",
-             source_language: source_lang,
-             source_construct: construct,
-             results: formatted_results,
-             total_matches: total_matches
-           }}
+        {:ok,
+         %{
+           status: "success",
+           source_language: source_lang,
+           source_construct: construct,
+           results: formatted_results,
+           total_matches: total_matches
+         }}
 
-        {:error, reason} ->
-          {:error, "MetaAST search failed: #{inspect(reason)}"}
-      end
-    rescue
-      e ->
-        require Logger
-        Logger.error("MetaAST search error: #{Exception.format(:error, e, __STACKTRACE__)}")
-        {:error, "MetaAST search feature error: #{Exception.message(e)}"}
+      {:error, reason} ->
+        {:error, "MetaAST search failed: #{inspect(reason)}"}
     end
+  rescue
+    e ->
+      require Logger
+      Logger.error("MetaAST search error: #{Exception.format(:error, e, __STACKTRACE__)}")
+      {:error, "MetaAST search feature error: #{Exception.message(e)}"}
   end
 
   defp metaast_search_tool(_), do: {:error, "Missing required parameters"}
 
   defp cross_language_alternatives_tool(%{"language" => lang, "code" => code} = params) do
-    try do
-      language = String.to_atom(lang)
-      target_languages = parse_language_list(Map.get(params, "target_languages", []))
+    language = String.to_atom(lang)
+    target_languages = parse_language_list(Map.get(params, "target_languages", []))
 
-      source = %{
-        language: language,
-        code: code
-      }
+    source = %{
+      language: language,
+      code: code
+    }
 
-      case CrossLanguage.suggest_alternatives(source, target_languages) do
-        {:ok, suggestions} ->
-          {:ok,
-           %{
-             status: "success",
-             source_language: lang,
-             alternatives:
-               Enum.map(suggestions, fn suggestion ->
-                 %{
-                   language: Atom.to_string(suggestion.language),
-                   node_id: format_node_id(suggestion.node_id),
-                   score: Float.round(suggestion.score, 4),
-                   code_sample: suggestion.code_sample,
-                   explanation: suggestion.explanation
-                 }
-               end),
-             count: length(suggestions)
-           }}
+    case CrossLanguage.suggest_alternatives(source, target_languages) do
+      {:ok, suggestions} ->
+        {:ok,
+         %{
+           status: "success",
+           source_language: lang,
+           alternatives:
+             Enum.map(suggestions, fn suggestion ->
+               %{
+                 language: Atom.to_string(suggestion.language),
+                 node_id: format_node_id(suggestion.node_id),
+                 score: Float.round(suggestion.score, 4),
+                 code_sample: suggestion.code_sample,
+                 explanation: suggestion.explanation
+               }
+             end),
+           count: length(suggestions)
+         }}
 
-        {:error, reason} ->
-          {:error, "Failed to generate alternatives: #{inspect(reason)}"}
-      end
-    rescue
-      e ->
-        require Logger
-
-        Logger.error(
-          "Cross-language alternatives error: #{Exception.format(:error, e, __STACKTRACE__)}"
-        )
-
-        {:error, "Cross-language feature error: #{Exception.message(e)}"}
+      {:error, reason} ->
+        {:error, "Failed to generate alternatives: #{inspect(reason)}"}
     end
+  rescue
+    e ->
+      require Logger
+
+      Logger.error(
+        "Cross-language alternatives error: #{Exception.format(:error, e, __STACKTRACE__)}"
+      )
+
+      {:error, "Cross-language feature error: #{Exception.message(e)}"}
   end
 
   defp cross_language_alternatives_tool(_), do: {:error, "Missing required parameters"}
@@ -4553,6 +4549,8 @@ defmodule Ragex.MCP.Handlers.Tools do
     end
   end
 
+  defp refactor_conflicts_tool(_), do: {:error, "Missing required parameters"}
+
   defp do_check_conflicts(operation, params) do
     # Check conflicts based on operation type
     result =
@@ -4668,8 +4666,6 @@ defmodule Ragex.MCP.Handlers.Tools do
          }}
     end
   end
-
-  defp refactor_conflicts_tool(_), do: {:error, "Missing required parameters"}
 
   defp undo_refactor_tool(params) do
     project_path = Map.get(params, "project_path", ".")
@@ -5409,64 +5405,62 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp find_duplicates_tool(%{"path" => path} = params) do
-    try do
-      threshold = Map.get(params, "threshold", 0.8)
-      recursive = Map.get(params, "recursive", true)
-      format = Map.get(params, "format", "summary")
-      exclude_patterns = Map.get(params, "exclude_patterns", ["_build", "deps", ".git"])
+    threshold = Map.get(params, "threshold", 0.8)
+    recursive = Map.get(params, "recursive", true)
+    format = Map.get(params, "format", "summary")
+    exclude_patterns = Map.get(params, "exclude_patterns", ["_build", "deps", ".git"])
 
-      opts = [
-        threshold: threshold,
-        recursive: recursive,
-        exclude_patterns: exclude_patterns
-      ]
+    opts = [
+      threshold: threshold,
+      recursive: recursive,
+      exclude_patterns: exclude_patterns
+    ]
 
-      # Check if comparing two specific files (comma-separated)
-      case String.split(path, ",") do
-        [file1, file2] ->
-          # Compare two files
-          file1 = String.trim(file1)
-          file2 = String.trim(file2)
+    # Check if comparing two specific files (comma-separated)
+    case String.split(path, ",") do
+      [file1, file2] ->
+        # Compare two files
+        file1 = String.trim(file1)
+        file2 = String.trim(file2)
 
-          case Duplication.detect_between_files(file1, file2, opts) do
-            {:ok, result} ->
-              format_duplicate_result(file1, file2, result, format)
+        case Duplication.detect_between_files(file1, file2, opts) do
+          {:ok, result} ->
+            format_duplicate_result(file1, file2, result, format)
 
-            {:error, reason} ->
-              {:error, "Failed to detect duplicates: #{inspect(reason)}"}
-          end
+          {:error, reason} ->
+            {:error, "Failed to detect duplicates: #{inspect(reason)}"}
+        end
 
-        [single_path] ->
-          # Analyze directory or single file context
-          single_path = String.trim(single_path)
+      [single_path] ->
+        # Analyze directory or single file context
+        single_path = String.trim(single_path)
 
-          cond do
-            File.dir?(single_path) ->
-              case Duplication.detect_in_directory(single_path, opts) do
-                {:ok, clones} ->
-                  format_duplicates_result(clones, format)
+        cond do
+          File.dir?(single_path) ->
+            case Duplication.detect_in_directory(single_path, opts) do
+              {:ok, clones} ->
+                format_duplicates_result(clones, format)
 
-                {:error, reason} ->
-                  {:error, "Failed to detect duplicates: #{inspect(reason)}"}
-              end
+              {:error, reason} ->
+                {:error, "Failed to detect duplicates: #{inspect(reason)}"}
+            end
 
-            File.regular?(single_path) ->
-              {:error,
-               "Single file provided. For duplicate detection, provide a directory path or two files separated by comma (e.g., 'file1.ex,file2.ex')."}
+          File.regular?(single_path) ->
+            {:error,
+             "Single file provided. For duplicate detection, provide a directory path or two files separated by comma (e.g., 'file1.ex,file2.ex')."}
 
-            true ->
-              {:error, "Path not found: #{single_path}"}
-          end
+          true ->
+            {:error, "Path not found: #{single_path}"}
+        end
 
-        _ ->
-          {:error, "Invalid path format. Use a directory path or two files separated by comma."}
-      end
-    rescue
-      e ->
-        require Logger
-        Logger.error("Duplicate detection error: #{Exception.format(:error, e, __STACKTRACE__)}")
-        {:error, "Duplicate detection failed: #{Exception.message(e)}"}
+      _ ->
+        {:error, "Invalid path format. Use a directory path or two files separated by comma."}
     end
+  rescue
+    e ->
+      require Logger
+      Logger.error("Duplicate detection error: #{Exception.format(:error, e, __STACKTRACE__)}")
+      {:error, "Duplicate detection failed: #{Exception.message(e)}"}
   end
 
   defp find_duplicates_tool(_), do: {:error, "Invalid parameters for find_duplicates"}
