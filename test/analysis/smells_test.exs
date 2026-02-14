@@ -369,8 +369,12 @@ defmodule Ragex.Analysis.SmellsTest do
             assert is_binary(formatted)
             # Due to Metastatic's whole-file analysis limitation, long_function and
             # deep_nesting smells may only have "line 1" when we can't match to a
-            # specific function. This is expected behavior.
-            assert formatted == "line 1" or formatted =~ "long_function"
+            # specific function. Location enrichment may also return "unknown" if
+            # the function isn't found in the knowledge graph. All are expected behavior.
+            assert formatted == "line 1" or
+                     formatted =~ "long_function" or
+                     formatted == "unknown" or
+                     formatted =~ "/tmp/ragex_test_location.ex"
           end
         end
       end

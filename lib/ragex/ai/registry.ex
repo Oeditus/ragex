@@ -18,6 +18,7 @@ defmodule Ragex.AI.Registry do
       current = Registry.current()
   """
 
+  alias Ragex.AI.Config
   alias Ragex.AI.Provider.Registry, as: ProviderRegistry
 
   @doc """
@@ -50,7 +51,7 @@ defmodule Ragex.AI.Registry do
   """
   @spec get_provider() :: {:ok, module()} | :error
   def get_provider do
-    case Ragex.AI.Config.get_default_provider() do
+    case Config.get_default_provider() do
       nil ->
         :error
 
