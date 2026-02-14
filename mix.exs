@@ -125,7 +125,7 @@ defmodule Ragex.MixProject do
         examples/product_cart/README.md
         examples/product_cart/DEMO.md
       ),
-      licenses: ["GPL-3.0"],
+      licenses: ["GPL-3.0", "CC-BY-SA-4.0"],
       maintainers: ["Aleksei Matiushkin"],
       links: %{
         "GitHub" => @source_url,
