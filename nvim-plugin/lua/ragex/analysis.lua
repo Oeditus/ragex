@@ -27,7 +27,10 @@ local function execute_analysis(method, params, title, formatter)
     if formatter then
       ui.show_results(data, { title = title, formatter = formatter })
     else
-      ui.show_float({vim.inspect(data)}, { title = title })
+      -- vim.inspect returns a string with newlines, need to split into array of lines
+      local inspected = vim.inspect(data)
+      local lines = vim.split(inspected, "\n", { plain = true })
+      ui.show_float(lines, { title = title })
     end
   end, core.config.timeout.analyze)
 end
