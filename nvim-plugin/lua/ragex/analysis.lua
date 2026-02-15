@@ -90,19 +90,21 @@ function M.analyze_impact(module, func_name, arity)
     return
   end
   
-  local params = {
-    module = module,
-    function_name = func_name,
-  }
+  -- Server expects target in format: "Module.function/arity" or "Module"
+  local target
   if arity then
-    params.arity = arity
+    target = string.format("%s.%s/%d", module, func_name, arity)
+  else
+    target = string.format("%s.%s", module, func_name)
   end
   
-  execute_analysis("analyze_impact", params, string.format("Impact: %s.%s", module, func_name))
+  local params = { target = target }
+  
+  execute_analysis("analyze_impact", params, string.format("Impact: %s", target))
 end
 
 -- Estimate refactoring effort
-function M.estimate_effort(module, func_name, arity)
+function M.estimate_effort(module, func_name, arity, operation)
   module = module or utils.get_current_module()
   if not module then
     ui.notify("Could not determine current module", "warn")
@@ -118,13 +120,23 @@ function M.estimate_effort(module, func_name, arity)
     return
   end
   
-  local params = {
-    module = module,
-    function_name = func_name,
-  }
-  if arity then
-    params.arity = arity
+  if not operation then
+    -- Default operation for effort estimation
+    operation = "rename_function"
   end
+  
+  -- Server expects target in format: "Module.function/arity" or "Module"
+  local target
+  if arity then
+    target = string.format("%s.%s/%d", module, func_name, arity)
+  else
+    target = string.format("%s.%s", module, func_name)
+  end
+  
+  local params = {
+    operation = operation,
+    target = target
+  }
   
   execute_analysis("estimate_refactoring_effort", params, "Refactoring Effort")
 end
@@ -146,13 +158,15 @@ function M.risk_assessment(module, func_name, arity)
     return
   end
   
-  local params = {
-    module = module,
-    function_name = func_name,
-  }
+  -- Server expects target in format: "Module.function/arity" or "Module"
+  local target
   if arity then
-    params.arity = arity
+    target = string.format("%s.%s/%d", module, func_name, arity)
+  else
+    target = string.format("%s.%s", module, func_name)
   end
+  
+  local params = { target = target }
   
   execute_analysis("risk_assessment", params, "Risk Assessment")
 end
