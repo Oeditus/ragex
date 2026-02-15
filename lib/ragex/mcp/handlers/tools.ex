@@ -2742,6 +2742,8 @@ defmodule Ragex.MCP.Handlers.Tools do
      %{
        node_count: stats.node_count,
        node_counts_by_type: stats.node_counts_by_type,
+       modules: Map.get(stats.node_counts_by_type, :module, 0),
+       functions: Map.get(stats.node_counts_by_type, :function, 0),
        edge_count: stats.edge_count,
        average_degree: stats.average_degree,
        density: stats.density,
