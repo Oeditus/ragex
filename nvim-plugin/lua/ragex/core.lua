@@ -232,10 +232,16 @@ function M.analyze_directory(path, opts)
       return
     end
 
-    if data.files_analyzed then
-      ui.notify(string.format("Analyzed %d files in %s", 
-        data.files_analyzed, 
-        utils.format_duration(data.duration_ms or 0)), "info")
+    -- Server returns: total, analyzed, skipped, success, errors, error_details, graph_stats
+    if data.total and data.success then
+      local msg = string.format("✓ %d/%d files analyzed", data.success, data.total)
+      if data.skipped and data.skipped > 0 then
+        msg = msg .. string.format(" (%d skipped, unchanged)", data.skipped)
+      end
+      if data.errors and data.errors > 0 then
+        msg = msg .. string.format(" [%d errors]", data.errors)
+      end
+      ui.notify(msg, data.errors > 0 and "warn" or "info")
     else
       ui.notify("Directory analyzed", "info")
     end
