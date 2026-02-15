@@ -278,6 +278,29 @@ defmodule Ragex.MCP.Handlers.Tools do
           }
         },
         %{
+          name: "find_callers",
+          description: "Find all functions that call a specific function",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              module: %{
+                type: "string",
+                description: "Module name (e.g., 'MyModule')"
+              },
+              function_name: %{
+                type: "string",
+                description: "Function name (e.g., 'process')"
+              },
+              arity: %{
+                type: "integer",
+                description:
+                  "Function arity (optional - will search for any arity if not provided)"
+              }
+            },
+            required: ["module", "function_name"]
+          }
+        },
+        %{
           name: "graph_stats",
           description:
             "Get comprehensive graph statistics including PageRank and centrality metrics",
@@ -2084,6 +2107,9 @@ defmodule Ragex.MCP.Handlers.Tools do
       "find_paths" ->
         find_paths_tool(arguments)
 
+      "find_callers" ->
+        find_callers_tool(arguments)
+
       "graph_stats" ->
         graph_stats_tool(arguments)
 
@@ -2710,6 +2736,73 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp find_paths_tool(_), do: {:error, "Missing 'from' or 'to' parameter"}
+
+  defp find_callers_tool(%{"module" => module_str, "function_name" => func_str} = params) do
+    module = String.to_atom(module_str)
+    func_name = String.to_atom(func_str)
+
+    # If arity is provided, search for specific function
+    # Otherwise, find all functions with this name regardless of arity
+    callers =
+      case Map.get(params, "arity") do
+        nil ->
+          # Find all arities for this function
+          all_functions = Store.list_nodes(:function, :infinity)
+
+          matching_functions =
+            Enum.filter(all_functions, fn
+              {:function, ^module, ^func_name, _arity} -> true
+              _ -> false
+            end)
+
+          # Get callers for all matching functions
+          matching_functions
+          |> Enum.flat_map(fn func_id ->
+            Store.get_incoming_edges(func_id, :calls)
+          end)
+          |> Enum.uniq()
+
+        arity when is_integer(arity) ->
+          func_id = {:function, module, func_name, arity}
+          Store.get_incoming_edges(func_id, :calls)
+      end
+
+    # Enrich caller data with file/line information
+    enriched_callers =
+      Enum.map(callers, fn caller_id ->
+        case caller_id do
+          {:function, caller_mod, caller_func, caller_arity} ->
+            node_data = Store.find_node(:function, {caller_mod, caller_func, caller_arity})
+
+            %{
+              caller_id: "#{caller_mod}.#{caller_func}/#{caller_arity}",
+              id: "#{caller_mod}.#{caller_func}/#{caller_arity}",
+              module: Atom.to_string(caller_mod),
+              function: Atom.to_string(caller_func),
+              arity: caller_arity,
+              file: node_data[:file],
+              line: node_data[:line]
+            }
+
+          _ ->
+            %{
+              caller_id: format_node_id(caller_id),
+              id: format_node_id(caller_id)
+            }
+        end
+      end)
+
+    {:ok,
+     %{
+       target:
+         "#{module}.#{func_name}" <>
+           if(Map.has_key?(params, "arity"), do: "/#{params["arity"]}", else: ""),
+       callers: enriched_callers,
+       count: length(enriched_callers)
+     }}
+  end
+
+  defp find_callers_tool(_), do: {:error, "Missing 'module' or 'function_name' parameter"}
 
   defp graph_stats_tool(_params) do
     stats = Algorithms.graph_stats()
