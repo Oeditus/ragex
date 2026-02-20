@@ -2057,6 +2057,104 @@ defmodule Ragex.MCP.Handlers.Tools do
             },
             required: ["path"]
           }
+        },
+        # Agent tools - Phase Agent
+        %{
+          name: "agent_analyze",
+          description:
+            "Analyze a project and generate AI-polished report with issues, recommendations, and suggestions. Creates a session for follow-up conversation.",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              path: %{
+                type: "string",
+                description: "Project root path to analyze"
+              },
+              provider: %{
+                type: "string",
+                description: "AI provider to use (default: deepseek_r1)",
+                enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
+              },
+              include_suggestions: %{
+                type: "boolean",
+                description: "Include refactoring suggestions",
+                default: true
+              },
+              skip_embeddings: %{
+                type: "boolean",
+                description: "Skip embedding generation for faster analysis",
+                default: false
+              }
+            },
+            required: ["path"]
+          }
+        },
+        %{
+          name: "agent_chat",
+          description:
+            "Continue conversation with the agent in an existing session. Use after agent_analyze to ask follow-up questions.",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              session_id: %{
+                type: "string",
+                description: "Session ID from agent_analyze"
+              },
+              message: %{
+                type: "string",
+                description: "User message or question"
+              },
+              provider: %{
+                type: "string",
+                description: "AI provider override",
+                enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
+              }
+            },
+            required: ["session_id", "message"]
+          }
+        },
+        %{
+          name: "agent_session_info",
+          description:
+            "Get information about an agent session including message count and issues summary",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              session_id: %{
+                type: "string",
+                description: "Session ID to query"
+              }
+            },
+            required: ["session_id"]
+          }
+        },
+        %{
+          name: "agent_list_sessions",
+          description: "List all active agent sessions",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              limit: %{
+                type: "integer",
+                description: "Maximum sessions to return",
+                default: 20
+              }
+            }
+          }
+        },
+        %{
+          name: "agent_clear_session",
+          description: "End and clear an agent session",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              session_id: %{
+                type: "string",
+                description: "Session ID to clear"
+              }
+            },
+            required: ["session_id"]
+          }
         }
       ]
     }
@@ -2265,6 +2363,22 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "semantic_analysis" ->
         semantic_analysis_tool(arguments)
+
+      # Agent tools
+      "agent_analyze" ->
+        agent_analyze_tool(arguments)
+
+      "agent_chat" ->
+        agent_chat_tool(arguments)
+
+      "agent_session_info" ->
+        agent_session_info_tool(arguments)
+
+      "agent_list_sessions" ->
+        agent_list_sessions_tool(arguments)
+
+      "agent_clear_session" ->
+        agent_clear_session_tool(arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
@@ -7918,4 +8032,150 @@ defmodule Ragex.MCP.Handlers.Tools do
     |> Enum.map(fn {cwe, issues} -> {cwe, length(issues)} end)
     |> Map.new()
   end
+
+  # Agent tool implementations
+
+  defp agent_analyze_tool(%{"path" => path} = params) do
+    alias Ragex.Agent.Core
+
+    provider = parse_provider(Map.get(params, "provider"))
+    include_suggestions = Map.get(params, "include_suggestions", true)
+    skip_embeddings = Map.get(params, "skip_embeddings", false)
+
+    opts = []
+    opts = if provider, do: Keyword.put(opts, :provider, provider), else: opts
+    opts = Keyword.put(opts, :include_suggestions, include_suggestions)
+    opts = Keyword.put(opts, :skip_embeddings, skip_embeddings)
+
+    start_time = System.monotonic_time(:millisecond)
+
+    case Core.analyze_project(path, opts) do
+      {:ok, result} ->
+        duration = System.monotonic_time(:millisecond) - start_time
+
+        {:ok,
+         %{
+           status: "success",
+           session_id: result.session_id,
+           project_path: path,
+           report: result.report,
+           issues_count: result.summary.total_issues,
+           analysis_duration_ms: duration,
+           message:
+             "Analysis complete. Use agent_chat with session_id '#{result.session_id}' to continue the conversation."
+         }}
+
+      {:error, reason} ->
+        {:error, "Agent analysis failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp agent_analyze_tool(_), do: {:error, "Missing required 'path' parameter"}
+
+  defp agent_chat_tool(%{"session_id" => session_id, "message" => message} = params) do
+    alias Ragex.Agent.Core
+
+    provider = parse_provider(Map.get(params, "provider"))
+
+    opts = []
+    opts = if provider, do: Keyword.put(opts, :provider, provider), else: opts
+
+    case Core.chat(session_id, message, opts) do
+      {:ok, result} ->
+        {:ok,
+         %{
+           status: "success",
+           session_id: session_id,
+           response: result.content,
+           tools_used: Map.get(result, :tool_calls_made, []),
+           model: Map.get(result, :model)
+         }}
+
+      {:error, :not_found} ->
+        {:error, "Session not found: #{session_id}. Start a new session with agent_analyze."}
+
+      {:error, reason} ->
+        {:error, "Agent chat failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp agent_chat_tool(_), do: {:error, "Missing required 'session_id' or 'message' parameter"}
+
+  defp agent_session_info_tool(%{"session_id" => session_id}) do
+    alias Ragex.Agent.Memory
+
+    case Memory.get_session(session_id) do
+      {:ok, session} ->
+        issues = session.metadata[:issues] || %{}
+
+        issues_count =
+          Enum.reduce(issues, 0, fn {_key, value}, acc ->
+            acc + count_items(value)
+          end)
+
+        {:ok,
+         %{
+           status: "success",
+           session_id: session_id,
+           project_path: session.metadata[:project_path],
+           created_at: DateTime.to_iso8601(session.created_at),
+           last_activity: DateTime.to_iso8601(session.updated_at),
+           message_count: length(session.messages),
+           issues_count: issues_count
+         }}
+
+      {:error, :not_found} ->
+        {:error, "Session not found: #{session_id}"}
+    end
+  end
+
+  defp agent_session_info_tool(_), do: {:error, "Missing required 'session_id' parameter"}
+
+  defp count_items(items) when is_list(items), do: length(items)
+  defp count_items(%{count: count}), do: count
+  defp count_items(%{suggestions: suggestions}) when is_list(suggestions), do: length(suggestions)
+  defp count_items(_), do: 0
+
+  defp agent_list_sessions_tool(params) do
+    alias Ragex.Agent.Memory
+
+    limit = Map.get(params, "limit", 20)
+
+    sessions = Memory.list_sessions(limit: limit)
+
+    formatted =
+      Enum.map(sessions, fn session ->
+        issues = session.metadata[:issues] || %{}
+
+        issues_count =
+          Enum.reduce(issues, 0, fn {_key, value}, acc ->
+            acc + count_items(value)
+          end)
+
+        %{
+          session_id: session.id,
+          project_path: session.metadata[:project_path],
+          created_at: DateTime.to_iso8601(session.created_at),
+          last_activity: DateTime.to_iso8601(session.updated_at),
+          message_count: length(session.messages),
+          issues_count: issues_count
+        }
+      end)
+
+    {:ok, %{status: "success", sessions: formatted, count: length(formatted)}}
+  end
+
+  defp agent_clear_session_tool(%{"session_id" => session_id}) do
+    alias Ragex.Agent.Memory
+
+    case Memory.clear_session(session_id) do
+      :ok ->
+        {:ok, %{status: "success", message: "Session cleared: #{session_id}"}}
+
+      {:error, :not_found} ->
+        {:error, "Session not found: #{session_id}"}
+    end
+  end
+
+  defp agent_clear_session_tool(_), do: {:error, "Missing required 'session_id' parameter"}
 end

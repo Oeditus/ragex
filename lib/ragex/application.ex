@@ -38,7 +38,9 @@ defmodule Ragex.Application do
       # AI response caching
       Ragex.AI.Cache,
       # AI usage tracking and rate limiting
-      Ragex.AI.Usage
+      Ragex.AI.Usage,
+      # Agent conversation memory
+      Ragex.Agent.Memory
     ]
 
     # MCP servers only start if :start_server is true (default)

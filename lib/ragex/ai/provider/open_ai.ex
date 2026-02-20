@@ -47,7 +47,7 @@ defmodule Ragex.AI.Provider.OpenAI do
     with {:ok, config} <- get_config(opts),
          {:ok, api_key} <- get_api_key(),
          {:ok, messages} <- build_messages(prompt, context, opts),
-         {:ok, response} <- call_api(messages, config, api_key) do
+         {:ok, response} <- call_api(messages, config, api_key, opts) do
       parse_response(response)
     else
       {:error, reason} = error ->
@@ -95,7 +95,7 @@ defmodule Ragex.AI.Provider.OpenAI do
         "gpt-3.5-turbo",
         "gpt-3.5-turbo-16k"
       ],
-      capabilities: [:chat, :streaming, :function_calling],
+      capabilities: [:chat, :streaming, :function_calling, :tool_use],
       endpoint: get_endpoint(),
       configured: validate_config() == :ok
     }
@@ -178,15 +178,18 @@ defmodule Ragex.AI.Provider.OpenAI do
     {:ok, messages}
   end
 
-  defp call_api(messages, config, api_key) do
+  defp call_api(messages, config, api_key, opts) do
     url = "#{config.endpoint}/chat/completions"
 
-    body = %{
-      model: config.model,
-      messages: messages,
-      temperature: config.temperature,
-      max_tokens: config.max_tokens
-    }
+    body =
+      %{
+        model: config.model,
+        messages: messages,
+        temperature: config.temperature,
+        max_tokens: config.max_tokens
+      }
+      |> maybe_add_tools(opts)
+      |> maybe_add_tool_choice(opts)
 
     headers = [
       {"authorization", "Bearer #{api_key}"},
@@ -207,11 +210,29 @@ defmodule Ragex.AI.Provider.OpenAI do
     end
   end
 
-  defp parse_response(%{"choices" => [%{"message" => %{"content" => content}} | _]} = body) do
+  defp maybe_add_tools(body, opts) do
+    case Keyword.get(opts, :tools) do
+      nil -> body
+      [] -> body
+      tools when is_list(tools) -> Map.put(body, :tools, tools)
+    end
+  end
+
+  defp maybe_add_tool_choice(body, opts) do
+    case Keyword.get(opts, :tool_choice) do
+      nil -> body
+      choice -> Map.put(body, :tool_choice, choice)
+    end
+  end
+
+  defp parse_response(%{"choices" => [%{"message" => message} | _]} = body) do
+    content = message["content"]
+    tool_calls = parse_tool_calls(message["tool_calls"])
     usage = body["usage"] || %{}
 
     response = %{
       content: content,
+      tool_calls: tool_calls,
       model: body["model"],
       usage: %{
         prompt_tokens: usage["prompt_tokens"] || 0,
@@ -230,6 +251,25 @@ defmodule Ragex.AI.Provider.OpenAI do
   defp parse_response(body) do
     Logger.error("Unexpected OpenAI response format: #{inspect(body)}")
     {:error, {:invalid_response, body}}
+  end
+
+  defp parse_tool_calls(nil), do: nil
+  defp parse_tool_calls([]), do: nil
+
+  defp parse_tool_calls(tool_calls) when is_list(tool_calls) do
+    Enum.map(tool_calls, fn tc ->
+      arguments =
+        case Jason.decode(tc["function"]["arguments"] || "{}") do
+          {:ok, args} -> args
+          _ -> %{}
+        end
+
+      %{
+        id: tc["id"],
+        name: tc["function"]["name"],
+        arguments: arguments
+      }
+    end)
   end
 
   defp stream_api(messages, config, api_key) do

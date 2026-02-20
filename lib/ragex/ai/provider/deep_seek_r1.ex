@@ -128,7 +128,7 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
       name: "DeepSeek R1",
       provider: :deepseek_r1,
       models: ["deepseek-chat", "deepseek-reasoner"],
-      capabilities: [:generate, :stream, :function_calling],
+      capabilities: [:generate, :stream, :function_calling, :tool_use],
       api_version: "v1",
       docs_url: "https://api-docs.deepseek.com/"
     }
@@ -147,6 +147,23 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
       stream: Keyword.get(opts, :stream, false)
     }
     |> maybe_add_system_prompt(opts)
+    |> maybe_add_tools(opts)
+    |> maybe_add_tool_choice(opts)
+  end
+
+  defp maybe_add_tools(body, opts) do
+    case Keyword.get(opts, :tools) do
+      nil -> body
+      [] -> body
+      tools when is_list(tools) -> Map.put(body, :tools, tools)
+    end
+  end
+
+  defp maybe_add_tool_choice(body, opts) do
+    case Keyword.get(opts, :tool_choice) do
+      nil -> body
+      choice -> Map.put(body, :tool_choice, choice)
+    end
   end
 
   defp build_messages(prompt, nil, _opts) do
@@ -257,24 +274,48 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
   end
 
   defp parse_response(%{body: body}) when is_map(body) do
-    content =
-      body
-      |> get_in(["choices", Access.at(0), "message", "content"])
-      |> to_string()
+    message = get_in(body, ["choices", Access.at(0), "message"]) || %{}
+
+    content = message["content"]
+    tool_calls = parse_tool_calls(message["tool_calls"])
 
     usage = Map.get(body, "usage", %{})
     model = Map.get(body, "model", "unknown")
+    finish_reason = get_in(body, ["choices", Access.at(0), "finish_reason"])
 
     {:ok,
      %{
        content: content,
+       tool_calls: tool_calls,
        model: model,
        usage: usage,
-       metadata: %{raw_response: body}
+       metadata: %{
+         raw_response: body,
+         finish_reason: finish_reason
+       }
      }}
   end
 
   defp parse_response(_), do: {:error, "Invalid response format"}
+
+  defp parse_tool_calls(nil), do: nil
+  defp parse_tool_calls([]), do: nil
+
+  defp parse_tool_calls(tool_calls) when is_list(tool_calls) do
+    Enum.map(tool_calls, fn tc ->
+      arguments =
+        case Jason.decode(tc["function"]["arguments"] || "{}") do
+          {:ok, args} -> args
+          _ -> %{}
+        end
+
+      %{
+        id: tc["id"],
+        name: tc["function"]["name"],
+        arguments: arguments
+      }
+    end)
+  end
 
   defp receive_deepseek_chunks(state) do
     receive do

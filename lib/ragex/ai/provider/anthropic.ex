@@ -92,7 +92,7 @@ defmodule Ragex.AI.Provider.Anthropic do
         "claude-3-sonnet-20240229",
         "claude-3-haiku-20240307"
       ],
-      capabilities: [:chat, :streaming, :vision],
+      capabilities: [:chat, :streaming, :vision, :tool_use],
       endpoint: get_endpoint(),
       configured: validate_config() == :ok
     }
@@ -168,16 +168,19 @@ defmodule Ragex.AI.Provider.Anthropic do
     {:ok, {system_prompt, [%{role: "user", content: user_message}]}}
   end
 
-  defp call_api({system, messages}, config, api_key, _opts) do
+  defp call_api({system, messages}, config, api_key, opts) do
     url = "#{config.endpoint}/messages"
 
-    body = %{
-      model: config.model,
-      messages: messages,
-      system: system,
-      temperature: config.temperature,
-      max_tokens: config.max_tokens
-    }
+    body =
+      %{
+        model: config.model,
+        messages: messages,
+        system: system,
+        temperature: config.temperature,
+        max_tokens: config.max_tokens
+      }
+      |> maybe_add_tools(opts)
+      |> maybe_add_tool_choice(opts)
 
     headers = [
       {"x-api-key", api_key},
@@ -199,11 +202,40 @@ defmodule Ragex.AI.Provider.Anthropic do
     end
   end
 
-  defp parse_response(%{"content" => [%{"text" => content} | _]} = body) do
+  defp maybe_add_tools(body, opts) do
+    case Keyword.get(opts, :tools) do
+      nil -> body
+      [] -> body
+      tools when is_list(tools) -> Map.put(body, :tools, tools)
+    end
+  end
+
+  defp maybe_add_tool_choice(body, opts) do
+    case Keyword.get(opts, :tool_choice) do
+      nil -> body
+      # Anthropic uses different format for tool_choice
+      "auto" -> Map.put(body, :tool_choice, %{type: "auto"})
+      "any" -> Map.put(body, :tool_choice, %{type: "any"})
+      %{} = choice -> Map.put(body, :tool_choice, choice)
+      _ -> body
+    end
+  end
+
+  defp parse_response(%{"content" => content_blocks} = body) when is_list(content_blocks) do
+    # Extract text content
+    content =
+      content_blocks
+      |> Enum.filter(&(&1["type"] == "text"))
+      |> Enum.map_join("", & &1["text"])
+
+    # Extract tool use blocks
+    tool_calls = parse_tool_use_blocks(content_blocks)
+
     usage = body["usage"] || %{}
 
     response = %{
-      content: content,
+      content: if(content == "", do: nil, else: content),
+      tool_calls: tool_calls,
       model: body["model"],
       usage: %{
         prompt_tokens: usage["input_tokens"] || 0,
@@ -222,6 +254,24 @@ defmodule Ragex.AI.Provider.Anthropic do
   defp parse_response(body) do
     Logger.error("Unexpected Anthropic response format: #{inspect(body)}")
     {:error, {:invalid_response, body}}
+  end
+
+  defp parse_tool_use_blocks(content_blocks) do
+    tool_uses =
+      content_blocks
+      |> Enum.filter(&(&1["type"] == "tool_use"))
+      |> Enum.map(fn block ->
+        %{
+          id: block["id"],
+          name: block["name"],
+          arguments: block["input"] || %{}
+        }
+      end)
+
+    case tool_uses do
+      [] -> nil
+      uses -> uses
+    end
   end
 
   defp stream_api({system, messages}, config, api_key, _opts) do
