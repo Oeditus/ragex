@@ -25,6 +25,7 @@ defmodule Ragex.CLI.Chat do
 
   alias Ragex.Agent.{Core, Memory}
   alias Ragex.AI.Config, as: AIConfig
+  alias Ragex.Analysis.Cache, as: AnalysisCache
   alias Ragex.CLI.{Colors, Progress}
   alias Ragex.Graph.Store
   alias Ragex.RAG.Pipeline
@@ -50,14 +51,16 @@ defmodule Ragex.CLI.Chat do
   - `:model` - Model name override
   - `:strategy` - Retrieval strategy: :fusion, :semantic_first, :graph_first (default: :fusion)
   - `:skip_analysis` - Skip initial analysis (default: false)
+  - `:include_dead_code` - Enable dead code analysis (default: false)
   """
   @spec start(keyword()) :: :ok
   def start(opts \\ []) do
-    path = Keyword.get(opts, :path, File.cwd!()) |> Path.expand()
+    path = opts |> Keyword.get_lazy(:path, fn -> File.cwd!() end) |> Path.expand()
     provider = Keyword.get(opts, :provider)
     model = Keyword.get(opts, :model)
     strategy = Keyword.get(opts, :strategy, :fusion)
     skip_analysis = Keyword.get(opts, :skip_analysis, false)
+    include_dead_code = Keyword.get(opts, :include_dead_code, false)
 
     state = %{
       session_id: nil,
@@ -67,7 +70,8 @@ defmodule Ragex.CLI.Chat do
       strategy: strategy,
       last_sources: [],
       message_count: 0,
-      analyzed: false
+      analyzed: false,
+      include_dead_code: include_dead_code
     }
 
     render_banner(state)
@@ -282,10 +286,52 @@ defmodule Ragex.CLI.Chat do
   defp run_analysis(state) do
     IO.puts("")
 
-    spinner =
-      start_spinner("Analyzing #{Path.basename(state.path)}...")
+    # Show cache status before analysis
+    graph_stats = Store.stats()
 
-    case Core.analyze_project(state.path, skip_embeddings: false) do
+    cache_status =
+      if graph_stats.nodes > 0 do
+        case AnalysisCache.load(state.path) do
+          {:ok, _} ->
+            IO.puts(
+              Colors.info(
+                "Cache hit: #{graph_stats.nodes} nodes, #{graph_stats.edges} edges loaded. All files unchanged."
+              )
+            )
+
+            :fresh
+
+          {:stale, _, changed} ->
+            IO.puts(
+              Colors.info(
+                "Partial cache: #{graph_stats.nodes} nodes loaded. #{length(changed)} files changed, updating..."
+              )
+            )
+
+            :stale
+
+          _ ->
+            :miss
+        end
+      else
+        :miss
+      end
+
+    label =
+      case cache_status do
+        :fresh -> "Restoring from cache..."
+        :stale -> "Incremental analysis..."
+        :miss -> "Analyzing #{Path.basename(state.path)}..."
+      end
+
+    spinner = start_spinner(label)
+
+    analysis_opts = [
+      skip_embeddings: false,
+      include_dead_code: state.include_dead_code
+    ]
+
+    case Core.analyze_project(state.path, analysis_opts) do
       {:ok, result} ->
         stop_spinner(spinner, nil)
 
@@ -301,6 +347,13 @@ defmodule Ragex.CLI.Chat do
           )
 
         Owl.IO.puts(box)
+
+        # Display the AI-generated report if available
+        if result.report && result.report != "" do
+          IO.puts("")
+          IO.puts(format_assistant_text(result.report))
+          IO.puts("")
+        end
 
         %{state | session_id: result.session_id, analyzed: true}
 
@@ -536,14 +589,17 @@ defmodule Ragex.CLI.Chat do
   end
 
   defp format_analysis_summary(summary) do
-    [
+    lines = [
       "Total Issues: #{summary.total_issues}",
-      "Dead Code:    #{summary.dead_code_count}",
+      if(summary.dead_code_count > 0, do: "Dead Code:    #{summary.dead_code_count}"),
       "Duplicates:   #{summary.duplicate_count}",
       "Security:     #{summary.security_count}",
       "Smells:       #{summary.smell_count}",
       "Complexity:   #{summary.complexity_count}"
     ]
+
+    lines
+    |> Enum.reject(&is_nil/1)
     |> Enum.join("\n")
   end
 

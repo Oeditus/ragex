@@ -31,8 +31,8 @@ config :ragex, :auto_analyze_dirs, dirs
 # else
 # Dev/test: use env vars or default to test keys
 config :ragex, :ai_keys,
-  openai: System.get_env("OPENAI_API_KEY", "test-key"),
-  anthropic: System.get_env("ANTHROPIC_API_KEY", "test-key"),
-  deepseek: System.get_env("DEEPSEEK_API_KEY", "test-key")
+  openai: System.get_env("OPENAI_API_KEY"),
+  anthropic: System.get_env("ANTHROPIC_API_KEY"),
+  deepseek_r1: System.get_env("DEEPSEEK_API_KEY")
 
 # end

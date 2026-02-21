@@ -134,11 +134,9 @@ defmodule Ragex.CLI.Progress do
       iex> Progress.stop(nil, "Skipped")  # Safe - just prints message
       :ok
   """
-  @spec stop(pid() | nil, String.t()) :: :ok
-  def stop(nil, message) when is_binary(message) do
-    IO.puts(message)
-    :ok
-  end
+  @spec stop(pid() | nil, String.t() | nil) :: :ok
+  def stop(nil, nil), do: :ok
+  def stop(nil, message) when is_binary(message), do: IO.puts(message)
 
   def stop(pid, message) when is_pid(pid) and is_binary(message) do
     stop_spinner(pid, message)

@@ -10,14 +10,21 @@ defmodule Ragex.Graph.Store do
   require Logger
 
   alias Ragex.Embeddings.{FileTracker, Persistence}
+  alias Ragex.Graph.Persistence, as: GraphPersistence
 
   @nodes_table :ragex_nodes
   @edges_table :ragex_edges
   @embeddings_table :ragex_embeddings
 
-  @timeout :ragex
-           |> Application.compile_env(:timeouts, [])
-           |> Keyword.get(:store, :infinity)
+  _timeout =
+    :ragex
+    |> Application.compile_env(:timeouts, [])
+    |> Keyword.get(:store, :infinity)
+
+  @functions_limit Application.compile_env(:ragex, :functions_limit, 1_000)
+  @nodes_limit Application.compile_env(:ragex, :nodes_limit, 1_000)
+  @edges_limit Application.compile_env(:ragex, :edges_limit, 1_000)
+  @embeddings_limit Application.compile_env(:ragex, :embeddings_limit, 1_000)
 
   # Client API
 
@@ -31,11 +38,7 @@ defmodule Ragex.Graph.Store do
   Node types: :module, :function, :type, :variable, :file
   """
   def add_node(node_type, node_id, data) do
-    GenServer.call(__MODULE__, {:add_node, node_type, node_id, data}, @timeout)
-  catch
-    :exit,
-    {:timeout, {GenServer, :call, [_pid, {:add_node, ^node_type, ^node_id, ^data}, @timeout]}} ->
-      {:error, :timeout}
+    GenServer.cast(__MODULE__, {:add_node, node_type, node_id, data})
   end
 
   @doc """
@@ -140,10 +143,9 @@ defmodule Ragex.Graph.Store do
       [%{id: ModuleA, data: %{name: ModuleA, file: "lib/a.ex"}}, ...]
   """
   def list_modules do
-    list_nodes(:module, :infinity)
-    |> Enum.map(fn node ->
-      %{id: node.id, data: node.data}
-    end)
+    :module
+    |> list_nodes(:infinity)
+    |> Enum.map(&%{id: &1.id, data: &1.data})
   end
 
   @doc """
@@ -170,7 +172,7 @@ defmodule Ragex.Graph.Store do
   """
   def list_functions(opts \\ []) do
     module_filter = Keyword.get(opts, :module)
-    limit = Keyword.get(opts, :limit, 1000)
+    limit = Keyword.get(opts, :limit, @functions_limit)
 
     pattern =
       case module_filter do
@@ -178,7 +180,8 @@ defmodule Ragex.Graph.Store do
         mod -> {{:function, {mod, :"$1", :"$2"}}, :"$3"}
       end
 
-    :ets.match(@nodes_table, pattern)
+    @nodes_table
+    |> :ets.match(pattern)
     |> Enum.take(limit)
     |> Enum.map(fn
       [module, name, arity, data] ->
@@ -192,7 +195,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Lists nodes with optional filtering by type.
   """
-  def list_nodes(node_type \\ nil, limit \\ 100) do
+  def list_nodes(node_type \\ nil, limit \\ @nodes_limit) do
     pattern =
       case node_type do
         nil -> {{:"$1", :"$2"}, :"$3"}
@@ -219,7 +222,8 @@ defmodule Ragex.Graph.Store do
   def count_nodes_by_type(node_type) do
     pattern = {{node_type, :"$1"}, :"$2"}
 
-    :ets.match(@nodes_table, pattern)
+    @nodes_table
+    |> :ets.match(pattern)
     |> length()
   end
 
@@ -233,12 +237,7 @@ defmodule Ragex.Graph.Store do
   - `:metadata` - Additional metadata map
   """
   def add_edge(from_node, to_node, edge_type, opts \\ []) do
-    GenServer.call(__MODULE__, {:add_edge, from_node, to_node, edge_type, opts}, @timeout)
-  catch
-    :exit,
-    {:timeout,
-     {GenServer, :call, [_pid, {:add_edge, ^from_node, ^to_node, ^edge_type, ^opts}, @timeout]}} ->
-      {:error, :timeout}
+    GenServer.cast(__MODULE__, {:add_edge, from_node, to_node, edge_type, opts})
   end
 
   @doc """
@@ -302,7 +301,7 @@ defmodule Ragex.Graph.Store do
   """
   def list_edges(opts \\ []) do
     edge_type = Keyword.get(opts, :edge_type)
-    limit = Keyword.get(opts, :limit, 1000)
+    limit = Keyword.get(opts, :limit, @edges_limit)
 
     pattern =
       case edge_type do
@@ -310,7 +309,8 @@ defmodule Ragex.Graph.Store do
         type -> {{:"$1", :"$2", type}, :"$3"}
       end
 
-    :ets.match(@edges_table, pattern)
+    @edges_table
+    |> :ets.match(pattern)
     |> Enum.take(limit)
     |> Enum.map(fn
       [from_node, to_node, edge_type, metadata] ->
@@ -330,34 +330,21 @@ defmodule Ragex.Graph.Store do
   Returns `:ok` if successful, `{:error, :timeout}` on timeout.
   """
   def remove_node(node_type, node_id) do
-    GenServer.call(__MODULE__, {:remove_node, node_type, node_id}, @timeout)
-  catch
-    :exit,
-    {:timeout, {GenServer, :call, [_pid, {:remove_node, ^node_type, ^node_id}, @timeout]}} ->
-      {:error, :timeout}
+    GenServer.cast(__MODULE__, {:remove_node, node_type, node_id})
   end
 
   @doc """
   Clears all data from the graph.
   """
   def clear do
-    GenServer.call(__MODULE__, :clear, @timeout)
-  catch
-    :exit, {:timeout, {GenServer, :call, [_pid, :clear, @timeout]}} ->
-      {:error, :timeout}
+    GenServer.cast(__MODULE__, :clear)
   end
 
   @doc """
   Stores an embedding vector for a node.
   """
   def store_embedding(node_type, node_id, embedding, text) do
-    GenServer.call(__MODULE__, {:store_embedding, node_type, node_id, embedding, text}, @timeout)
-  catch
-    :exit,
-    {:timeout,
-     {GenServer, :call,
-      [_pid, {:store_embedding, ^node_type, ^node_id, ^embedding, ^text}, @timeout]}} ->
-      {:error, :timeout}
+    GenServer.cast(__MODULE__, {:store_embedding, node_type, node_id, embedding, text})
   end
 
   @doc """
@@ -377,14 +364,15 @@ defmodule Ragex.Graph.Store do
 
   Returns list of `{node_type, node_id, embedding, text}` tuples.
   """
-  def list_embeddings(node_type \\ nil, limit \\ 1000) do
+  def list_embeddings(node_type \\ nil, limit \\ @embeddings_limit) do
     pattern =
       case node_type do
         nil -> {{:"$1", :"$2"}, :"$3", :"$4"}
         type -> {{type, :"$1"}, :"$2", :"$3"}
       end
 
-    :ets.match(@embeddings_table, pattern)
+    @embeddings_table
+    |> :ets.match(pattern)
     |> Enum.take(limit)
     |> Enum.map(fn
       [node_type, node_id, embedding, text] -> {node_type, node_id, embedding, text}
@@ -428,7 +416,7 @@ defmodule Ragex.Graph.Store do
         Logger.info("Graph store initialized with #{count} cached embeddings")
 
       {:error, :not_found} ->
-        Logger.info("Graph store initialized (no cache found)")
+        Logger.info("Graph store initialized (no embedding cache found)")
 
       {:error, :incompatible} ->
         Logger.warning("Graph store initialized (cache incompatible with current model)")
@@ -437,35 +425,47 @@ defmodule Ragex.Graph.Store do
         Logger.warning("Graph store initialized (failed to load cache: #{inspect(reason)})")
     end
 
+    # Attempt to load cached graph nodes/edges
+    case GraphPersistence.load() do
+      {:ok, %{nodes: n, edges: e}} ->
+        Logger.info("Loaded graph from cache: #{n} nodes, #{e} edges")
+
+      {:error, :not_found} ->
+        Logger.debug("No graph cache found")
+
+      {:error, reason} ->
+        Logger.warning("Failed to load graph cache: #{inspect(reason)}")
+    end
+
     {:ok, %{}}
   end
 
   @impl true
-  def handle_call({:add_node, node_type, node_id, data}, _from, state) do
+  def handle_cast({:add_node, node_type, node_id, data}, state) do
     key = {node_type, node_id}
     :ets.insert(@nodes_table, {key, data})
-    {:reply, :ok, state}
+    {:noreply, state}
   end
 
   @impl true
-  def handle_call({:add_edge, from_node, to_node, edge_type, opts}, _from, state) do
+  def handle_cast({:add_edge, from_node, to_node, edge_type, opts}, state) do
     key = {from_node, to_node, edge_type}
     weight = Keyword.get(opts, :weight, 1.0)
     metadata = Keyword.get(opts, :metadata, %{})
     metadata_with_weight = Map.put(metadata, :weight, weight)
     :ets.insert(@edges_table, {key, metadata_with_weight})
-    {:reply, :ok, state}
+    {:noreply, state}
   end
 
   @impl true
-  def handle_call({:store_embedding, node_type, node_id, embedding, text}, _from, state) do
+  def handle_cast({:store_embedding, node_type, node_id, embedding, text}, state) do
     key = {node_type, node_id}
     :ets.insert(@embeddings_table, {key, embedding, text})
-    {:reply, :ok, state}
+    {:noreply, state}
   end
 
   @impl true
-  def handle_call({:remove_node, node_type, node_id}, _from, state) do
+  def handle_cast({:remove_node, node_type, node_id}, state) do
     node_key = {node_type, node_id}
 
     # Build edge identifier: edges use tuples like {:module, id} or {:function, mod, name, arity}
@@ -500,27 +500,35 @@ defmodule Ragex.Graph.Store do
     # Remove embedding if exists
     :ets.delete(@embeddings_table, node_key)
 
-    {:reply, :ok, state}
+    {:noreply, state}
   end
 
   @impl true
-  def handle_call(:clear, _from, state) do
+  def handle_cast(:clear, state) do
     :ets.delete_all_objects(@nodes_table)
     :ets.delete_all_objects(@edges_table)
     :ets.delete_all_objects(@embeddings_table)
-    {:reply, :ok, state}
+    {:noreply, state}
   end
 
   @impl true
   def terminate(reason, _state) do
-    # Save embeddings to disk on normal shutdown
+    # Save to disk on normal shutdown
     if reason == :shutdown or reason == :normal do
       case Persistence.save(@embeddings_table) do
         {:ok, path} ->
           Logger.info("Embeddings saved to #{path}")
 
-        {:error, reason} ->
-          Logger.error("Failed to save embeddings: #{inspect(reason)}")
+        {:error, err} ->
+          Logger.error("Failed to save embeddings: #{inspect(err)}")
+      end
+
+      case GraphPersistence.save() do
+        {:ok, path} ->
+          Logger.info("Graph saved to #{path}")
+
+        {:error, err} ->
+          Logger.error("Failed to save graph: #{inspect(err)}")
       end
     else
       Logger.warning("Graph store terminating abnormally: #{inspect(reason)}, skipping save")

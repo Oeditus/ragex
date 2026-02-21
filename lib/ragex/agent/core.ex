@@ -25,6 +25,8 @@ defmodule Ragex.Agent.Core do
   alias Ragex.Agent.{Executor, Memory, Report}
   alias Ragex.Analyzers.Directory
 
+  alias Ragex.Analysis.Cache, as: AnalysisCache
+
   alias Ragex.Analysis.{
     DeadCode,
     DependencyGraph,
@@ -34,6 +36,10 @@ defmodule Ragex.Agent.Core do
     Smells,
     Suggestions
   }
+
+  alias Ragex.Embeddings.Persistence, as: EmbeddingsPersistence
+  alias Ragex.Graph.Persistence, as: GraphPersistence
+  alias Ragex.Graph.Store
 
   @type analysis_result :: %{
           session_id: String.t(),
@@ -53,6 +59,7 @@ defmodule Ragex.Agent.Core do
     - `:include_suggestions` - Include refactoring suggestions (default: true)
     - `:max_files` - Maximum files to analyze (default: 500)
     - `:skip_embeddings` - Skip embedding generation (default: false)
+    - `:include_dead_code` - Enable dead code analysis (default: false)
     - `:exclude_patterns` - Patterns to exclude (default: standard ignores)
 
   ## Returns
@@ -64,22 +71,34 @@ defmodule Ragex.Agent.Core do
   def analyze_project(path, opts \\ []) do
     Logger.info("Starting project analysis: #{path}")
 
-    with {:ok, abs_path} <- validate_path(path),
-         {:ok, _analysis} <- analyze_codebase(abs_path, opts),
-         {:ok, issues} <- discover_issues(abs_path, opts),
-         {:ok, session} <- create_analysis_session(abs_path, issues, opts),
-         {:ok, report} <- generate_report(session.id, issues, opts) do
-      summary = build_summary(issues)
+    with {:ok, abs_path} <- validate_path(path) do
+      graph_stats = Store.stats()
 
-      Logger.info("Project analysis complete: #{summary.total_issues} issues found")
+      case {graph_stats.nodes > 0, AnalysisCache.load(abs_path)} do
+        {true, {:ok, cached_issues}} ->
+          # Graph loaded from cache + issues fresh -> skip everything
+          Logger.info("Using cached analysis (#{graph_stats.nodes} nodes, all files unchanged)")
 
-      {:ok,
-       %{
-         session_id: session.id,
-         report: report,
-         issues: issues,
-         summary: summary
-       }}
+          finalize_analysis(abs_path, cached_issues, opts)
+
+        {true, {:stale, _cached_issues, changed_files}} ->
+          # Graph loaded but some files changed -> incremental re-analysis
+          Logger.info("Incremental analysis: #{length(changed_files)} files changed")
+
+          with {:ok, _} <- analyze_codebase(abs_path, opts),
+               {:ok, issues} <- discover_issues(abs_path, opts) do
+            persist_all_state(issues, abs_path)
+            finalize_analysis(abs_path, issues, opts)
+          end
+
+        _ ->
+          # No cache or empty graph -> full analysis
+          with {:ok, _} <- analyze_codebase(abs_path, opts),
+               {:ok, issues} <- discover_issues(abs_path, opts) do
+            persist_all_state(issues, abs_path)
+            finalize_analysis(abs_path, issues, opts)
+          end
+      end
     end
   end
 
@@ -192,6 +211,29 @@ defmodule Ragex.Agent.Core do
 
   # Private functions
 
+  defp finalize_analysis(path, issues, opts) do
+    with {:ok, session} <- create_analysis_session(path, issues, opts),
+         {:ok, report} <- generate_report(session.id, issues, opts) do
+      summary = build_summary(issues)
+      Logger.info("Project analysis complete: #{summary.total_issues} issues found")
+
+      {:ok,
+       %{
+         session_id: session.id,
+         report: report,
+         issues: issues,
+         summary: summary
+       }}
+    end
+  end
+
+  defp persist_all_state(issues, path) do
+    # Eagerly save state to disk since Mix tasks don't trigger GenServer terminate/2
+    AnalysisCache.save(issues, path)
+    EmbeddingsPersistence.save()
+    GraphPersistence.save()
+  end
+
   defp validate_path(path) do
     abs_path = Path.expand(path)
 
@@ -243,9 +285,14 @@ defmodule Ragex.Agent.Core do
     Logger.info("Discovering issues...")
 
     include_suggestions = Keyword.get(opts, :include_suggestions, true)
+    include_dead_code = Keyword.get(opts, :include_dead_code, false)
 
     issues = %{
-      dead_code: safe_analyze(&DeadCode.find_dead_code/0, []),
+      dead_code:
+        if(include_dead_code,
+          do: safe_analyze(&DeadCode.find_dead_code/0, []),
+          else: []
+        ),
       duplicates: safe_analyze(&Duplication.detect_in_directory/2, [path, [threshold: 0.8]]),
       security: safe_analyze(&Security.analyze_directory/2, [path, []]),
       smells: safe_analyze(&Smells.detect_smells/2, [path, []]),
@@ -330,8 +377,9 @@ defmodule Ragex.Agent.Core do
 
       {:error, reason} ->
         Logger.error("Report generation failed: #{inspect(reason)}")
-        # Fallback to basic report
-        {:ok, Report.generate_basic_report(issues)}
+        # Fallback to basic report with error note
+        error_note = "[AI report generation failed: #{inspect(reason)}]\n\n"
+        {:ok, error_note <> Report.generate_basic_report(issues)}
     end
   end
 

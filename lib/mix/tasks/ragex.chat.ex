@@ -25,6 +25,7 @@ defmodule Mix.Tasks.Ragex.Chat do
   - `--provider` - AI provider: deepseek_r1, openai, anthropic, ollama
   - `--model`, `-m` - Model name override
   - `--strategy`, `-s` - Retrieval strategy: fusion, semantic_first, graph_first
+  - `--dead-code` - Enable dead code analysis (disabled by default, slow on large codebases)
   - `--skip-analysis` - Skip initial codebase analysis
   - `--help`, `-h` - Show this help
 
@@ -49,6 +50,7 @@ defmodule Mix.Tasks.Ragex.Chat do
           model: :string,
           strategy: :string,
           skip_analysis: :boolean,
+          dead_code: :boolean,
           help: :boolean
         ],
         aliases: [
@@ -62,7 +64,7 @@ defmodule Mix.Tasks.Ragex.Chat do
     if opts[:help] do
       Mix.shell().info(@moduledoc)
     else
-      {:ok, _} = Application.ensure_all_started(:ragex)
+      Mix.Task.run("app.start")
 
       chat_opts =
         []
@@ -71,6 +73,7 @@ defmodule Mix.Tasks.Ragex.Chat do
         |> maybe_put(:model, opts[:model])
         |> maybe_put(:strategy, parse_strategy(opts[:strategy]))
         |> maybe_put(:skip_analysis, opts[:skip_analysis])
+        |> maybe_put(:include_dead_code, opts[:dead_code])
 
       Chat.start(chat_opts)
     end

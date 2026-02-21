@@ -34,3 +34,5 @@ ragex-*.tar
 
 ragex.log
 oeditus.json
+
+.env

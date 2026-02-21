@@ -80,7 +80,7 @@ config :ragex, :search,
 # Multi-provider support with fallback
 config :ragex, :ai,
   providers: [:openai, :anthropic, :deepseek_r1, :ollama],
-  default_provider: :openai,
+  default_provider: :deepseek_r1,
   fallback_enabled: true
 
 # Provider-specific configurations

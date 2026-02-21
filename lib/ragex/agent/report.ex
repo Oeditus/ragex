@@ -131,14 +131,19 @@ defmodule Ragex.Agent.Report do
 
   defp format_dead_code(item) when is_map(item) do
     file = item[:file] || item["file"] || "unknown"
-    name = item[:name] || item["name"] || item[:function] || "unknown"
+    name = item[:name] || item["name"] || format_function(item[:function]) || "unknown"
     line = item[:line] || item["line"] || "?"
     reason = item[:reason] || item["reason"] || "unused"
 
-    "- `#{name}` in `#{file}:#{line}` - #{reason}"
+    "- `#{name}` in `#{file}:#{line}` → #{reason}"
   end
 
   defp format_dead_code(item), do: "- #{inspect(item)}"
+
+  defp format_function(fun) when is_binary(fun), do: fun
+
+  defp format_function(%{arity: arity, module: module, name: name, type: :function}),
+    do: module |> Function.capture(name, arity) |> inspect() |> String.trim_leading("&")
 
   defp format_duplicate(item) when is_map(item) do
     file1 = item[:file1] || item["file1"] || item[:source] || "file1"
