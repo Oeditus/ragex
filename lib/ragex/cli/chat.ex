@@ -640,5 +640,4 @@ defmodule Ragex.CLI.Chat do
 
   defp maybe_add(opts, _key, nil), do: opts
   defp maybe_add(opts, key, value), do: Keyword.put(opts, key, value)
-
 end
