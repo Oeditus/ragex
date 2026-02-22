@@ -260,6 +260,7 @@ defmodule Ragex.Editor.RefactorTest do
         Ragex.Analyzers.Elixir.analyze(caller_content, caller_file)
 
       store_analysis(caller_analysis)
+      Store.sync()
 
       %{module_file: module_file, caller_file: caller_file}
     end
@@ -340,6 +341,7 @@ defmodule Ragex.Editor.RefactorTest do
       # Analyze and store
       {:ok, analysis} = Ragex.Analyzers.Elixir.analyze(module_content, module_file)
       store_analysis(analysis)
+      Store.sync()
 
       %{module_file: module_file}
     end

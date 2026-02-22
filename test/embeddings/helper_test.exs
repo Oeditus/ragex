@@ -12,6 +12,7 @@ defmodule Ragex.Embeddings.HelperTest do
   setup do
     # Clear the graph before each test
     Store.clear()
+    Store.sync()
     :ok
   end
 
@@ -48,6 +49,7 @@ defmodule Ragex.Embeddings.HelperTest do
       }
 
       assert :ok = Helper.generate_and_store_embeddings(analysis_result)
+      Store.sync()
 
       # Verify embeddings were stored
       {module_embedding, module_text} = Store.get_embedding(:module, :TestModule)
@@ -84,6 +86,7 @@ defmodule Ragex.Embeddings.HelperTest do
       }
 
       assert :ok = Helper.generate_module_embedding(module_data)
+      Store.sync()
 
       {embedding, text} = Store.get_embedding(:module, :MyModule)
       assert is_list(embedding)
@@ -109,6 +112,7 @@ defmodule Ragex.Embeddings.HelperTest do
       }
 
       assert :ok = Helper.generate_function_embedding(function_data)
+      Store.sync()
 
       {embedding, text} = Store.get_embedding(:function, {:Math, :calculate, 2})
       assert is_list(embedding)
@@ -153,6 +157,7 @@ defmodule Ragex.Embeddings.HelperTest do
       ]
 
       assert {:ok, 3} = Helper.generate_batch_embeddings(functions, :function)
+      Store.sync()
 
       # Verify all were stored
       {emb1, _} = Store.get_embedding(:function, {:Mod, :func1, 0})

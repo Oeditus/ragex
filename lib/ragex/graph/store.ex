@@ -381,6 +381,16 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Synchronous barrier: blocks until all pending casts have been processed.
+
+  Useful in tests to ensure async operations (add_node, add_edge, etc.)
+  have been applied to ETS before querying.
+  """
+  def sync do
+    GenServer.call(__MODULE__, :sync)
+  end
+
+  @doc """
   Returns statistics about the graph.
   """
   def stats do
@@ -438,6 +448,11 @@ defmodule Ragex.Graph.Store do
     end
 
     {:ok, %{}}
+  end
+
+  @impl true
+  def handle_call(:sync, _from, state) do
+    {:reply, :ok, state}
   end
 
   @impl true

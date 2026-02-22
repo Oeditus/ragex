@@ -51,6 +51,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
       :calls
     )
 
+    Store.sync()
     :ok
   end
 
@@ -101,6 +102,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
 
     test "handles empty graph" do
       Store.clear()
+      Store.sync()
       scores = Algorithms.pagerank()
 
       assert scores == %{}
@@ -183,6 +185,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
       # Create a dense graph with multiple paths
       # A calls B1, B2, B3, all of which call C
       Store.clear()
+      Store.sync()
 
       Store.add_node(:function, {:ModuleA, :foo, 0}, %{module: :ModuleA, name: :foo, arity: 0})
       Store.add_node(:function, {:ModuleB1, :bar, 0}, %{module: :ModuleB1, name: :bar, arity: 0})
@@ -229,6 +232,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
         :calls
       )
 
+      Store.sync()
       from = {:function, :ModuleA, :foo, 0}
       to = {:function, :ModuleC, :baz, 0}
 
@@ -362,6 +366,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
   describe "integration with real code" do
     test "works with actual Elixir code analysis" do
       Store.clear()
+      Store.sync()
 
       # Simulate analysis of a simple module
       _code = """
@@ -406,6 +411,7 @@ defmodule Ragex.Graph.AlgorithmsTest do
         :calls
       )
 
+      Store.sync()
       # Test PageRank
       scores = Algorithms.pagerank()
       assert map_size(scores) > 0

@@ -140,6 +140,7 @@ defmodule Ragex.Agent.Report do
 
   defp format_dead_code(item), do: "- #{inspect(item)}"
 
+  defp format_function(nil), do: nil
   defp format_function(fun) when is_binary(fun), do: fun
 
   defp format_function(%{arity: arity, module: module, name: name, type: :function}),

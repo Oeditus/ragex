@@ -6,6 +6,7 @@ defmodule Ragex.Graph.StoreTest do
   setup do
     # Clear the graph before each test
     Store.clear()
+    Store.sync()
     :ok
   end
 
@@ -13,6 +14,7 @@ defmodule Ragex.Graph.StoreTest do
     test "adds and retrieves a module node" do
       module_data = %{name: TestModule, file: "test.ex", line: 1}
       assert :ok = Store.add_node(:module, TestModule, module_data)
+      Store.sync()
 
       retrieved = Store.find_node(:module, TestModule)
       assert retrieved == module_data
@@ -22,6 +24,7 @@ defmodule Ragex.Graph.StoreTest do
       func_data = %{name: :test, arity: 2, module: TestModule}
       func_id = {TestModule, :test, 2}
       assert :ok = Store.add_node(:function, func_id, func_data)
+      Store.sync()
 
       retrieved = Store.find_node(:function, func_id)
       assert retrieved == func_data
@@ -37,6 +40,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, ModuleA, %{name: ModuleA})
       Store.add_node(:module, ModuleB, %{name: ModuleB})
       Store.add_node(:function, {:test, 0}, %{name: :test})
+      Store.sync()
 
       nodes = Store.list_nodes()
       assert length(nodes) == 3
@@ -46,6 +50,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, ModuleA, %{name: ModuleA})
       Store.add_node(:module, ModuleB, %{name: ModuleB})
       Store.add_node(:function, {:test, 0}, %{name: :test})
+      Store.sync()
 
       modules = Store.list_nodes(:module)
       assert length(modules) == 2
@@ -57,6 +62,7 @@ defmodule Ragex.Graph.StoreTest do
         Store.add_node(:module, :"Module#{i}", %{name: :"Module#{i}"})
       end
 
+      Store.sync()
       nodes = Store.list_nodes(nil, 5)
       assert length(nodes) == 5
     end
@@ -66,6 +72,7 @@ defmodule Ragex.Graph.StoreTest do
     test "retrieves a module node by name" do
       module_data = %{name: TestModule, file: "lib/test_module.ex", line: 1}
       Store.add_node(:module, TestModule, module_data)
+      Store.sync()
 
       retrieved = Store.get_module(TestModule)
       assert retrieved == module_data
@@ -83,6 +90,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, ModuleA, module_a_data)
       Store.add_node(:module, ModuleB, module_b_data)
       Store.add_node(:module, ModuleC, module_c_data)
+      Store.sync()
 
       assert Store.get_module(ModuleA) == module_a_data
       assert Store.get_module(ModuleB) == module_b_data
@@ -94,6 +102,7 @@ defmodule Ragex.Graph.StoreTest do
     test "retrieves a function node by module, name, and arity" do
       func_data = %{name: :test, arity: 2, line: 10}
       Store.add_node(:function, {ModuleA, :test, 2}, func_data)
+      Store.sync()
 
       retrieved = Store.get_function(ModuleA, :test, 2)
       assert retrieved == func_data
@@ -111,6 +120,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:function, {ModuleA, :test, 0}, func_0_data)
       Store.add_node(:function, {ModuleA, :test, 1}, func_1_data)
       Store.add_node(:function, {ModuleA, :test, 2}, func_2_data)
+      Store.sync()
 
       assert Store.get_function(ModuleA, :test, 0) == func_0_data
       assert Store.get_function(ModuleA, :test, 1) == func_1_data
@@ -123,6 +133,7 @@ defmodule Ragex.Graph.StoreTest do
 
       Store.add_node(:function, {ModuleA, :process, 1}, func_a_data)
       Store.add_node(:function, {ModuleB, :process, 1}, func_b_data)
+      Store.sync()
 
       assert Store.get_function(ModuleA, :process, 1) == func_a_data
       assert Store.get_function(ModuleB, :process, 1) == func_b_data
@@ -134,6 +145,7 @@ defmodule Ragex.Graph.StoreTest do
 
       Store.add_node(:function, {ModuleA, :test, 1}, func_test_data)
       Store.add_node(:function, {ModuleA, :helper, 1}, func_helper_data)
+      Store.sync()
 
       assert Store.get_function(ModuleA, :test, 1) == func_test_data
       assert Store.get_function(ModuleA, :helper, 1) == func_helper_data
@@ -149,6 +161,7 @@ defmodule Ragex.Graph.StoreTest do
         end
       end
 
+      Store.sync()
       # Verify we can retrieve specific function
       result = Store.get_function(ModuleB, :bar, 1)
       assert result.module == ModuleB
@@ -166,6 +179,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, ModuleA, module_a_data)
       Store.add_node(:module, ModuleB, module_b_data)
       Store.add_node(:module, ModuleC, module_c_data)
+      Store.sync()
 
       modules = Store.list_modules()
       assert length(modules) == 3
@@ -179,6 +193,7 @@ defmodule Ragex.Graph.StoreTest do
     test "returns modules with correct structure" do
       module_data = %{name: TestModule, file: "lib/test.ex", line: 1}
       Store.add_node(:module, TestModule, module_data)
+      Store.sync()
 
       [module] = Store.list_modules()
       assert module.id == TestModule
@@ -193,6 +208,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, ModuleA, module_a_data)
       Store.add_node(:module, ModuleB, module_b_data)
       Store.add_node(:function, {ModuleA, :test, 1}, func_data)
+      Store.sync()
 
       modules = Store.list_modules()
       assert length(modules) == 2
@@ -204,6 +220,7 @@ defmodule Ragex.Graph.StoreTest do
         Store.add_node(:module, :"Module#{i}", %{name: :"Module#{i}"})
       end
 
+      Store.sync()
       modules = Store.list_modules()
       assert length(modules) == 10
     end
@@ -218,6 +235,7 @@ defmodule Ragex.Graph.StoreTest do
       }
 
       Store.add_node(:module, MyModule, module_data)
+      Store.sync()
 
       [module] = Store.list_modules()
       assert module.id == MyModule
@@ -235,6 +253,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:function, {ModuleA, :test, 2}, func1_data)
       Store.add_node(:function, {ModuleB, :helper, 1}, func2_data)
       Store.add_node(:function, {ModuleA, :process, 3}, func3_data)
+      Store.sync()
 
       functions = Store.list_functions()
       assert length(functions) == 3
@@ -248,6 +267,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:function, {ModuleA, :test, 2}, func1_data)
       Store.add_node(:function, {ModuleB, :helper, 1}, func2_data)
       Store.add_node(:function, {ModuleA, :process, 3}, func3_data)
+      Store.sync()
 
       module_a_functions = Store.list_functions(module: ModuleA)
       assert length(module_a_functions) == 2
@@ -264,6 +284,7 @@ defmodule Ragex.Graph.StoreTest do
         Store.add_node(:function, {ModuleA, :"func#{i}", 0}, %{name: :"func#{i}", arity: 0})
       end
 
+      Store.sync()
       functions = Store.list_functions(limit: 5)
       assert length(functions) == 5
     end
@@ -276,6 +297,7 @@ defmodule Ragex.Graph.StoreTest do
     test "returns empty list when filtering by non-existent module" do
       Store.add_node(:function, {ModuleA, :test, 2}, %{name: :test, arity: 2})
       Store.add_node(:function, {ModuleB, :helper, 1}, %{name: :helper, arity: 1})
+      Store.sync()
 
       functions = Store.list_functions(module: NonExistentModule)
       assert functions == []
@@ -284,6 +306,7 @@ defmodule Ragex.Graph.StoreTest do
     test "returns correct function data with id" do
       func_data = %{name: :test, arity: 2, line: 10, file: "lib/module_a.ex"}
       Store.add_node(:function, {ModuleA, :test, 2}, func_data)
+      Store.sync()
 
       [func] = Store.list_functions(module: ModuleA)
       assert func.id == {ModuleA, :test, 2}
@@ -296,6 +319,7 @@ defmodule Ragex.Graph.StoreTest do
         Store.add_node(:function, {ModuleB, :"helper#{i}", 1}, %{name: :"helper#{i}", arity: 1})
       end
 
+      Store.sync()
       functions = Store.list_functions(module: ModuleA, limit: 2)
       assert length(functions) == 2
       assert Enum.all?(functions, fn f -> elem(f.id, 0) == ModuleA end)
@@ -305,6 +329,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:function, {ModuleA, :test, 0}, %{name: :test, arity: 0})
       Store.add_node(:function, {ModuleA, :test, 1}, %{name: :test, arity: 1})
       Store.add_node(:function, {ModuleA, :test, 2}, %{name: :test, arity: 2})
+      Store.sync()
 
       functions = Store.list_functions(module: ModuleA)
       assert length(functions) == 3
@@ -320,6 +345,7 @@ defmodule Ragex.Graph.StoreTest do
       to = {:function, TestModule, :test, 0}
 
       assert :ok = Store.add_edge(from, to, :defines)
+      Store.sync()
 
       edges = Store.get_outgoing_edges(from, :defines)
       assert length(edges) == 1
@@ -338,6 +364,7 @@ defmodule Ragex.Graph.StoreTest do
       to = {:function, TestModule, :test, 0}
 
       Store.add_edge(from, to, :defines)
+      Store.sync()
 
       edges = Store.get_incoming_edges(to, :defines)
       assert length(edges) == 1
@@ -348,9 +375,11 @@ defmodule Ragex.Graph.StoreTest do
   describe "remove_node/2" do
     test "removes a node" do
       Store.add_node(:module, TestModule, %{name: TestModule})
+      Store.sync()
       assert Store.find_node(:module, TestModule) != nil
 
       assert :ok = Store.remove_node(:module, TestModule)
+      Store.sync()
       assert Store.find_node(:module, TestModule) == nil
     end
 
@@ -361,12 +390,14 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, TestModule, %{name: TestModule})
       Store.add_node(:function, {TestModule, :test, 0}, %{name: :test})
       Store.add_edge(from, to, :defines)
+      Store.sync()
 
       # Verify edge exists
       assert length(Store.get_outgoing_edges(from, :defines)) == 1
 
       # Remove source node
       Store.remove_node(:module, TestModule)
+      Store.sync()
 
       # Edge should be gone
       assert Store.get_outgoing_edges(from, :defines) == []
@@ -379,12 +410,14 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, TestModule, %{name: TestModule})
       Store.add_node(:function, {TestModule, :test, 0}, %{name: :test})
       Store.add_edge(from, to, :defines)
+      Store.sync()
 
       # Verify edge exists
       assert length(Store.get_incoming_edges(to, :defines)) == 1
 
       # Remove target node
       Store.remove_node(:function, {TestModule, :test, 0})
+      Store.sync()
 
       # Edge should be gone
       assert Store.get_incoming_edges(to, :defines) == []
@@ -393,12 +426,14 @@ defmodule Ragex.Graph.StoreTest do
     test "removes embedding when node is removed" do
       embedding = Enum.map(1..384, fn _ -> 0.1 end)
       Store.store_embedding(:module, TestModule, embedding, "test text")
+      Store.sync()
 
       # Verify embedding exists
       assert Store.get_embedding(:module, TestModule) != nil
 
       # Remove node
       Store.remove_node(:module, TestModule)
+      Store.sync()
 
       # Embedding should be gone
       assert Store.get_embedding(:module, TestModule) == nil
@@ -425,6 +460,7 @@ defmodule Ragex.Graph.StoreTest do
       # Add edges to node_a
       Store.add_edge(node_b, node_a, :calls)
       Store.add_edge(node_c, node_a, :defines)
+      Store.sync()
 
       # Verify edges exist
       assert length(Store.get_outgoing_edges(node_a, :imports)) == 2
@@ -434,6 +470,7 @@ defmodule Ragex.Graph.StoreTest do
 
       # Remove node_a
       Store.remove_node(:module, ModuleA)
+      Store.sync()
 
       # All edges should be gone
       assert Store.get_outgoing_edges(node_a, :imports) == []
@@ -444,16 +481,19 @@ defmodule Ragex.Graph.StoreTest do
       # Edges between node_b and node_c should be unaffected
       # (none exist, so verify node_b->node_c edge creation still works)
       Store.add_edge(node_b, node_c, :imports)
+      Store.sync()
       assert length(Store.get_outgoing_edges(node_b, :imports)) == 1
     end
 
     test "decrements node count correctly" do
       Store.add_node(:module, ModuleA, %{name: ModuleA})
       Store.add_node(:module, ModuleB, %{name: ModuleB})
+      Store.sync()
 
       assert Store.stats().nodes == 2
 
       Store.remove_node(:module, ModuleA)
+      Store.sync()
 
       assert Store.stats().nodes == 1
     end
@@ -463,10 +503,12 @@ defmodule Ragex.Graph.StoreTest do
     test "removes all nodes and edges" do
       Store.add_node(:module, TestModule, %{name: TestModule})
       Store.add_edge({:module, TestModule}, {:module, OtherModule}, :imports)
+      Store.sync()
 
       assert Store.stats().nodes > 0
 
       Store.clear()
+      Store.sync()
 
       assert Store.stats().nodes == 0
       assert Store.stats().edges == 0
@@ -482,6 +524,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, TestModule, %{})
       Store.add_node(:function, {:test, 0}, %{})
       Store.add_edge({:module, TestModule}, {:function, {:test, 0}}, :defines)
+      Store.sync()
 
       stats = Store.stats()
       assert stats.nodes == 2
@@ -497,6 +540,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_node(:module, ModuleC, %{name: ModuleC})
       Store.add_node(:function, {ModuleA, :func1, 0}, %{name: :func1})
       Store.add_node(:function, {ModuleA, :func2, 1}, %{name: :func2})
+      Store.sync()
 
       # Count modules
       assert Store.count_nodes_by_type(:module) == 3
@@ -509,6 +553,7 @@ defmodule Ragex.Graph.StoreTest do
       # Add some nodes
       Store.add_node(:module, ModuleA, %{name: ModuleA})
       Store.add_node(:function, {ModuleA, :func1, 0}, %{name: :func1})
+      Store.sync()
 
       # Query non-existent type
       assert Store.count_nodes_by_type(:nonexistent) == 0
@@ -525,6 +570,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_edge(node_a, node_b, :imports)
       Store.add_edge(node_b, node_c, :calls)
       Store.add_edge(node_a, node_c, :defines)
+      Store.sync()
 
       edges = Store.list_edges()
       assert length(edges) == 3
@@ -538,6 +584,7 @@ defmodule Ragex.Graph.StoreTest do
       Store.add_edge(node_a, node_b, :imports)
       Store.add_edge(node_b, node_c, :calls)
       Store.add_edge(node_a, node_c, :imports)
+      Store.sync()
 
       edges = Store.list_edges(edge_type: :imports)
       assert length(edges) == 2
@@ -549,6 +596,7 @@ defmodule Ragex.Graph.StoreTest do
         Store.add_edge({:module, :"ModuleA#{i}"}, {:module, :"ModuleB#{i}"}, :imports)
       end
 
+      Store.sync()
       edges = Store.list_edges(limit: 5)
       assert length(edges) == 5
     end
@@ -561,6 +609,7 @@ defmodule Ragex.Graph.StoreTest do
     test "returns empty list when filtering by non-existent edge type" do
       Store.add_edge({:module, ModuleA}, {:module, ModuleB}, :imports)
       Store.add_edge({:module, ModuleB}, {:module, ModuleC}, :calls)
+      Store.sync()
 
       edges = Store.list_edges(edge_type: :nonexistent)
       assert edges == []
@@ -571,6 +620,7 @@ defmodule Ragex.Graph.StoreTest do
       node_b = {:module, ModuleB}
 
       Store.add_edge(node_a, node_b, :imports, weight: 2.5, metadata: %{custom: "value"})
+      Store.sync()
 
       [edge] = Store.list_edges()
       assert edge.from == node_a
@@ -586,6 +636,7 @@ defmodule Ragex.Graph.StoreTest do
         Store.add_edge({:module, :"ModuleC#{i}"}, {:module, :"ModuleD#{i}"}, :calls)
       end
 
+      Store.sync()
       edges = Store.list_edges(edge_type: :imports, limit: 2)
       assert length(edges) == 2
       assert Enum.all?(edges, &(&1.type == :imports))

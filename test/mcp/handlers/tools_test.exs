@@ -7,6 +7,7 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
   setup do
     # Clear the graph before each test
     Store.clear()
+    Store.sync()
     :ok
   end
 
@@ -18,6 +19,7 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
       Store.add_node(:module, ModuleC, %{name: ModuleC})
       Store.add_node(:function, {ModuleA, :func1, 0}, %{name: :func1})
       Store.add_node(:function, {ModuleA, :func2, 1}, %{name: :func2})
+      Store.sync()
 
       # Query for modules
       params = %{"node_type" => "module", "limit" => 100}
@@ -34,6 +36,7 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
       Store.add_node(:function, {ModuleA, :func1, 0}, %{name: :func1})
       Store.add_node(:function, {ModuleA, :func2, 1}, %{name: :func2})
       Store.add_node(:function, {ModuleB, :func3, 0}, %{name: :func3})
+      Store.sync()
 
       # Query all nodes
       params = %{"limit" => 100}
@@ -47,6 +50,7 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
       # Add some nodes
       Store.add_node(:module, ModuleA, %{name: ModuleA})
       Store.add_node(:function, {ModuleA, :func1, 0}, %{name: :func1})
+      Store.sync()
 
       params = %{"limit" => 100}
       {:ok, result} = Tools.call_tool("list_nodes", params)
@@ -69,6 +73,7 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
         Store.add_node(:module, :"Module#{i}", %{name: :"Module#{i}"})
       end
 
+      Store.sync()
       params = %{"node_type" => "module", "limit" => 5}
       {:ok, result} = Tools.call_tool("list_nodes", params)
 
@@ -94,6 +99,7 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
       Store.add_node(:function, {ModuleA, :func1, 0}, %{name: :func1})
       Store.add_node(:function, {ModuleA, :func2, 1}, %{name: :func2})
       Store.add_node(:function, {ModuleA, :func3, 2}, %{name: :func3})
+      Store.sync()
 
       # Query only functions
       params = %{"node_type" => "function", "limit" => 100}

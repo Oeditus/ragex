@@ -324,6 +324,7 @@ defmodule Ragex.Analysis.SmellsTest do
 
       # Clear the store
       Store.clear()
+      Store.sync()
 
       :ok
     end
@@ -345,6 +346,7 @@ defmodule Ragex.Analysis.SmellsTest do
       # First analyze to populate the knowledge graph
       {:ok, analysis} = ElixirAnalyzer.analyze(code, path)
       store_analysis_in_graph(analysis)
+      Store.sync()
 
       # Then analyze for smells
       {:ok, result} = Smells.analyze_file(path)
@@ -399,6 +401,7 @@ defmodule Ragex.Analysis.SmellsTest do
       # Analyze and populate knowledge graph
       {:ok, analysis} = ElixirAnalyzer.analyze(code, path)
       store_analysis_in_graph(analysis)
+      Store.sync()
 
       # Analyze for smells
       {:ok, result} = Smells.analyze_file(path)
@@ -497,6 +500,7 @@ defmodule Ragex.Analysis.SmellsTest do
       # Analyze and populate knowledge graph
       {:ok, analysis} = ElixirAnalyzer.analyze(code, path)
       store_analysis_in_graph(analysis)
+      Store.sync()
 
       # Analyze for smells
       {:ok, result} = Smells.analyze_file(path)

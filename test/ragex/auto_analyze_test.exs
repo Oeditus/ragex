@@ -24,6 +24,7 @@ defmodule Ragex.AutoAnalyzeTest do
 
     # Clean up graph store and file tracker
     Store.clear()
+    Store.sync()
     FileTracker.clear_all()
 
     on_exit(fn ->

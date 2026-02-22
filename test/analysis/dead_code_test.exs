@@ -90,6 +90,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
       visibility: :public
     })
 
+    Store.sync()
     :ok
   end
 
@@ -239,6 +240,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
         arity: 0
       })
 
+      Store.sync()
       {:ok, unused} = DeadCode.find_unused_modules()
 
       assert :UnusedModule in unused
@@ -312,6 +314,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
         })
       end
 
+      Store.sync()
       {:ok, grouped} = DeadCode.removal_suggestions(min_confidence: 0.0, group_by_module: true)
       {:ok, ungrouped} = DeadCode.removal_suggestions(min_confidence: 0.0, group_by_module: false)
 
@@ -338,6 +341,8 @@ defmodule Ragex.Analysis.DeadCodeTest do
           visibility: :public
         })
       end
+
+      Store.sync()
 
       {:ok, suggestions} =
         DeadCode.removal_suggestions(min_confidence: 0.0, group_by_module: true)
@@ -429,6 +434,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
   describe "edge cases" do
     test "handles empty graph" do
       Store.clear()
+      Store.sync()
 
       {:ok, exports} = DeadCode.find_unused_exports()
       {:ok, private} = DeadCode.find_unused_private()
@@ -449,6 +455,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
         # No visibility field
       })
 
+      Store.sync()
       {:ok, dead} = DeadCode.find_unused_exports(min_confidence: 0.0)
 
       # Should default to public and include it
@@ -480,6 +487,7 @@ defmodule Ragex.Analysis.DeadCodeTest do
         )
       end
 
+      Store.sync()
       {:ok, dead} = DeadCode.find_unused_exports(min_confidence: 0.0)
 
       unused_funcs = Enum.map(dead, fn d -> d.function end)

@@ -86,6 +86,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
       :calls
     )
 
+    Store.sync()
     :ok
   end
 
@@ -102,6 +103,8 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         {:function, :ModA, :func_a, 0},
         :calls
       )
+
+      Store.sync()
 
       {:ok, cycles} = DependencyGraph.find_cycles(scope: :module)
 
@@ -120,6 +123,8 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         :calls
       )
 
+      Store.sync()
+
       {:ok, cycles} = DependencyGraph.find_cycles(scope: :function)
 
       assert match?([_ | _], cycles)
@@ -135,6 +140,8 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         {:function, :ModA, :func_a, 0},
         :calls
       )
+
+      Store.sync()
 
       # Short cycles (length 2-3)
       {:ok, cycles_short} = DependencyGraph.find_cycles(min_cycle_length: 2)
@@ -152,6 +159,8 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         {:function, :ModA, :func_a, 0},
         :calls
       )
+
+      Store.sync()
 
       {:ok, cycles} = DependencyGraph.find_cycles(limit: 1)
       refute match?([_, _ | _], cycles)
@@ -278,6 +287,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         arity: 0
       })
 
+      Store.sync()
       {:ok, unused} = DependencyGraph.find_unused(exclude_tests: true)
       refute :MyModuleTest in unused
     end
@@ -291,6 +301,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         arity: 0
       })
 
+      Store.sync()
       {:ok, unused} = DependencyGraph.find_unused(exclude_tests: false)
       assert :MyModuleTest in unused
     end
@@ -304,6 +315,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         arity: 1
       })
 
+      Store.sync()
       {:ok, unused} = DependencyGraph.find_unused(exclude_mix_tasks: true)
       refute :"Mix.Tasks.MyTask" in unused
     end
@@ -324,6 +336,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         )
       end
 
+      Store.sync()
       {:ok, god_modules} = DependencyGraph.find_god_modules(15)
 
       # ModA should be identified as a God module
@@ -349,6 +362,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         )
       end
 
+      Store.sync()
       {:ok, god_modules} = DependencyGraph.find_god_modules(5, sort_by: :efferent)
 
       # Should be sorted by efferent coupling
@@ -367,6 +381,8 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         {:function, :ModA, :func_a, 0},
         :calls
       )
+
+      Store.sync()
 
       {:ok, suggestions} = DependencyGraph.decoupling_suggestions()
 
@@ -390,6 +406,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         )
       end
 
+      Store.sync()
       {:ok, suggestions} = DependencyGraph.decoupling_suggestions()
 
       god_suggestions = Enum.filter(suggestions, fn s -> s.type == :god_module end)
@@ -434,6 +451,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         )
       end
 
+      Store.sync()
       {:ok, suggestions} = DependencyGraph.decoupling_suggestions()
 
       # Check that suggestions have valid severity levels
@@ -463,6 +481,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         arity: 0
       })
 
+      Store.sync()
       {:ok, suggestions} = DependencyGraph.decoupling_suggestions()
       # Should have minimal suggestions (maybe just unused module warnings)
       refute match?([_, _ | _], suggestions)
@@ -472,6 +491,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
   describe "edge cases" do
     test "handles empty graph" do
       Store.clear()
+      Store.sync()
 
       {:ok, cycles} = DependencyGraph.find_cycles()
       assert cycles == []
@@ -496,6 +516,8 @@ defmodule Ragex.Analysis.DependencyGraphTest do
         :calls
       )
 
+      Store.sync()
+
       {:ok, metrics} = DependencyGraph.coupling_metrics(:SelfRef)
       # Self-references should be filtered out
       assert metrics.efferent == 0
@@ -508,6 +530,7 @@ defmodule Ragex.Analysis.DependencyGraphTest do
       Store.add_node(:module, :Imported, %{file: "imported.ex", line: 1})
 
       Store.add_edge({:module, :Importer}, {:module, :Imported}, :imports)
+      Store.sync()
 
       {:ok, metrics} = DependencyGraph.coupling_metrics(:Importer)
       assert metrics.efferent == 1

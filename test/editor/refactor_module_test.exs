@@ -9,6 +9,7 @@ defmodule Ragex.Editor.RefactorModuleTest do
     test_dir = Path.join(System.tmp_dir!(), "ragex_module_test_#{:rand.uniform(1_000_000)}")
     File.mkdir_p!(test_dir)
     Store.clear()
+    Store.sync()
 
     on_exit(fn ->
       File.rm_rf!(test_dir)

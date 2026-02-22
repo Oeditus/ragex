@@ -48,6 +48,7 @@ defmodule Ragex.Analysis.ImpactTest do
     # test_something/1 -> c1/0
     Store.add_edge({:function, :DTest, :test_something, 1}, {:function, :C, :c1, 0}, :calls)
 
+    Store.sync()
     :ok
   end
 
@@ -169,6 +170,7 @@ defmodule Ragex.Analysis.ImpactTest do
 
       Store.add_edge({:module, :ESpec}, {:function, :ESpec, :it_works, 0}, :defines)
       Store.add_edge({:function, :ESpec, :it_works, 0}, {:function, :B, :b1, 0}, :calls)
+      Store.sync()
 
       # Custom patterns should catch "Spec" suffix
       {:ok, custom_tests} =
@@ -395,6 +397,7 @@ defmodule Ragex.Analysis.ImpactTest do
 
     test "handles empty graph" do
       Store.clear()
+      Store.sync()
 
       result = Impact.analyze_change({:function, :A, :a1, 0})
 

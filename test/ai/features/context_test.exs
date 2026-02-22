@@ -7,6 +7,7 @@ defmodule Ragex.AI.Features.ContextTest do
   setup do
     # Clear store before each test
     Store.clear()
+    Store.sync()
     :ok
   end
 
@@ -87,6 +88,7 @@ defmodule Ragex.AI.Features.ContextTest do
         visibility: :private
       })
 
+      Store.sync()
       function_ref = {:function, TestModule, :unused, 0}
       context = Context.for_dead_code_analysis(function_ref)
 
@@ -119,6 +121,7 @@ defmodule Ragex.AI.Features.ContextTest do
       Store.add_node(:module, MyModule, %{name: MyModule})
       Store.add_node(:module, OtherModule, %{name: OtherModule})
       Store.add_edge({:module, MyModule}, {:module, OtherModule}, :imports)
+      Store.sync()
 
       metrics = %{coupling: 0.5, cohesion: 0.8}
       context = Context.for_dependency_insights(MyModule, metrics)
@@ -137,6 +140,8 @@ defmodule Ragex.AI.Features.ContextTest do
         name: :complex,
         arity: 2
       })
+
+      Store.sync()
 
       function_ref = {:function, TestModule, :complex, 2}
       metrics = %{complexity: 15, cyclomatic_complexity: 10}
@@ -182,6 +187,7 @@ defmodule Ragex.AI.Features.ContextTest do
         visibility: :private
       })
 
+      Store.sync()
       function_ref = {:function, TestModule, :unused, 0}
       context = Context.for_dead_code_analysis(function_ref)
 

@@ -2,12 +2,14 @@ defmodule Ragex.Analysis.QualityStoreTest do
   use ExUnit.Case, async: false
 
   alias Ragex.Analysis.QualityStore
+  alias Ragex.Graph.Store
 
   @moduletag :analysis
 
   setup do
     # Clear all metrics before each test
     QualityStore.clear_all()
+    Store.sync()
     :ok
   end
 
@@ -16,6 +18,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
       result = sample_result("lib/module1.ex")
 
       assert :ok = QualityStore.store_metrics(result)
+      Store.sync()
       assert QualityStore.count() == 1
     end
 
@@ -25,6 +28,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
 
       :ok = QualityStore.store_metrics(result1)
       :ok = QualityStore.store_metrics(result2)
+      Store.sync()
 
       # Should still be 1 file (updated, not duplicated)
       assert QualityStore.count() == 1
@@ -41,6 +45,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
       :ok = QualityStore.store_metrics(result1)
       :ok = QualityStore.store_metrics(result2)
       :ok = QualityStore.store_metrics(result3)
+      Store.sync()
 
       assert QualityStore.count() == 3
     end
@@ -50,6 +55,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
     test "retrieves stored metrics" do
       result = sample_result("lib/module1.ex", cyclomatic: 7, cognitive: 5)
       :ok = QualityStore.store_metrics(result)
+      Store.sync()
 
       assert {:ok, metrics} = QualityStore.get_metrics("lib/module1.ex")
       assert metrics.path == "lib/module1.ex"
@@ -68,10 +74,11 @@ defmodule Ragex.Analysis.QualityStoreTest do
       :ok = QualityStore.store_metrics(sample_result("lib/simple.ex", cyclomatic: 2))
       :ok = QualityStore.store_metrics(sample_result("lib/medium.ex", cyclomatic: 8))
       :ok = QualityStore.store_metrics(sample_result("lib/complex.ex", cyclomatic: 15))
+      Store.sync()
       :ok
     end
 
-    test "finds files exceeding threshold with default operator (>)" do
+    test "finds files exceeding threshold" do
       files = QualityStore.find_by_threshold(:cyclomatic, 10)
 
       assert length(files) == 1
@@ -102,6 +109,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
 
     test "works with cognitive complexity" do
       :ok = QualityStore.store_metrics(sample_result("lib/cognitive.ex", cognitive: 20))
+      Store.sync()
 
       files = QualityStore.find_by_threshold(:cognitive, 15)
 
@@ -116,7 +124,10 @@ defmodule Ragex.Analysis.QualityStoreTest do
           sample_result("lib/warned.ex", warnings: ["Complexity too high"])
         )
 
+      Store.sync()
+
       :ok = QualityStore.store_metrics(sample_result("lib/clean.ex", warnings: []))
+      Store.sync()
 
       result = QualityStore.find_with_warnings()
 
@@ -126,6 +137,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
 
     test "returns empty list when no warnings" do
       :ok = QualityStore.store_metrics(sample_result("lib/clean.ex"))
+      Store.sync()
 
       assert QualityStore.find_with_warnings() == []
     end
@@ -138,7 +150,10 @@ defmodule Ragex.Analysis.QualityStoreTest do
           sample_result("lib/impure.ex", purity: %{pure?: false, effects: [:io]})
         )
 
+      Store.sync()
+
       :ok = QualityStore.store_metrics(sample_result("lib/pure.ex", purity: %{pure?: true}))
+      Store.sync()
 
       impure_files = QualityStore.find_impure()
 
@@ -152,6 +167,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
       :ok = QualityStore.store_metrics(sample_result("lib/file1.ex", cyclomatic: 5))
       :ok = QualityStore.store_metrics(sample_result("lib/file2.ex", cyclomatic: 10))
       :ok = QualityStore.store_metrics(sample_result("lib/file3.ex", cyclomatic: 15))
+      Store.sync()
 
       stats = QualityStore.project_stats()
 
@@ -172,12 +188,17 @@ defmodule Ragex.Analysis.QualityStoreTest do
       :ok =
         QualityStore.store_metrics(sample_result("lib/file1.ex", warnings: ["High complexity"]))
 
+      Store.sync()
+
       :ok =
         QualityStore.store_metrics(
           sample_result("lib/file2.ex", purity: %{pure?: false, effects: [:io]})
         )
 
+      Store.sync()
+
       :ok = QualityStore.store_metrics(sample_result("lib/file3.ex"))
+      Store.sync()
 
       stats = QualityStore.project_stats()
 
@@ -189,6 +210,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
       :ok = QualityStore.store_metrics(sample_result("lib/file1.ex", language: :elixir))
       :ok = QualityStore.store_metrics(sample_result("lib/file2.ex", language: :elixir))
       :ok = QualityStore.store_metrics(sample_result("src/file.erl", language: :erlang))
+      Store.sync()
 
       stats = QualityStore.project_stats()
 
@@ -204,15 +226,21 @@ defmodule Ragex.Analysis.QualityStoreTest do
           sample_result("lib/file1.ex", language: :elixir, cyclomatic: 5)
         )
 
+      Store.sync()
+
       :ok =
         QualityStore.store_metrics(
           sample_result("lib/file2.ex", language: :elixir, cyclomatic: 10)
         )
 
+      Store.sync()
+
       :ok =
         QualityStore.store_metrics(
           sample_result("src/file.erl", language: :erlang, cyclomatic: 3)
         )
+
+      Store.sync()
 
       by_lang = QualityStore.stats_by_language()
 
@@ -229,6 +257,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
       :ok = QualityStore.store_metrics(sample_result("lib/simple.ex", cyclomatic: 2))
       :ok = QualityStore.store_metrics(sample_result("lib/medium.ex", cyclomatic: 8))
       :ok = QualityStore.store_metrics(sample_result("lib/complex.ex", cyclomatic: 15))
+      Store.sync()
 
       result = QualityStore.most_complex(metric: :cyclomatic, limit: 2)
 
@@ -240,6 +269,7 @@ defmodule Ragex.Analysis.QualityStoreTest do
     test "works with cognitive complexity" do
       :ok = QualityStore.store_metrics(sample_result("lib/file1.ex", cognitive: 10))
       :ok = QualityStore.store_metrics(sample_result("lib/file2.ex", cognitive: 20))
+      Store.sync()
 
       result = QualityStore.most_complex(metric: :cognitive, limit: 1)
 
@@ -251,6 +281,8 @@ defmodule Ragex.Analysis.QualityStoreTest do
         :ok = QualityStore.store_metrics(sample_result("lib/file#{i}.ex", cyclomatic: i))
       end
 
+      Store.sync()
+
       result = QualityStore.most_complex(limit: 3)
 
       assert length(result) == 3
@@ -261,10 +293,12 @@ defmodule Ragex.Analysis.QualityStoreTest do
     test "removes all quality metrics" do
       :ok = QualityStore.store_metrics(sample_result("lib/file1.ex"))
       :ok = QualityStore.store_metrics(sample_result("lib/file2.ex"))
+      Store.sync()
 
       assert QualityStore.count() == 2
 
       :ok = QualityStore.clear_all()
+      Store.sync()
 
       assert QualityStore.count() == 0
     end
@@ -275,9 +309,11 @@ defmodule Ragex.Analysis.QualityStoreTest do
       assert QualityStore.count() == 0
 
       :ok = QualityStore.store_metrics(sample_result("lib/file1.ex"))
+      Store.sync()
       assert QualityStore.count() == 1
 
       :ok = QualityStore.store_metrics(sample_result("lib/file2.ex"))
+      Store.sync()
       assert QualityStore.count() == 2
     end
   end

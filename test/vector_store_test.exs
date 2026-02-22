@@ -13,6 +13,7 @@ defmodule Ragex.VectorStoreTest do
   setup do
     # Clear store before each test
     Store.clear()
+    Store.sync()
     wait_for_ready()
     :ok
   end
@@ -68,6 +69,7 @@ defmodule Ragex.VectorStoreTest do
       Store.store_embedding(:function, {:Math, :sum, 2}, emb1, "sum function")
       Store.store_embedding(:function, {:Math, :add, 2}, emb2, "add function")
       Store.store_embedding(:function, {:Parser, :parse_json, 1}, emb3, "parse function")
+      Store.sync()
 
       # Search for similar to "add numbers"
       {:ok, query_emb} = Bumblebee.embed("add numbers")
@@ -104,6 +106,7 @@ defmodule Ragex.VectorStoreTest do
         Store.store_embedding(:function, {:Mod, String.to_atom("func#{i}"), 0}, emb, "test")
       end
 
+      Store.sync()
       {:ok, query_emb} = Bumblebee.embed("test function")
 
       results = VectorStore.search(query_emb, limit: 3)
@@ -120,6 +123,7 @@ defmodule Ragex.VectorStoreTest do
 
       Store.store_embedding(:function, {:A, :a, 0}, emb1, "text1")
       Store.store_embedding(:function, {:B, :b, 0}, emb2, "text2")
+      Store.sync()
 
       {:ok, query_emb} = Bumblebee.embed("very similar text")
 
@@ -139,6 +143,7 @@ defmodule Ragex.VectorStoreTest do
 
       Store.store_embedding(:module, :ModA, emb1, "module")
       Store.store_embedding(:function, {:ModB, :func, 0}, emb2, "function")
+      Store.sync()
 
       {:ok, query_emb} = Bumblebee.embed("test")
 
@@ -168,6 +173,7 @@ defmodule Ragex.VectorStoreTest do
       Store.store_embedding(:function, {:A, :a, 0}, emb1, "text1")
       Store.store_embedding(:function, {:B, :b, 0}, emb2, "text2")
       Store.store_embedding(:function, {:C, :c, 0}, emb3, "text3")
+      Store.sync()
 
       {:ok, query_emb} = Bumblebee.embed("exact match text")
       results = VectorStore.search(query_emb)
@@ -190,6 +196,7 @@ defmodule Ragex.VectorStoreTest do
         Store.store_embedding(:function, {:Mod, String.to_atom("f#{i}"), 0}, emb, "test")
       end
 
+      Store.sync()
       {:ok, query_emb} = Bumblebee.embed("function number 5")
 
       results = VectorStore.nearest_neighbors(query_emb, 5)

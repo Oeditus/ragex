@@ -48,6 +48,10 @@ defmodule Ragex.Agent.Core do
           summary: map()
         }
 
+  @features Application.compile_env(:ragex, :features, [])
+  @include_suggestions Keyword.get(@features, :suggestions, true)
+  @include_dead_code Keyword.get(@features, :dead_code, false)
+
   @doc """
   Analyze a project and generate an AI-polished report.
 
@@ -284,8 +288,8 @@ defmodule Ragex.Agent.Core do
   defp discover_issues(path, opts) do
     Logger.info("Discovering issues...")
 
-    include_suggestions = Keyword.get(opts, :include_suggestions, true)
-    include_dead_code = Keyword.get(opts, :include_dead_code, false)
+    include_suggestions = Keyword.get(opts, :include_suggestions, @include_suggestions)
+    include_dead_code = Keyword.get(opts, :include_dead_code, @include_dead_code)
 
     issues = %{
       dead_code:
