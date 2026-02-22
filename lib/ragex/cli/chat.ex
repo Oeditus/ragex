@@ -470,11 +470,11 @@ defmodule Ragex.CLI.Chat do
   end
 
   defp render_history_message(%{role: :user, content: content}) do
-    IO.puts(Colors.highlight("You: ") <> truncate(content, 120))
+    IO.puts(Colors.highlight("You: ") <> (content || ""))
   end
 
   defp render_history_message(%{role: :assistant, content: content}) do
-    IO.puts(Colors.info("Ragex: ") <> truncate(content, 120))
+    IO.puts(Colors.info("Ragex: ") <> (content || ""))
   end
 
   defp render_history_message(%{role: :system}) do
@@ -482,8 +482,13 @@ defmodule Ragex.CLI.Chat do
     :ok
   end
 
+  defp render_history_message(%{role: :tool, content: content, name: name}) do
+    label = if name, do: "[tool:#{name}]", else: "[tool]"
+    IO.puts(Colors.muted(label <> " ") <> (content || ""))
+  end
+
   defp render_history_message(%{role: role, content: content}) do
-    IO.puts(Colors.muted("[#{role}] ") <> truncate(content, 120))
+    IO.puts(Colors.muted("[#{role}] ") <> (content || ""))
   end
 
   defp render_sources([]) do
@@ -636,9 +641,4 @@ defmodule Ragex.CLI.Chat do
   defp maybe_add(opts, _key, nil), do: opts
   defp maybe_add(opts, key, value), do: Keyword.put(opts, key, value)
 
-  defp truncate(text, max) when byte_size(text) > max do
-    String.slice(text, 0, max - 3) <> "..."
-  end
-
-  defp truncate(text, _max), do: text
 end

@@ -27,6 +27,7 @@ defmodule Ragex.Agent.Executor do
 
   alias Ragex.Agent.{Memory, ToolSchema}
   alias Ragex.AI.Config
+  alias Ragex.CLI.Colors
   alias Ragex.MCP.Handlers.Tools, as: MCPTools
 
   import Ragex.MCP.Handlers.Tools, only: [format_reason: 1]
@@ -151,6 +152,8 @@ defmodule Ragex.Agent.Executor do
   end
 
   defp execute_step(state) do
+    verbose = Keyword.get(state.opts, :verbose, true)
+
     with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
          {:ok, response} <- call_llm(state, messages) do
       # Update usage tracking
@@ -160,6 +163,7 @@ defmodule Ragex.Agent.Executor do
         nil ->
           # No tool calls - we're done
           content = response.content || ""
+          if verbose, do: print_assistant_response(content, state.iterations)
           # Save assistant response
           Memory.add_message(state.session_id, :assistant, content)
           {:done, content, updated_state}
@@ -167,12 +171,14 @@ defmodule Ragex.Agent.Executor do
         [] ->
           # Empty tool calls - we're done
           content = response.content || ""
+          if verbose, do: print_assistant_response(content, state.iterations)
           Memory.add_message(state.session_id, :assistant, content)
           {:done, content, updated_state}
 
         tool_calls when is_list(tool_calls) ->
           # Execute tool calls
           Logger.debug("Agent making #{length(tool_calls)} tool call(s)")
+          if verbose, do: print_tool_calls(tool_calls, response.content, state.iterations)
 
           # Save assistant message with tool calls
           Memory.add_message(state.session_id, :assistant, response.content || "",
@@ -184,7 +190,8 @@ defmodule Ragex.Agent.Executor do
 
           # Add tool results to conversation
           Enum.each(results, fn {tool_call, result} ->
-            result_str = format_tool_result(result)
+            result_str = format_tool_result(tool_call.name, result)
+            if verbose, do: print_tool_result(tool_call.name, result_str)
 
             Memory.add_message(state.session_id, :tool, result_str,
               tool_call_id: tool_call.id,
@@ -261,10 +268,13 @@ defmodule Ragex.Agent.Executor do
     """
     You are an expert code analysis agent. You have access to tools for analyzing codebases.
 
-    Your goal is to:
-    1. Understand the user's request
-    2. Use the available tools to gather information
-    3. Provide comprehensive, actionable insights
+    IMPORTANT RULES:
+    1. Tool results are returned as JSON. Parse and use them directly.
+    2. NEVER re-call a tool you already received results from. The data is already in the conversation.
+    3. After receiving tool results, synthesize them into your final answer immediately.
+    4. If a tool returns an error, explain the error and move on. Do NOT retry the same call.
+    5. Use at most 3-5 tool calls total before producing your final answer.
+    6. Your final response must be plain text (Markdown), NOT a tool call.
 
     When analyzing code:
     - Use semantic_search and hybrid_search for finding relevant code
@@ -273,6 +283,7 @@ defmodule Ragex.Agent.Executor do
     - Use suggest_refactorings for improvements
 
     Always explain your findings clearly and provide specific recommendations.
+    Work with the data you have. Do not loop trying to get more data.
     """
   end
 
@@ -314,35 +325,75 @@ defmodule Ragex.Agent.Executor do
     end
   end
 
-  defp format_tool_result({:ok, result}) when is_map(result) do
-    # Truncate large results
+  defp format_tool_result(tool_name, result) do
+    json_body = encode_tool_result(result)
+
+    """
+    [TOOL_RESULT: #{tool_name}]
+    The following is the complete JSON result from the "#{tool_name}" tool.
+    Use this data directly in your response. Do NOT call this tool again.
+
+    #{json_body}
+    [/TOOL_RESULT]
+    """
+  end
+
+  defp encode_tool_result({:ok, result}) when is_map(result) do
     result_str =
       with %{error_details: [_ | _]} = result <- result,
            do: update_in(result, [:error_details, Access.all(), :reason], &format_reason/1)
 
-    result_str =
-      case Jason.encode(result_str, pretty: true) do
-        {:ok, encoded} ->
-          encoded
-
-        {:error, _} ->
-          # Fallback to inspect if JSON encoding fails (e.g. due to tuples)
-          inspect(result_str, limit: :infinity, pretty: true)
-      end
-
-    if String.length(result_str) > 8000 do
-      String.slice(result_str, 0, 8000) <> "\n... (truncated)"
-    else
-      result_str
+    case Jason.encode(result_str, pretty: true) do
+      {:ok, encoded} -> encoded
+      {:error, _} -> inspect(result_str, limit: :infinity, pretty: true)
     end
   end
 
-  defp format_tool_result({:ok, result}) do
+  defp encode_tool_result({:ok, result}) do
     inspect(result, limit: :infinity, pretty: true)
   end
 
-  defp format_tool_result({:error, reason}) do
-    "Error: #{inspect(reason)}"
+  defp encode_tool_result({:error, reason}) do
+    Jason.encode!(%{error: true, reason: inspect(reason)})
+  end
+
+  # Console output helpers
+
+  defp print_assistant_response(content, iteration) do
+    IO.puts("")
+    IO.puts(Colors.bold("--- Assistant (iteration #{iteration}) ---"))
+    IO.puts(content)
+    IO.puts(Colors.muted("--- end ---"))
+    IO.puts("")
+  end
+
+  defp print_tool_calls(tool_calls, thinking, iteration) do
+    IO.puts("")
+    IO.puts(Colors.bold("--- Assistant (iteration #{iteration}) - Tool Calls ---"))
+
+    if thinking && thinking != "" do
+      IO.puts(Colors.muted("Thinking: #{thinking}"))
+    end
+
+    Enum.each(tool_calls, fn tc ->
+      args_str =
+        case Jason.encode(tc.arguments, pretty: true) do
+          {:ok, s} -> s
+          _ -> inspect(tc.arguments)
+        end
+
+      IO.puts(Colors.info("  -> #{tc.name}(#{args_str})"))
+    end)
+
+    IO.puts(Colors.muted("--- end ---"))
+  end
+
+  defp print_tool_result(tool_name, result_str) do
+    IO.puts("")
+    IO.puts(Colors.bold("--- Tool Result: #{tool_name} ---"))
+    IO.puts(result_str)
+    IO.puts(Colors.muted("--- end ---"))
+    IO.puts("")
   end
 
   defp get_provider(opts) do
