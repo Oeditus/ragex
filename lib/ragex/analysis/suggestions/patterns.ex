@@ -30,6 +30,8 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
   @duplication_threshold 0.85
   @nesting_depth_threshold 5
 
+  import Ragex.MCP.Handlers.Tools, only: [format_reason: 1]
+
   @doc """
   Returns list of all available pattern types.
   """
@@ -363,7 +365,7 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
         function: name,
         arity: arity
       },
-      reason: dead.reason,
+      reason: format_reason(dead.reason),
       metrics: %{
         visibility: dead.visibility,
         confidence: dead.confidence

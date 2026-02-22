@@ -2385,6 +2385,11 @@ defmodule Ragex.MCP.Handlers.Tools do
     end
   end
 
+  def format_reason(nil), do: "‹UNKNOWN›"
+  def format_reason(""), do: "‹UNKNOWN›"
+  def format_reason(reason) when is_binary(reason), do: reason
+  def format_reason({_, reason, _}) when is_binary(reason), do: reason
+
   # Private functions
 
   defp analyze_file(%{"path" => path} = params) do
@@ -6060,7 +6065,7 @@ defmodule Ragex.MCP.Handlers.Tools do
         %{
           file: path,
           type: loc.type,
-          reason: loc.reason,
+          reason: format_reason(loc.reason),
           confidence: loc.confidence,
           suggestion: loc.suggestion,
           note: "Line numbers not available (MetaAST limitation)"
@@ -6258,7 +6263,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           location: location,
           module: inspect(mod),
           confidence: df.confidence,
-          reason: df.reason,
+          reason: format_reason(df.reason),
           visibility: df.visibility
         }
       end)
@@ -6824,7 +6829,7 @@ defmodule Ragex.MCP.Handlers.Tools do
              priority_score: sugg.priority_score,
              confidence: sugg.confidence,
              target: sugg.target,
-             reason: sugg.reason,
+             reason: format_reason(sugg.reason),
              metrics: sugg.metrics,
              impact: sugg.impact,
              effort: sugg.effort,

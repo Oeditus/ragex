@@ -29,6 +29,8 @@ defmodule Ragex.Agent.Executor do
   alias Ragex.AI.Config
   alias Ragex.MCP.Handlers.Tools, as: MCPTools
 
+  import Ragex.MCP.Handlers.Tools, only: [format_reason: 1]
+
   @default_max_iterations 15
   @default_temperature 0.7
   @default_max_tokens 4096
@@ -130,8 +132,8 @@ defmodule Ragex.Agent.Executor do
       {:ok, [%{role: :assistant, content: content}]} when not is_nil(content) ->
         {:ok, state, content}
 
-      _ ->
-        {:error, :max_iterations_exceeded}
+      other ->
+        {:error, {:max_iterations_exceeded, other}}
     end
   end
 
@@ -314,7 +316,19 @@ defmodule Ragex.Agent.Executor do
 
   defp format_tool_result({:ok, result}) when is_map(result) do
     # Truncate large results
-    result_str = Jason.encode!(result, pretty: true)
+    result_str =
+      with %{error_details: [_ | _]} = result <- result,
+           do: update_in(result, [:error_details, Access.all(), :reason], &format_reason/1)
+
+    result_str =
+      case Jason.encode(result_str, pretty: true) do
+        {:ok, encoded} ->
+          encoded
+
+        {:error, _} ->
+          # Fallback to inspect if JSON encoding fails (e.g. due to tuples)
+          inspect(result_str, limit: :infinity, pretty: true)
+      end
 
     if String.length(result_str) > 8000 do
       String.slice(result_str, 0, 8000) <> "\n... (truncated)"

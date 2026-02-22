@@ -29,6 +29,8 @@ defmodule Ragex.RAG.Pipeline do
   - `:provider` - Override AI provider
   - `:system_prompt` - Custom system prompt
   - `:temperature` - AI temperature (default: 0.7)
+  - `:format` - Context format: :text, :json, :ast (default: :text)
+  - `:response_format` - AI response format: nil or :json (default: nil)
   """
   def query(user_query, opts \\ []) do
     Logger.info("RAG Pipeline: query='#{user_query}'")
@@ -145,14 +147,31 @@ defmodule Ragex.RAG.Pipeline do
   end
 
   defp build_prompt(user_query, context, opts) do
-    system_prompt = Keyword.get(opts, :system_prompt, default_system_prompt())
+    response_format = Keyword.get(opts, :response_format)
 
-    prompt =
-      PromptTemplate.render(:query, %{
-        system_prompt: system_prompt,
-        context: context,
-        query: user_query
-      })
+    system_prompt =
+      case response_format do
+        :json ->
+          Keyword.get(opts, :system_prompt, json_system_prompt())
+
+        _ ->
+          Keyword.get(opts, :system_prompt, default_system_prompt())
+      end
+
+    template_vars = %{
+      system_prompt: system_prompt,
+      context: context,
+      query: user_query
+    }
+
+    template_vars =
+      if response_format == :json do
+        Map.put(template_vars, :response_format, :json)
+      else
+        template_vars
+      end
+
+    prompt = PromptTemplate.render(:query, template_vars)
 
     {:ok, prompt}
   end
@@ -283,16 +302,31 @@ defmodule Ragex.RAG.Pipeline do
   end
 
   defp ai_generation_opts(opts) do
-    [
+    base = [
       temperature: Keyword.get(opts, :temperature, 0.7),
       max_tokens: Keyword.get(opts, :max_tokens, 2048)
     ]
+
+    case Keyword.get(opts, :response_format) do
+      :json -> Keyword.put(base, :response_format, :json)
+      _ -> base
+    end
   end
 
   defp format_response({:ok, ai_response}, retrieval_results) do
+    content = ai_response.content
+
+    # Try to parse JSON content if present
+    parsed_content =
+      case Jason.decode(content || "") do
+        {:ok, json} -> json
+        {:error, _} -> content
+      end
+
     {:ok,
      %{
-       content: ai_response.content,
+       content: parsed_content,
+       raw_content: content,
        sources: format_sources(retrieval_results),
        model: ai_response.model,
        usage: ai_response.usage,
@@ -366,6 +400,32 @@ defmodule Ragex.RAG.Pipeline do
     - Concise but comprehensive
     - Include specific file/function references when relevant
     - Suggest improvements when appropriate
+    """
+  end
+
+  defp json_system_prompt do
+    """
+    You are an expert code analysis assistant. You receive code context as JSON
+    and must respond exclusively in valid JSON.
+
+    Your response MUST be a valid JSON object matching this schema:
+    {
+      "answer": "string - your detailed analysis or answer",
+      "references": [
+        {"file": "string", "line": number, "function": "string", "relevance": "string"}
+      ],
+      "suggestions": [
+        {"type": "string", "description": "string", "priority": "high|medium|low"}
+      ],
+      "confidence": 0.0-1.0
+    }
+
+    Rules:
+    - Do not include any text outside the JSON object
+    - All string values must be properly escaped
+    - The "references" array should cite specific files and functions from the context
+    - The "suggestions" array is optional, include only when improvements are apparent
+    - Set "confidence" based on how well the context supports your answer
     """
   end
 

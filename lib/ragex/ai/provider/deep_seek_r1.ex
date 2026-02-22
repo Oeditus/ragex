@@ -147,8 +147,19 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
       stream: Keyword.get(opts, :stream, false)
     }
     |> maybe_add_system_prompt(opts)
+    |> maybe_add_response_format(opts)
     |> maybe_add_tools(opts)
     |> maybe_add_tool_choice(opts)
+  end
+
+  defp maybe_add_response_format(body, opts) do
+    case Keyword.get(opts, :response_format) do
+      :json ->
+        Map.put(body, :response_format, %{type: "json_object"})
+
+      _ ->
+        body
+    end
   end
 
   defp maybe_add_tools(body, opts) do
