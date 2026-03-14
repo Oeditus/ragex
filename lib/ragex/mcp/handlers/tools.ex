@@ -4978,31 +4978,27 @@ defmodule Ragex.MCP.Handlers.Tools do
         # Analyze directory
         case MetastaticBridge.analyze_directory(path, opts) do
           {:ok, results} ->
-            # Optionally store results
+            # MetastaticBridge.analyze_directory returns a flat list of maps;
+            # error entries have an :error key set.
+            {successes, errors} = Enum.split_with(results, &(not Map.has_key?(&1, :error)))
+
+            # Optionally store successful results
             if store_results do
-              Enum.each(results, fn {:ok, result} ->
-                QualityStore.store_metrics(result)
-              end)
+              Enum.each(successes, &QualityStore.store_metrics/1)
             end
 
             # Format response
-            success_count = Enum.count(results, &match?({:ok, _}, &1))
-            error_count = Enum.count(results, &match?({:error, _}, &1))
-
             files_analyzed =
-              Enum.map(results, fn
-                {:ok, result} ->
+              Enum.map(results, fn result ->
+                if Map.has_key?(result, :error) do
+                  %{path: result.path, error: inspect(result.error)}
+                else
                   %{
                     path: result.path,
                     language: result.language,
                     metrics: format_metrics(result)
                   }
-
-                {:error, {path, reason}} ->
-                  %{
-                    path: path,
-                    error: inspect(reason)
-                  }
+                end
               end)
 
             {:ok,
@@ -5010,8 +5006,8 @@ defmodule Ragex.MCP.Handlers.Tools do
                status: "success",
                type: "directory",
                path: path,
-               files_analyzed: success_count,
-               errors: error_count,
+               files_analyzed: length(successes),
+               errors: length(errors),
                results: files_analyzed,
                stored: store_results
              }}
