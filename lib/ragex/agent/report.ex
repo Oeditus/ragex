@@ -10,13 +10,30 @@ defmodule Ragex.Agent.Report do
 
   @doc """
   System prompt for report generation.
+
+  ## Parameters
+
+  - `project_path` - Absolute path to the project being analyzed (optional)
   """
-  @spec system_prompt() :: String.t()
-  def system_prompt do
+  @spec system_prompt(String.t() | nil) :: String.t()
+  def system_prompt(project_path \\ nil) do
+    path_constraint =
+      if project_path do
+        """
+
+        PROJECT CONTEXT:
+        The project being analyzed is located at: #{project_path}
+        CRITICAL: Any tool call that requires a "path" parameter MUST use exactly this path: #{project_path}
+        Do NOT use ".", relative paths, parent directories, or any other path.
+        """
+      else
+        ""
+      end
+
     """
     You are an expert code reviewer and software architect. Your task is to analyze
     code quality findings and produce clear, actionable reports.
-
+    #{path_constraint}
     IMPORTANT RULES:
     1. Tool results are returned as JSON data. Parse and use them directly.
     2. NEVER re-call a tool you already received results from. The data is already available in the conversation.

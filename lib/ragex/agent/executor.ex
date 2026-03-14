@@ -225,7 +225,7 @@ defmodule Ragex.Agent.Executor do
     formatted_messages = format_messages_for_provider(messages, state.provider_name)
 
     # Build prompt from messages
-    {system_prompt, user_messages} = extract_system_prompt(formatted_messages)
+    {system_prompt, user_messages} = extract_system_prompt(formatted_messages, state.session_id)
 
     # Call provider
     prompt = build_prompt_from_messages(user_messages)
@@ -245,13 +245,20 @@ defmodule Ragex.Agent.Executor do
     messages
   end
 
-  defp extract_system_prompt(messages) do
+  defp extract_system_prompt(messages, session_id) do
     case Enum.split_with(messages, &(&1["role"] == "system" or &1[:role] == "system")) do
       {[system | _], others} ->
         {system["content"] || system[:content], others}
 
       {[], others} ->
-        {default_system_prompt(), others}
+        {default_system_prompt(get_project_path(session_id)), others}
+    end
+  end
+
+  defp get_project_path(session_id) do
+    case Memory.get_session(session_id) do
+      {:ok, session} -> session.metadata[:project_path]
+      _ -> nil
     end
   end
 
@@ -264,10 +271,23 @@ defmodule Ragex.Agent.Executor do
     end
   end
 
-  defp default_system_prompt do
+  defp default_system_prompt(project_path) do
+    path_constraint =
+      if project_path do
+        """
+
+        PROJECT CONTEXT:
+        The project being analyzed is located at: #{project_path}
+        CRITICAL: Any tool call that requires a "path" parameter MUST use exactly this path: #{project_path}
+        Do NOT use ".", relative paths, parent directories, or any other path.
+        """
+      else
+        ""
+      end
+
     """
     You are an expert code analysis agent. You have access to tools for analyzing codebases.
-
+    #{path_constraint}
     IMPORTANT RULES:
     1. Tool results are returned as JSON. Parse and use them directly.
     2. NEVER re-call a tool you already received results from. The data is already in the conversation.

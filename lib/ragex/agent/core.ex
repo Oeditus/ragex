@@ -345,8 +345,15 @@ defmodule Ragex.Agent.Core do
   defp generate_report(session_id, issues, opts) do
     Logger.info("Generating AI-polished report...")
 
-    # Add system prompt for report generation
-    system_prompt = Report.system_prompt()
+    # Get project path from session metadata for path-aware system prompt
+    project_path =
+      case Memory.get_session(session_id) do
+        {:ok, session} -> session.metadata[:project_path]
+        _ -> nil
+      end
+
+    # Add system prompt for report generation (with project path constraint)
+    system_prompt = Report.system_prompt(project_path)
     Memory.add_message(session_id, :system, system_prompt)
 
     # Add user request for report
