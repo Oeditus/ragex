@@ -37,9 +37,9 @@ defmodule Ragex.Graph.Persistence do
   - `{:ok, path}` - Cache file path
   - `{:error, reason}` - Failure
   """
-  @spec save() :: {:ok, Path.t()} | {:error, term()}
-  def save do
-    cache_path = get_cache_path()
+  @spec save(String.t() | nil) :: {:ok, Path.t()} | {:error, term()}
+  def save(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
     cache_dir = Path.dirname(cache_path)
 
     File.mkdir_p!(cache_dir)
@@ -83,9 +83,9 @@ defmodule Ragex.Graph.Persistence do
   - `{:error, :not_found}` - No cache file
   - `{:error, reason}` - Failure
   """
-  @spec load() :: {:ok, map()} | {:error, term()}
-  def load do
-    cache_path = get_cache_path()
+  @spec load(String.t() | nil) :: {:ok, map()} | {:error, term()}
+  def load(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       do_load(cache_path)
@@ -97,9 +97,9 @@ defmodule Ragex.Graph.Persistence do
   @doc """
   Checks if a valid graph cache exists.
   """
-  @spec cache_valid?() :: boolean()
-  def cache_valid? do
-    cache_path = get_cache_path()
+  @spec cache_valid?(String.t() | nil) :: boolean()
+  def cache_valid?(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       case read_metadata(cache_path) do
@@ -114,9 +114,9 @@ defmodule Ragex.Graph.Persistence do
   @doc """
   Returns statistics about the graph cache.
   """
-  @spec stats() :: {:ok, map()} | {:error, term()}
-  def stats do
-    cache_path = get_cache_path()
+  @spec stats(String.t() | nil) :: {:ok, map()} | {:error, term()}
+  def stats(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       stat = File.stat!(cache_path)
@@ -141,9 +141,9 @@ defmodule Ragex.Graph.Persistence do
   @doc """
   Clears the graph cache for the current project.
   """
-  @spec clear() :: :ok
-  def clear do
-    cache_path = get_cache_path()
+  @spec clear(String.t() | nil) :: :ok
+  def clear(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       File.rm!(cache_path)
@@ -202,11 +202,11 @@ defmodule Ragex.Graph.Persistence do
     e -> {:error, Exception.message(e)}
   end
 
-  defp get_cache_path do
+  defp get_cache_path(project_path) do
     cache_dir =
       Application.get_env(:ragex, :cache_root, EmbeddingsPersistence.default_cache_root())
 
-    project_hash = EmbeddingsPersistence.generate_project_hash()
+    project_hash = EmbeddingsPersistence.generate_project_hash(project_path)
 
     Path.join([cache_dir, project_hash, @cache_file_name])
   end

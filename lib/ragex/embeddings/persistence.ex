@@ -33,13 +33,13 @@ defmodule Ragex.Embeddings.Persistence do
   - `{:ok, path}` - Success with cache file path
   - `{:error, reason}` - Failure reason
   """
-  @spec save(atom() | reference()) :: {:ok, Path.t()} | {:error, term()}
-  def save(table_or_opts \\ nil)
+  @spec save(atom() | reference() | nil, String.t() | nil) :: {:ok, Path.t()} | {:error, term()}
+  def save(table_or_nil \\ nil, project_path \\ nil)
 
-  def save(nil), do: save(Store.embeddings_table())
+  def save(nil, project_path), do: save(Store.embeddings_table(), project_path)
 
-  def save(table) when is_reference(table) or is_atom(table) do
-    do_save(table)
+  def save(table, project_path) when is_reference(table) or is_atom(table) do
+    do_save(table, project_path)
   end
 
   @doc """
@@ -56,13 +56,13 @@ defmodule Ragex.Embeddings.Persistence do
   - `{:error, :incompatible_model}` - Model mismatch
   - `{:error, reason}` - Other failure
   """
-  @spec load() :: {:ok, non_neg_integer()} | {:error, term()}
-  def load do
+  @spec load(String.t() | nil) :: {:ok, non_neg_integer()} | {:error, term()}
+  def load(project_path \\ nil) do
     config = Application.get_env(:ragex, :cache, enabled: true)
     enabled = Keyword.get(config, :enabled, true)
 
     if enabled do
-      do_load()
+      do_load(project_path)
     else
       {:error, :cache_disabled}
     end
@@ -83,7 +83,8 @@ defmodule Ragex.Embeddings.Persistence do
   @spec clear(atom() | {atom(), integer()}) :: :ok | {:error, term()}
   def clear(mode \\ :current)
 
-  def clear(:current), do: clear_current_cache()
+  def clear(:current), do: clear_current_cache(nil)
+  def clear({:project, path}), do: clear_current_cache(path)
   def clear(:all), do: clear_all_caches()
   def clear({:older_than, days}) when is_integer(days), do: clear_old_caches(days)
 
@@ -93,8 +94,8 @@ defmodule Ragex.Embeddings.Persistence do
   Returns information about cache file, size, age, and contents.
   """
   @spec stats() :: {:ok, map()} | {:error, term()}
-  def stats do
-    cache_path = get_cache_path()
+  def stats(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       stat = File.stat!(cache_path)
@@ -163,8 +164,8 @@ defmodule Ragex.Embeddings.Persistence do
   Checks if a valid cache exists for the current configuration.
   """
   @spec cache_valid?() :: boolean()
-  def cache_valid? do
-    cache_path = get_cache_path()
+  def cache_valid?(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       case read_metadata(cache_path) do
@@ -185,8 +186,8 @@ defmodule Ragex.Embeddings.Persistence do
 
   # Private Functions
 
-  defp do_save(table) do
-    cache_path = get_cache_path()
+  defp do_save(table, project_path) do
+    cache_path = get_cache_path(project_path)
     cache_dir = Path.dirname(cache_path)
 
     # Ensure cache directory exists
@@ -239,8 +240,8 @@ defmodule Ragex.Embeddings.Persistence do
       {:error, Exception.message(e)}
   end
 
-  defp do_load do
-    cache_path = get_cache_path()
+  defp do_load(project_path) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       try do
@@ -354,8 +355,8 @@ defmodule Ragex.Embeddings.Persistence do
       {:error, Exception.message(e)}
   end
 
-  defp clear_current_cache do
-    cache_path = get_cache_path()
+  defp clear_current_cache(project_path) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       File.rm!(cache_path)
@@ -424,9 +425,9 @@ defmodule Ragex.Embeddings.Persistence do
     end)
   end
 
-  defp get_cache_path do
+  defp get_cache_path(project_path \\ nil) do
     cache_dir = get_cache_dir()
-    project_hash = generate_project_hash()
+    project_hash = generate_project_hash(project_path)
 
     Path.join([cache_dir, project_hash, @cache_file_name])
   end
@@ -436,15 +437,19 @@ defmodule Ragex.Embeddings.Persistence do
   end
 
   @doc """
-  Generates a unique hash for the current project directory.
+  Generates a unique hash for a project directory.
 
   This ensures different projects have separate caches.
-  Uses the absolute path of the current working directory.
-  """
-  def generate_project_hash do
-    cwd = File.cwd!()
+  When `project_path` is nil, falls back to the current working directory.
 
-    :crypto.hash(:sha256, cwd)
+  ## Parameters
+
+  - `project_path` - Absolute path to the project (optional, defaults to CWD)
+  """
+  def generate_project_hash(project_path \\ nil) do
+    path = if project_path, do: Path.expand(project_path), else: File.cwd!()
+
+    :crypto.hash(:sha256, path)
     |> Base.encode16(case: :lower)
     |> String.slice(0, 16)
   end

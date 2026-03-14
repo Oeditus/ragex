@@ -113,7 +113,7 @@ defmodule Mix.Tasks.Ragex.Cache.Refresh do
         # Save cache
         save_spinner = Progress.spinner(label: "Saving cache...")
 
-        case Persistence.save() do
+        case Persistence.save(nil, path) do
           {:ok, cache_path} ->
             Progress.stop_spinner(save_spinner, Colors.success("✓ Cache saved to #{cache_path}"))
 

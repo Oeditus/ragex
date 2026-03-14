@@ -341,6 +341,26 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Switches the store to a specific project path.
+
+  Clears all current graph data (nodes, edges, embeddings, file tracker),
+  then loads the cached graph and embeddings for the given project path.
+  This ensures the store contains only data for the target project.
+
+  ## Parameters
+
+  - `project_path` - Absolute path to the project directory
+
+  ## Returns
+
+  - `:ok`
+  """
+  @spec load_project(String.t()) :: :ok
+  def load_project(project_path) do
+    GenServer.call(__MODULE__, {:load_project, project_path}, :infinity)
+  end
+
+  @doc """
   Stores an embedding vector for a node.
   """
   def store_embedding(node_type, node_id, embedding, text) do
@@ -420,39 +440,30 @@ defmodule Ragex.Graph.Store do
     # Initialize file tracker for incremental updates
     FileTracker.init()
 
-    # Attempt to load cached embeddings
-    case Persistence.load() do
-      {:ok, count} ->
-        Logger.info("Graph store initialized with #{count} cached embeddings")
+    # At startup, load CWD-based cache (backward compat for MCP server / interactive use).
+    # Agent.Core.analyze_project will call load_project/1 to switch to the correct path.
+    do_load_project_cache(nil)
 
-      {:error, :not_found} ->
-        Logger.info("Graph store initialized (no embedding cache found)")
-
-      {:error, :incompatible} ->
-        Logger.warning("Graph store initialized (cache incompatible with current model)")
-
-      {:error, reason} ->
-        Logger.warning("Graph store initialized (failed to load cache: #{inspect(reason)})")
-    end
-
-    # Attempt to load cached graph nodes/edges
-    case GraphPersistence.load() do
-      {:ok, %{nodes: n, edges: e}} ->
-        Logger.info("Loaded graph from cache: #{n} nodes, #{e} edges")
-
-      {:error, :not_found} ->
-        Logger.debug("No graph cache found")
-
-      {:error, reason} ->
-        Logger.warning("Failed to load graph cache: #{inspect(reason)}")
-    end
-
-    {:ok, %{}}
+    {:ok, %{project_path: nil}}
   end
 
   @impl true
   def handle_call(:sync, _from, state) do
     {:reply, :ok, state}
+  end
+
+  @impl true
+  def handle_call({:load_project, project_path}, _from, state) do
+    # Clear all tables
+    :ets.delete_all_objects(@nodes_table)
+    :ets.delete_all_objects(@edges_table)
+    :ets.delete_all_objects(@embeddings_table)
+    FileTracker.clear_all()
+
+    # Load caches for the target project path
+    do_load_project_cache(project_path)
+
+    {:reply, :ok, %{state | project_path: project_path}}
   end
 
   @impl true
@@ -527,10 +538,12 @@ defmodule Ragex.Graph.Store do
   end
 
   @impl true
-  def terminate(reason, _state) do
-    # Save to disk on normal shutdown
+  def terminate(reason, state) do
+    # Save to disk on normal shutdown, using the stored project path
     if reason == :shutdown or reason == :normal do
-      case Persistence.save(@embeddings_table) do
+      pp = state[:project_path]
+
+      case Persistence.save(@embeddings_table, pp) do
         {:ok, path} ->
           Logger.info("Embeddings saved to #{path}")
 
@@ -538,7 +551,7 @@ defmodule Ragex.Graph.Store do
           Logger.error("Failed to save embeddings: #{inspect(err)}")
       end
 
-      case GraphPersistence.save() do
+      case GraphPersistence.save(pp) do
         {:ok, path} ->
           Logger.info("Graph saved to #{path}")
 
@@ -551,5 +564,33 @@ defmodule Ragex.Graph.Store do
 
     # ETS tables are automatically cleaned up
     :ok
+  end
+
+  # Loads graph and embedding caches for a given project path (nil = CWD).
+  defp do_load_project_cache(project_path) do
+    case Persistence.load(project_path) do
+      {:ok, count} ->
+        Logger.info("Loaded #{count} cached embeddings")
+
+      {:error, :not_found} ->
+        Logger.debug("No embedding cache found")
+
+      {:error, :incompatible} ->
+        Logger.warning("Embedding cache incompatible with current model")
+
+      {:error, reason} ->
+        Logger.warning("Failed to load embedding cache: #{inspect(reason)}")
+    end
+
+    case GraphPersistence.load(project_path) do
+      {:ok, %{nodes: n, edges: e}} ->
+        Logger.info("Loaded graph from cache: #{n} nodes, #{e} edges")
+
+      {:error, :not_found} ->
+        Logger.debug("No graph cache found")
+
+      {:error, reason} ->
+        Logger.warning("Failed to load graph cache: #{inspect(reason)}")
+    end
   end
 end

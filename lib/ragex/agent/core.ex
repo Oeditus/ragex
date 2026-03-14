@@ -76,6 +76,10 @@ defmodule Ragex.Agent.Core do
     Logger.info("Starting project analysis: #{path}")
 
     with {:ok, abs_path} <- validate_path(path) do
+      # Switch store to the target project: clears stale data and loads
+      # the correct per-project cache (graph + embeddings + file tracker).
+      Store.load_project(abs_path)
+
       graph_stats = Store.stats()
 
       case {graph_stats.nodes > 0, AnalysisCache.load(abs_path)} do
@@ -232,10 +236,11 @@ defmodule Ragex.Agent.Core do
   end
 
   defp persist_all_state(issues, path) do
-    # Eagerly save state to disk since Mix tasks don't trigger GenServer terminate/2
+    # Eagerly save state to disk since Mix tasks don't trigger GenServer terminate/2.
+    # Use the analyzed path as the cache key so different projects get separate caches.
     AnalysisCache.save(issues, path)
-    EmbeddingsPersistence.save()
-    GraphPersistence.save()
+    EmbeddingsPersistence.save(nil, path)
+    GraphPersistence.save(path)
   end
 
   defp validate_path(path) do

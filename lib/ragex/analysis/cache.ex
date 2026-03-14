@@ -44,7 +44,7 @@ defmodule Ragex.Analysis.Cache do
   """
   @spec save(map(), String.t()) :: :ok | {:error, term()}
   def save(issues, path) do
-    cache_path = get_cache_path()
+    cache_path = get_cache_path(path)
     cache_dir = Path.dirname(cache_path)
 
     File.mkdir_p!(cache_dir)
@@ -87,7 +87,7 @@ defmodule Ragex.Analysis.Cache do
   """
   @spec load(String.t()) :: {:ok, map()} | {:stale, map(), [String.t()]} | {:error, term()}
   def load(path) do
-    cache_path = get_cache_path()
+    cache_path = get_cache_path(path)
 
     if File.exists?(cache_path) do
       do_load(cache_path, path)
@@ -110,9 +110,9 @@ defmodule Ragex.Analysis.Cache do
   @doc """
   Clears the analysis cache.
   """
-  @spec clear() :: :ok
-  def clear do
-    cache_path = get_cache_path()
+  @spec clear(String.t() | nil) :: :ok
+  def clear(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       File.rm!(cache_path)
@@ -126,8 +126,8 @@ defmodule Ragex.Analysis.Cache do
   Returns statistics about the analysis cache.
   """
   @spec stats() :: {:ok, map()} | {:error, term()}
-  def stats do
-    cache_path = get_cache_path()
+  def stats(project_path \\ nil) do
+    cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do
       stat = File.stat!(cache_path)
@@ -224,11 +224,11 @@ defmodule Ragex.Analysis.Cache do
     e -> {:error, Exception.message(e)}
   end
 
-  defp get_cache_path do
+  defp get_cache_path(project_path) do
     cache_dir =
       Application.get_env(:ragex, :cache_root, EmbeddingsPersistence.default_cache_root())
 
-    project_hash = EmbeddingsPersistence.generate_project_hash()
+    project_hash = EmbeddingsPersistence.generate_project_hash(project_path)
 
     Path.join([cache_dir, project_hash, @cache_file_name])
   end
