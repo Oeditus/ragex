@@ -365,21 +365,7 @@ defmodule Ragex.Analysis.Semantic do
 
   # Private functions
 
-  defp detect_language(path) do
-    case Path.extname(path) do
-      ".ex" -> :elixir
-      ".exs" -> :elixir
-      ".erl" -> :erlang
-      ".hrl" -> :erlang
-      ".py" -> :python
-      ".rb" -> :ruby
-      ".js" -> :javascript
-      ".jsx" -> :javascript
-      ".ts" -> :javascript
-      ".tsx" -> :javascript
-      _ -> :unknown
-    end
-  end
+  defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
 
   defp extract_ops_from_ast(ast, language, acc) do
     case ast do
@@ -472,17 +458,7 @@ defmodule Ragex.Analysis.Semantic do
   defp domain_label(:external_api), do: "external API calls"
 
   defp find_source_files(path, recursive) do
-    pattern =
-      if recursive do
-        Path.join([path, "**", "*.{ex,exs,erl,hrl,py,rb,js,jsx,ts,tsx}"])
-      else
-        Path.join([path, "*.{ex,exs,erl,hrl,py,rb,js,jsx,ts,tsx}"])
-      end
-
-    files = Path.wildcard(pattern)
-    {:ok, files}
-  rescue
-    e -> {:error, {:wildcard_failed, e}}
+    Ragex.LanguageSupport.find_source_files(path, recursive: recursive)
   end
 
   defp analyze_files_parallel(files, opts, max_concurrency) do

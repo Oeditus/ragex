@@ -6,11 +6,8 @@ defmodule Ragex.Analyzers.Directory do
   This module provides batch analysis capabilities for entire projects.
   """
 
-  alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
-  alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
   alias Ragex.Analyzers.JavaScript, as: JavaScriptAnalyzer
-  alias Ragex.Analyzers.Python, as: PythonAnalyzer
-  alias Ragex.Analyzers.Ruby, as: RubyAnalyzer
+  alias Ragex.Analyzers.Metastatic, as: MetastaticAnalyzer
   alias Ragex.Embeddings.{FileTracker, Helper}
   alias Ragex.Graph.Store
   alias Ragex.MCP.Server
@@ -199,13 +196,7 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   defp supported_file?(path) do
-    ext = Path.extname(path)
-
-    ext in (ElixirAnalyzer.supported_extensions() ++
-              ErlangAnalyzer.supported_extensions() ++
-              PythonAnalyzer.supported_extensions() ++
-              JavaScriptAnalyzer.supported_extensions() ++
-              RubyAnalyzer.supported_extensions())
+    Path.extname(path) in Ragex.LanguageSupport.supported_extensions()
   end
 
   defp filter_changed_files(file_paths) do
@@ -246,27 +237,17 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   defp analyze_file(file_path) do
-    ext = Path.extname(file_path)
+    language = Ragex.LanguageSupport.detect_language(file_path)
 
-    analyzer =
-      case ext do
-        ext when ext in [".ex", ".exs"] -> ElixirAnalyzer
-        ext when ext in [".erl", ".hrl"] -> ErlangAnalyzer
-        ".py" -> PythonAnalyzer
-        ext when ext in [".js", ".jsx", ".ts", ".tsx", ".mjs"] -> JavaScriptAnalyzer
-        ".rb" -> RubyAnalyzer
-        _ -> nil
-      end
-
-    do_analyze_file(analyzer, file_path)
-  end
-
-  defp do_analyze_file(nil, _file_path), do: {:error, :unsupported_file_type}
-
-  defp do_analyze_file(analyzer, file_path) do
     case File.read(file_path) do
       {:ok, content} ->
-        analyzer.analyze(content, file_path)
+        # JavaScript has no Metastatic adapter -- use native analyzer
+        if language == :javascript do
+          JavaScriptAnalyzer.analyze(content, file_path)
+        else
+          # Primary path: MetaAST analyzer for all Metastatic-supported languages
+          MetastaticAnalyzer.analyze(content, file_path)
+        end
 
       {:error, reason} ->
         {:error, {:file_read_error, reason}}

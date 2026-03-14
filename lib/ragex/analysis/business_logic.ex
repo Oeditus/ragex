@@ -429,25 +429,8 @@ defmodule Ragex.Analysis.BusinessLogic do
 
   # Private functions
 
-  defp detect_language(path) do
-    case Path.extname(path) do
-      ".ex" -> :elixir
-      ".exs" -> :elixir
-      ".erl" -> :erlang
-      ".hrl" -> :erlang
-      ".py" -> :python
-      ".rb" -> :ruby
-      ".hs" -> :haskell
-      _ -> :unknown
-    end
-  end
-
-  defp get_adapter(:elixir), do: {:ok, Metastatic.Adapters.Elixir}
-  defp get_adapter(:erlang), do: {:ok, Metastatic.Adapters.Erlang}
-  defp get_adapter(:python), do: {:ok, Metastatic.Adapters.Python}
-  defp get_adapter(:ruby), do: {:ok, Metastatic.Adapters.Ruby}
-  defp get_adapter(:haskell), do: {:ok, Metastatic.Adapters.Haskell}
-  defp get_adapter(lang), do: {:error, {:unsupported_language, lang}}
+  defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
+  defp get_adapter(lang), do: Ragex.LanguageSupport.get_adapter(lang)
 
   defp parse_document(adapter, content, language) do
     Adapter.abstract(adapter, content, language)
@@ -663,29 +646,7 @@ defmodule Ragex.Analysis.BusinessLogic do
   end
 
   defp find_source_files(path, recursive) do
-    cond do
-      # If path is a file, return it directly
-      File.regular?(path) ->
-        {:ok, [path]}
-
-      # If path is a directory, use wildcard
-      File.dir?(path) ->
-        pattern =
-          if recursive do
-            Path.join([path, "**", "*.{ex,exs,erl,hrl,py,rb,hs}"])
-          else
-            Path.join([path, "*.{ex,exs,erl,hrl,py,rb,hs}"])
-          end
-
-        files = Path.wildcard(pattern)
-        {:ok, files}
-
-      # Path doesn't exist
-      true ->
-        {:error, {:not_found, path}}
-    end
-  rescue
-    e -> {:error, {:wildcard_failed, e}}
+    Ragex.LanguageSupport.find_source_files(path, recursive: recursive, metastatic_only: true)
   end
 
   defp analyze_files_sequential(files, opts) do

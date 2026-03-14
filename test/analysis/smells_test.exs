@@ -203,11 +203,8 @@ defmodule Ragex.Analysis.SmellsTest do
       assert result_high.total_smells <= result_low.total_smells
     end
 
-    test "returns empty result for nonexistent directory" do
-      # Directory doesn't exist, but wildcard returns empty list (not error)
-      {:ok, result} = Smells.analyze_directory("/nonexistent/directory")
-      assert result.total_files == 0
-      assert result.total_smells == 0
+    test "returns error for nonexistent directory" do
+      assert {:error, _} = Smells.analyze_directory("/nonexistent/directory")
     end
   end
 

@@ -2,7 +2,12 @@ defmodule Ragex.Analysis.ASTLocationExtractor do
   @moduledoc """
   Extracts location information from language-specific ASTs before MetaAST transformation.
 
-  ## Purpose
+  **DEPRECATED**: MetaAST nodes now carry `:line` and `:col` metadata natively.
+  This module is no longer needed and will be removed in a future release.
+  Use `Ragex.Analysis.LocationEnricher` for knowledge-graph-based location
+  enrichment, or read locations directly from MetaAST node metadata.
+
+  ## Purpose (historical)
 
   Phase 1 of comprehensive location solution: Extract line/column information from
   native AST representations before Metastatic abstracts them into MetaAST.
@@ -318,16 +323,5 @@ defmodule Ragex.Analysis.ASTLocationExtractor do
 
   # Language detection
 
-  defp detect_language(path) do
-    case Path.extname(path) do
-      ".ex" -> :elixir
-      ".exs" -> :elixir
-      ".erl" -> :erlang
-      ".hrl" -> :erlang
-      ".py" -> :python
-      ".rb" -> :ruby
-      ".hs" -> :haskell
-      _ -> :unknown
-    end
-  end
+  defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
 end

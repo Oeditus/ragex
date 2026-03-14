@@ -30,7 +30,7 @@ defmodule Ragex.Analysis.Security do
 
   alias Metastatic.{Adapter, Document}
   alias Metastatic.Analysis.Security, as: MetaSecurity
-  alias Ragex.Analysis.{ASTLocationExtractor, LocationPreservation}
+  alias Ragex.Analysis.LocationPreservation
   require Logger
 
   @type vulnerability :: %{
@@ -76,13 +76,12 @@ defmodule Ragex.Analysis.Security do
     language = Keyword.get(opts, :language, detect_language(path))
 
     with {:ok, content} <- File.read(path),
-         # Phase 1: Extract native AST locations BEFORE Metastatic transformation
-         {:ok, location_map} <- ASTLocationExtractor.extract_from_content(content, language),
          {:ok, adapter} <- get_adapter(language),
          {:ok, doc} <- parse_document(adapter, content, language),
          {:ok, meta_result} <- MetaSecurity.analyze(doc, opts) do
-      # Phase 2: Build result with location preservation
-      result = build_result(path, language, meta_result, location_map)
+      # MetaAST nodes already carry :line/:col; LocationPreservation's
+      # enricher fallback handles any remaining gaps via the knowledge graph.
+      result = build_result(path, language, meta_result, %{})
       {:ok, result}
     else
       {:error, reason} = error ->
@@ -177,25 +176,8 @@ defmodule Ragex.Analysis.Security do
 
   # Private functions
 
-  defp detect_language(path) do
-    case Path.extname(path) do
-      ".ex" -> :elixir
-      ".exs" -> :elixir
-      ".erl" -> :erlang
-      ".hrl" -> :erlang
-      ".py" -> :python
-      ".rb" -> :ruby
-      ".hs" -> :haskell
-      _ -> :unknown
-    end
-  end
-
-  defp get_adapter(:elixir), do: {:ok, Metastatic.Adapters.Elixir}
-  defp get_adapter(:erlang), do: {:ok, Metastatic.Adapters.Erlang}
-  defp get_adapter(:python), do: {:ok, Metastatic.Adapters.Python}
-  defp get_adapter(:ruby), do: {:ok, Metastatic.Adapters.Ruby}
-  defp get_adapter(:haskell), do: {:ok, Metastatic.Adapters.Haskell}
-  defp get_adapter(lang), do: {:error, {:unsupported_language, lang}}
+  defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
+  defp get_adapter(lang), do: Ragex.LanguageSupport.get_adapter(lang)
 
   defp parse_document(adapter, content, language) do
     case Adapter.abstract(adapter, content, language) do
@@ -237,23 +219,7 @@ defmodule Ragex.Analysis.Security do
   end
 
   defp find_source_files(path, recursive) do
-    extensions = [".ex", ".exs", ".erl", ".hrl", ".py", ".rb"]
-
-    try do
-      files =
-        if recursive do
-          Path.wildcard(Path.join(path, "**/*"))
-        else
-          Path.wildcard(Path.join(path, "*"))
-        end
-        |> Enum.filter(fn file ->
-          File.regular?(file) and Path.extname(file) in extensions
-        end)
-
-      {:ok, files}
-    rescue
-      e -> {:error, e}
-    end
+    Ragex.LanguageSupport.find_source_files(path, recursive: recursive, metastatic_only: true)
   end
 
   defp analyze_files_parallel(files, opts, max_concurrency) do

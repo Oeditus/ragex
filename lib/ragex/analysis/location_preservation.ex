@@ -1,22 +1,18 @@
 defmodule Ragex.Analysis.LocationPreservation do
   @moduledoc """
-  Preserves location metadata from native AST through Metastatic analysis.
+  Preserves location metadata through Metastatic analysis.
 
   ## Purpose
 
-  Phase 2 of comprehensive location solution: After extracting location info from
-  native AST (Phase 1), this module attaches that information to Metastatic analysis
-  results.
-
-  Since Metastatic's MetaAST abstraction strips location metadata, we maintain a
-  separate location map and merge it back into analysis results.
+  Merges location information into Metastatic analysis results. When the analysis
+  result does not already carry precise line/column data, falls back to
+  `LocationEnricher` which uses the knowledge graph.
 
   ## Strategy
 
-  1. **Extract**: Use ASTLocationExtractor to get native AST locations
-  2. **Correlate**: Match analysis results to location map by identifier
-  3. **Merge**: Attach location metadata to issues/smells/vulnerabilities
-  4. **Fallback**: Use LocationEnricher when native locations unavailable
+  1. **Check**: If a pre-populated `location_map` is provided, try to match by identifier
+  2. **Fallback**: Use `LocationEnricher` for knowledge-graph-based location enrichment
+  3. **Preserve**: Keep any existing location data on issues
 
   ## Usage
 
@@ -216,16 +212,5 @@ defmodule Ragex.Analysis.LocationPreservation do
     |> Map.new()
   end
 
-  defp detect_language(path) do
-    case Path.extname(path) do
-      ".ex" -> :elixir
-      ".exs" -> :elixir
-      ".erl" -> :erlang
-      ".hrl" -> :erlang
-      ".py" -> :python
-      ".rb" -> :ruby
-      ".hs" -> :haskell
-      _ -> :unknown
-    end
-  end
+  defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
 end

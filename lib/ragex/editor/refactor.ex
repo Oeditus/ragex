@@ -1319,16 +1319,5 @@ defmodule Ragex.Editor.Refactor do
     end
   end
 
-  # Detect language from file extension
-  defp detect_language(file_path) do
-    ext = Path.extname(file_path)
-
-    case ext do
-      ext when ext in [".ex", ".exs"] -> :elixir
-      ext when ext in [".erl", ".hrl"] -> :erlang
-      ext when ext == ".py" -> :python
-      ext when ext in [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"] -> :javascript
-      _ -> :unknown
-    end
-  end
+  defp detect_language(file_path), do: Ragex.LanguageSupport.detect_language(file_path)
 end

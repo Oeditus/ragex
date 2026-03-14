@@ -223,25 +223,8 @@ defmodule Ragex.Analysis.Smells do
 
   # Private functions
 
-  defp detect_language(path) do
-    case Path.extname(path) do
-      ".ex" -> :elixir
-      ".exs" -> :elixir
-      ".erl" -> :erlang
-      ".hrl" -> :erlang
-      ".py" -> :python
-      ".rb" -> :ruby
-      ".hs" -> :haskell
-      _ -> :unknown
-    end
-  end
-
-  defp get_adapter(:elixir), do: {:ok, Metastatic.Adapters.Elixir}
-  defp get_adapter(:erlang), do: {:ok, Metastatic.Adapters.Erlang}
-  defp get_adapter(:python), do: {:ok, Metastatic.Adapters.Python}
-  defp get_adapter(:ruby), do: {:ok, Metastatic.Adapters.Ruby}
-  defp get_adapter(:haskell), do: {:ok, Metastatic.Adapters.Haskell}
-  defp get_adapter(lang), do: {:error, {:unsupported_language, lang}}
+  defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
+  defp get_adapter(lang), do: Ragex.LanguageSupport.get_adapter(lang)
 
   defp parse_document(adapter, content, language) do
     case Adapter.abstract(adapter, content, language) do
@@ -273,17 +256,7 @@ defmodule Ragex.Analysis.Smells do
   end
 
   defp find_source_files(path, recursive) do
-    pattern =
-      if recursive do
-        Path.join([path, "**", "*.{ex,exs,erl,hrl,py,rb,hs}"])
-      else
-        Path.join([path, "*.{ex,exs,erl,hrl,py,rb,hs}"])
-      end
-
-    files = Path.wildcard(pattern)
-    {:ok, files}
-  rescue
-    e -> {:error, {:wildcard_failed, e}}
+    Ragex.LanguageSupport.find_source_files(path, recursive: recursive, metastatic_only: true)
   end
 
   defp analyze_files_sequential(files, opts) do
