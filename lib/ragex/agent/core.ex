@@ -374,25 +374,42 @@ defmodule Ragex.Agent.Core do
     system_prompt = Report.system_prompt(project_path)
     Memory.add_message(session_id, :system, system_prompt)
 
-    # Add user request for report
+    # Collect graph stats for architectural context
+    graph_stats = Store.stats()
+
+    modules =
+      Store.list_nodes(:module, :infinity)
+
+    functions =
+      Store.list_nodes(:function, :infinity)
+
+    # Add user request for report with all available data
     issues_summary = Report.format_issues_for_llm(issues)
 
     user_prompt = """
-    Please analyze the following code analysis results and generate a comprehensive,
-    human-readable report. Organize by severity, provide actionable recommendations,
-    and highlight the most critical issues first.
+    Generate a comprehensive Code Quality Audit Report from the following analysis data.
+    All data has been collected by automated static analysis tools. Do NOT make any tool calls.
+    Synthesize everything below into the report structure specified in your instructions.
+
+    ## Codebase Architecture
+
+    - Project path: #{project_path || "unknown"}
+    - Knowledge graph: #{graph_stats.nodes} nodes, #{graph_stats.edges} edges
+    - Modules: #{length(modules)}
+    - Functions: #{length(functions)}
+    - Embeddings: #{graph_stats.embeddings}
+    - Audit date: #{DateTime.utc_now() |> DateTime.to_date() |> Date.to_string()}
 
     ## Analysis Results
 
     #{issues_summary}
 
-    Generate a well-structured report with:
-    1. Executive Summary
-    2. Critical Issues (if any)
-    3. Security Concerns
-    4. Code Quality Issues
-    5. Recommendations
-    6. Suggested Next Steps
+    ## Analysis Thresholds Applied
+
+    - Cyclomatic complexity threshold: 10 (flagged if >10)
+    - Cognitive complexity threshold: 15 (flagged if >15)
+    - Duplication similarity threshold: 80%
+    - Dead code minimum confidence: 70%
     """
 
     Memory.add_message(session_id, :user, user_prompt)

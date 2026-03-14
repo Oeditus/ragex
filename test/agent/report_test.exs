@@ -14,9 +14,9 @@ defmodule Ragex.Agent.ReportTest do
     test "contains key guidelines" do
       prompt = Report.system_prompt()
 
-      assert prompt =~ "code reviewer"
-      assert prompt =~ "severity"
-      assert prompt =~ "recommendations"
+      assert prompt =~ "code audit"
+      assert prompt =~ "Security Assessment"
+      assert prompt =~ "Refactoring Roadmap"
     end
   end
 
