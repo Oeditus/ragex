@@ -63,6 +63,7 @@ defmodule Ragex.Agent.Report do
   @spec format_issues_for_llm(map()) :: String.t()
   def format_issues_for_llm(issues) when is_map(issues) do
     sections = [
+      format_quality_overview(issues[:quality_metrics]),
       format_section("Dead Code", issues[:dead_code], &format_dead_code/1),
       format_section("Code Duplicates", issues[:duplicates], &format_duplicate/1),
       format_section("Security Issues", issues[:security], &format_security/1),
@@ -273,6 +274,39 @@ defmodule Ragex.Agent.Report do
 
   defp format_suggestion(item), do: "- #{inspect(item)}"
 
+  defp format_quality_overview(nil), do: nil
+  defp format_quality_overview(metrics) when metrics == %{}, do: nil
+
+  defp format_quality_overview(metrics) when is_map(metrics) do
+    total = Map.get(metrics, :total_files, 0)
+
+    if total == 0 do
+      nil
+    else
+      avg_cyc = round_metric(metrics[:avg_cyclomatic])
+      avg_cog = round_metric(metrics[:avg_cognitive])
+      max_cyc = metrics[:max_cyclomatic] || 0
+      max_cog = metrics[:max_cognitive] || 0
+      avg_nest = round_metric(metrics[:avg_nesting])
+      impure = metrics[:impure_files] || 0
+      warnings = metrics[:files_with_warnings] || 0
+
+      """
+      ### Quality Metrics Overview (#{total} files analyzed)
+
+      - Average cyclomatic complexity: #{avg_cyc}
+      - Average cognitive complexity: #{avg_cog}
+      - Max cyclomatic complexity: #{max_cyc}
+      - Max cognitive complexity: #{max_cog}
+      - Average nesting depth: #{avg_nest}
+      - Files with side effects: #{impure}
+      - Files with warnings: #{warnings}
+      """
+    end
+  end
+
+  defp format_quality_overview(_), do: nil
+
   defp generate_summary_section(issues) do
     counts = %{
       dead_code: count_items(issues[:dead_code]),
@@ -284,6 +318,9 @@ defmodule Ragex.Agent.Report do
       suggestions: count_items(issues[:suggestions])
     }
 
+    quality = issues[:quality_metrics] || %{}
+    files_analyzed = Map.get(quality, :total_files, 0)
+
     total =
       counts.dead_code + counts.duplicates + counts.security +
         counts.smells + counts.complexity + counts.circular_deps
@@ -291,6 +328,7 @@ defmodule Ragex.Agent.Report do
     """
     | Category | Count |
     |----------|-------|
+    | Files Analyzed (quality) | #{files_analyzed} |
     | Dead Code | #{counts.dead_code} |
     | Duplicates | #{counts.duplicates} |
     | Security Issues | #{counts.security} |
@@ -301,6 +339,11 @@ defmodule Ragex.Agent.Report do
     | Refactoring Suggestions | #{counts.suggestions} |
     """
   end
+
+  defp round_metric(nil), do: 0
+  defp round_metric(val) when is_float(val), do: Float.round(val, 1)
+  defp round_metric(val) when is_integer(val), do: val
+  defp round_metric(_), do: 0
 
   defp count_items(nil), do: 0
   defp count_items(items) when is_list(items), do: length(items)

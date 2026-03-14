@@ -291,6 +291,23 @@ defmodule Ragex.Agent.Core do
     include_suggestions = Keyword.get(opts, :include_suggestions, @include_suggestions)
     include_dead_code = Keyword.get(opts, :include_dead_code, @include_dead_code)
 
+    # Run MetastaticBridge quality analysis first to populate QualityStore
+    # so that find_complex queries below return actual data.
+    Logger.info("Running quality analysis (MetastaticBridge)...")
+    safe_analyze(&Quality.analyze_directory/2, [path, [store: true]])
+
+    # Collect cyclomatic and cognitive complexity hotspots
+    cyclomatic_complex =
+      safe_analyze(&Quality.find_complex/1, [[metric: :cyclomatic, threshold: 10]])
+
+    cognitive_complex =
+      safe_analyze(&Quality.find_complex/1, [[metric: :cognitive, threshold: 15]])
+
+    # Merge and deduplicate by path
+    all_complex =
+      (cyclomatic_complex ++ cognitive_complex)
+      |> Enum.uniq_by(fn item -> item[:path] || item end)
+
     issues = %{
       dead_code:
         if(include_dead_code,
@@ -300,8 +317,9 @@ defmodule Ragex.Agent.Core do
       duplicates: safe_analyze(&Duplication.detect_in_directory/2, [path, [threshold: 0.8]]),
       security: safe_analyze(&Security.analyze_directory/2, [path, []]),
       smells: safe_analyze(&Smells.detect_smells/2, [path, []]),
-      complexity: safe_analyze(&Quality.find_complex/1, [[metric: :cyclomatic, threshold: 10]]),
-      circular_deps: safe_analyze(&DependencyGraph.find_cycles/1, [[]])
+      complexity: all_complex,
+      circular_deps: safe_analyze(&DependencyGraph.find_cycles/1, [[]]),
+      quality_metrics: safe_analyze(&Quality.statistics/0, [])
     }
 
     issues =
@@ -395,6 +413,8 @@ defmodule Ragex.Agent.Core do
   end
 
   defp build_summary(issues) when is_map(issues) do
+    quality = issues[:quality_metrics] || %{}
+
     %{
       dead_code_count: count_issues(issues[:dead_code]),
       duplicate_count: count_issues(issues[:duplicates]),
@@ -403,6 +423,7 @@ defmodule Ragex.Agent.Core do
       complexity_count: count_issues(issues[:complexity]),
       circular_dep_count: count_issues(issues[:circular_deps]),
       suggestion_count: count_issues(issues[:suggestions]),
+      quality_files_analyzed: Map.get(quality, :total_files, 0),
       total_issues:
         count_issues(issues[:dead_code]) +
           count_issues(issues[:duplicates]) +

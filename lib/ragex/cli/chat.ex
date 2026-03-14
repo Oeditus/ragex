@@ -596,6 +596,9 @@ defmodule Ragex.CLI.Chat do
   defp format_analysis_summary(summary) do
     lines = [
       "Total Issues: #{summary.total_issues}",
+      if(Map.get(summary, :quality_files_analyzed, 0) > 0,
+        do: "Quality:      #{summary.quality_files_analyzed} files"
+      ),
       if(summary.dead_code_count > 0, do: "Dead Code:    #{summary.dead_code_count}"),
       "Duplicates:   #{summary.duplicate_count}",
       "Security:     #{summary.security_count}",
