@@ -148,6 +148,7 @@ defmodule Ragex.MixProject do
       nest_modules_by_prefix: [
         Ragex.AI,
         Ragex.AI.Features,
+        Ragex.Agent,
         Ragex.Analysis,
         Ragex.Analysis.Suggestions,
         Ragex.Analyzers,
@@ -187,7 +188,15 @@ defmodule Ragex.MixProject do
     [
       "Core Components": [
         Ragex,
-        Ragex.Application
+        Ragex.Agent.Core,
+        Ragex.Agent.Executor,
+        Ragex.Agent.Memory,
+        Ragex.Agent.Memory.Session,
+        Ragex.Agent.Report,
+        Ragex.Agent.ToolSchema,
+        Ragex.LanguageSupport,
+        Ragex.Application,
+        Ragex.LanguageSupport
       ],
       "MCP Server": [
         Ragex.MCP.Debug,
@@ -205,10 +214,13 @@ defmodule Ragex.MixProject do
         Ragex.Analyzers.Erlang,
         Ragex.Analyzers.Python,
         Ragex.Analyzers.JavaScript,
-        Ragex.Analyzers.Detector
+        Ragex.Analyzers.Ruby,
+        Ragex.Analyzers.Detector,
+        Ragex.Analyzers.MetaASTExtractor
       ],
       "Knowledge Graph": [
         Ragex.Graph.Algorithms,
+        Ragex.Graph.Persistence,
         Ragex.Graph.Store,
         Ragex.VectorStore
       ],
@@ -244,6 +256,7 @@ defmodule Ragex.MixProject do
         Ragex.Editor.Conflict,
         Ragex.Editor.Diff,
         Ragex.Editor.Formatter,
+        Ragex.Editor.Refactor.MetaAST,
         Ragex.Editor.Preview,
         Ragex.Editor.Refactor.AIPreview,
         Ragex.Editor.Refactor.Elixir,
@@ -257,19 +270,24 @@ defmodule Ragex.MixProject do
         Ragex.Editor.Visualize
       ],
       "Code Analysis & Quality": [
-        Ragex.Analysis.Duplication,
+        Ragex.Analysis.ASTLocationExtractor,
+        Ragex.Analysis.BusinessLogic,
+        Ragex.Analysis.Cache,
         Ragex.Analysis.DeadCode,
+        Ragex.Analysis.DeadCode.AIRefiner,
         Ragex.Analysis.DependencyGraph,
+        Ragex.Analysis.DependencyGraph.AIInsights,
+        Ragex.Analysis.Duplication,
+        Ragex.Analysis.Duplication.AIAnalyzer,
         Ragex.Analysis.Impact,
+        Ragex.Analysis.LocationEnricher,
+        Ragex.Analysis.LocationPreservation,
+        Ragex.Analysis.Semantic,
         Ragex.Analysis.Suggestions,
         Ragex.Analysis.Suggestions.Patterns,
         Ragex.Analysis.Suggestions.Ranker,
         Ragex.Analysis.Suggestions.Actions,
         Ragex.Analysis.Suggestions.RAGAdvisor,
-        Ragex.Analysis.BusinessLogic,
-        Ragex.Analysis.DeadCode.AIRefiner,
-        Ragex.Analysis.DependencyGraph.AIInsights,
-        Ragex.Analysis.Duplication.AIAnalyzer,
         Ragex.Analysis.MetastaticBridge,
         Ragex.Analysis.Quality,
         Ragex.Analysis.QualityStore,
@@ -301,6 +319,7 @@ defmodule Ragex.MixProject do
       ],
       CLI: [
         Ragex.CLI.Colors,
+        Ragex.CLI.Chat,
         Ragex.CLI.Output,
         Ragex.CLI.Progress,
         Ragex.CLI.Prompt
