@@ -179,6 +179,7 @@ defmodule Mix.Tasks.Ragex.Audit do
       timestamp: DateTime.utc_now(),
       path: path,
       audit: result.report,
+      ai_status: result[:ai_status] || %{status: "unknown"},
       graph: %{
         nodes: graph_stats.nodes,
         edges: graph_stats.edges,

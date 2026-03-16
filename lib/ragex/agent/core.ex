@@ -23,6 +23,7 @@ defmodule Ragex.Agent.Core do
   require Logger
 
   alias Ragex.Agent.{Executor, Memory, Report}
+  alias Ragex.AI.Config, as: AIConfig
   alias Ragex.Analyzers.Directory
 
   alias Ragex.Analysis.Cache, as: AnalysisCache
@@ -152,7 +153,11 @@ defmodule Ragex.Agent.Core do
         nil ->
           # Generate report from issues
           issues = session.metadata[:issues] || %{}
-          generate_report(session_id, issues, opts)
+
+          case generate_report(session_id, issues, opts) do
+            {:ok, report, _ai_status} -> {:ok, report}
+            error -> error
+          end
 
         report ->
           {:ok, report}
@@ -221,7 +226,7 @@ defmodule Ragex.Agent.Core do
 
   defp finalize_analysis(path, issues, opts) do
     with {:ok, session} <- create_analysis_session(path, issues, opts),
-         {:ok, report} <- generate_report(session.id, issues, opts) do
+         {:ok, report, ai_status} <- generate_report(session.id, issues, opts) do
       summary = build_summary(issues)
       Logger.info("Project analysis complete: #{summary.total_issues} issues found")
 
@@ -229,6 +234,7 @@ defmodule Ragex.Agent.Core do
        %{
          session_id: session.id,
          report: report,
+         ai_status: ai_status,
          issues: issues,
          summary: summary
        }}
@@ -375,6 +381,27 @@ defmodule Ragex.Agent.Core do
         _ -> nil
       end
 
+    # Resolve provider info for AI status tracking
+    provider_name = Keyword.get(opts, :provider) || AIConfig.provider_name()
+    config = AIConfig.api_config(provider_name)
+
+    if is_nil(config.api_key) or config.api_key == "" do
+      Logger.info("No API key for #{provider_name}, skipping AI report")
+
+      ai_status = %{
+        status: "no_keys",
+        provider: to_string(provider_name),
+        model: config.model,
+        error: "No API key configured for #{provider_name}"
+      }
+
+      {:ok, Report.generate_basic_report(issues), ai_status}
+    else
+      generate_ai_report(session_id, issues, opts, project_path, provider_name, config)
+    end
+  end
+
+  defp generate_ai_report(session_id, issues, opts, project_path, provider_name, config) do
     # Add system prompt for report generation (with project path constraint)
     system_prompt = Report.system_prompt(project_path)
     Memory.add_message(session_id, :system, system_prompt)
@@ -424,13 +451,29 @@ defmodule Ragex.Agent.Core do
       {:ok, result} ->
         # Save report to session metadata
         Memory.update_metadata(session_id, %{report: result.content})
-        {:ok, result.content}
+
+        ai_status = %{
+          status: "success",
+          provider: to_string(provider_name),
+          model: config.model,
+          chars: String.length(result.content),
+          tokens: result.usage
+        }
+
+        {:ok, result.content, ai_status}
 
       {:error, reason} ->
         Logger.error("Report generation failed: #{inspect(reason)}")
-        # Fallback to basic report with error note
+
+        ai_status = %{
+          status: "failed",
+          provider: to_string(provider_name),
+          model: config.model,
+          error: inspect(reason)
+        }
+
         error_note = "[AI report generation failed: #{inspect(reason)}]\n\n"
-        {:ok, error_note <> Report.generate_basic_report(issues)}
+        {:ok, error_note <> Report.generate_basic_report(issues), ai_status}
     end
   end
 
