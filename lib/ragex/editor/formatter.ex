@@ -75,6 +75,7 @@ defmodule Ragex.Editor.Formatter do
       ".erl" -> :erlang
       ".hrl" -> :erlang
       ".py" -> :python
+      ".rb" -> :ruby
       ".js" -> :javascript
       ".jsx" -> :javascript
       ".ts" -> :typescript
@@ -129,6 +130,22 @@ defmodule Ragex.Editor.Formatter do
 
       command_exists?("eslint") ->
         {"eslint", ["--fix", "--"]}
+
+      true ->
+        nil
+    end
+  end
+
+  defp detect_formatter(:ruby, _path) do
+    cond do
+      command_exists?("rubocop") ->
+        {"rubocop", ["--autocorrect", "--"]}
+
+      command_exists?("standardrb") ->
+        {"standardrb", ["--fix", "--"]}
+
+      command_exists?("rufo") ->
+        {"rufo", []}
 
       true ->
         nil

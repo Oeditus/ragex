@@ -570,8 +570,10 @@ defmodule Ragex.Editor.Refactor do
         ElixirRefactor.rename_function(content, old_name, new_name, arity)
 
       :erlang ->
-        # Erlang refactoring not yet implemented
         {:error, "Erlang refactoring not yet implemented"}
+
+      :ruby ->
+        {:error, "Ruby refactoring not yet implemented"}
 
       _ ->
         {:error, "Refactoring not supported for language: #{language}"}
@@ -594,6 +596,9 @@ defmodule Ragex.Editor.Refactor do
       :erlang ->
         {:error, "Erlang inline refactoring not yet implemented"}
 
+      :ruby ->
+        {:error, "Ruby inline refactoring not yet implemented"}
+
       _ ->
         {:error, "Inline refactoring not supported for language: #{language}"}
     end
@@ -607,6 +612,9 @@ defmodule Ragex.Editor.Refactor do
 
       :erlang ->
         {:error, "Erlang refactoring not yet implemented"}
+
+      :ruby ->
+        {:error, "Ruby refactoring not yet implemented"}
 
       _ ->
         {:error, "Refactoring not supported for language: #{language}"}
@@ -1061,6 +1069,9 @@ defmodule Ragex.Editor.Refactor do
       :erlang ->
         {:error, "Erlang signature change not yet implemented"}
 
+      :ruby ->
+        {:error, "Ruby signature change not yet implemented"}
+
       _ ->
         {:error, "Signature change not supported for language: #{language}"}
     end
@@ -1313,6 +1324,7 @@ defmodule Ragex.Editor.Refactor do
     cond do
       File.exists?(Path.join(dir, "mix.exs")) -> dir
       File.exists?(Path.join(dir, "rebar.config")) -> dir
+      File.exists?(Path.join(dir, "Gemfile")) -> dir
       File.exists?(Path.join(dir, "package.json")) -> dir
       dir == "/" -> file_path
       true -> find_project_root(dir)

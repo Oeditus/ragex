@@ -20,7 +20,8 @@ defmodule Ragex.Analysis.ASTLocationExtractor do
   - **Elixir**: Extracts from `{:atom, metadata, args}` tuples
   - **Erlang**: Extracts from erl_parse metadata
   - **Python**: Extracts from ast.AST node attributes (via Metastatic adapter)
-  - **Ruby/Haskell**: Planned
+  - **Ruby**: Supported via MetaAST node metadata (Metastatic Ruby adapter)
+  - **Haskell**: Supported via MetaAST node metadata
 
   ## Usage
 

@@ -32,6 +32,7 @@ defmodule Ragex.Analyzers.Metastatic do
   alias Ragex.Analyzers.Elixir, as: ExAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlAnalyzer
   alias Ragex.Analyzers.Python, as: PyAnalyzer
+  alias Ragex.Analyzers.Ruby, as: RbAnalyzer
 
   @impl true
   def analyze(source, file_path) do
@@ -169,6 +170,7 @@ defmodule Ragex.Analyzers.Metastatic do
         :elixir -> ExAnalyzer.analyze(source, file_path)
         :erlang -> ErlAnalyzer.analyze(source, file_path)
         :python -> PyAnalyzer.analyze(source, file_path)
+        :ruby -> RbAnalyzer.analyze(source, file_path)
         _ -> {:error, :no_fallback_analyzer}
       end
     else

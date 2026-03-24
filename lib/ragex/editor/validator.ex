@@ -86,6 +86,7 @@ defmodule Ragex.Editor.Validator do
       elixir: Ragex.Editor.Validators.Elixir,
       erlang: Ragex.Editor.Validators.Erlang,
       python: Ragex.Editor.Validators.Python,
+      ruby: Ragex.Editor.Validators.Ruby,
       javascript: Ragex.Editor.Validators.Javascript
     }
   end
@@ -137,6 +138,7 @@ defmodule Ragex.Editor.Validator do
         ".erl" -> :erlang
         ".hrl" -> :erlang
         ".py" -> :python
+        ".rb" -> :ruby
         ".js" -> :javascript
         ".jsx" -> :javascript
         # TypeScript uses JS validator

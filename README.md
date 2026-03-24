@@ -20,13 +20,14 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 <details>
   <summary>Multi-Language Support</summary>
 
-    ▸ Erlang Analyzer: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing  
-    ▸ Python Analyzer: Shells out to Python's `ast` module for comprehensive analysis  
-    ▸ JavaScript/TypeScript Analyzer: Regex-based parsing for common JS/TS patterns  
-    ▸ Auto-detection: Automatically detects language from file extension  
-    ▸ Directory Analysis: Batch analyze entire projects with parallel processing  
-    ▸ File Watching: Auto-reindex on file changes  
-    ▸ Supported Extensions: `.ex`, `.exs`, `.erl`, `.hrl`, `.py`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`
+    ▸ Erlang Analyzer: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing  
+    ▸ Python Analyzer: Shells out to Python's `ast` module for comprehensive analysis  
+    ▸ Ruby Analyzer: Uses Metastatic Ruby adapter (parser gem) with native fallback  
+    ▸ JavaScript/TypeScript Analyzer: Regex-based parsing for common JS/TS patterns  
+    ▸ Auto-detection: Automatically detects language from file extension  
+    ▸ Directory Analysis: Batch analyze entire projects with parallel processing  
+    ▸ File Watching: Auto-reindex on file changes  
+    ▸ Supported Extensions: `.ex`, `.exs`, `.erl`, `.hrl`, `.py`, `.rb`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`
 </details>
 <details>
   <summary>Semantic Search & Hybrid Retrieval</summary>
@@ -110,10 +111,11 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 
     ▸ Validation Pipeline  
       ▹ Validator Behavior: Behavior definition with callbacks and orchestration  
-      ▹ Elixir Validator: Syntax validation using `Code.string_to_quoted/2`  
-      ▹ Erlang Validator: Validation using `:erl_scan` and `:erl_parse`  
-      ▹ Python Validator: Shell-out to Python's `ast.parse()` for syntax checking  
-      ▹ JavaScript Validator: Node.js `vm.Script` for JS/TS validation  
+      ▹ Elixir Validator: Syntax validation using `Code.string_to_quoted/2`  
+      ▹ Erlang Validator: Validation using `:erl_scan` and `:erl_parse`  
+      ▹ Python Validator: Shell-out to Python's `ast.parse()` for syntax checking  
+      ▹ Ruby Validator: `ruby -c` for Ruby syntax checking  
+      ▹ JavaScript Validator: Node.js `vm.Script` for JS/TS validation  
       ▹ Automatic Detection: Language detection from file extension  
       ▹ Core Integration: Validators integrated with `Core.edit_file`
 
@@ -125,7 +127,7 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 
     ▸ Advanced Editing  
       ▹ Format Integration: Auto-format after edits with language-specific formatters  
-      ▹ Formatter Detection: Automatic formatter discovery (mix, rebar3, black, prettier)  
+      ▹ Formatter Detection: Automatic formatter discovery (mix, rebar3, black, rubocop, prettier)  
       ▹ Core Integration: `:format` option in `Core.edit_file`  
       ▹ Multi-file Transactions: Atomic cross-file changes with automatic rollback  
       ▹ Transaction Validation: Pre-validate all files before applying changes  

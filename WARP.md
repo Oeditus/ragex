@@ -294,11 +294,11 @@ end
 ### Future Work
 
 - **Phase 6**: Production optimizations (performance tuning, caching strategies)
-- **Phase 7**: Additional language support (Go, Rust, Java)
+- **Phase 7**: Additional language support (Go, Rust, Java) -- Ruby now fully supported
 - **Phase 10B**: Cross-language refactoring via Metastatic
   - **Strategic Shift**: Leverage existing Metastatic library for multi-language AST abstraction
   - **Approach**: Apply Elixir refactoring operations to MetaAST representations, transform back to target language
-  - **Benefits**: No need for language-specific AST parsers - Metastatic already provides MetaAST for Elixir, Erlang, Python, JavaScript
+  - **Benefits**: No need for language-specific AST parsers - Metastatic already provides MetaAST for Elixir, Erlang, Python, Ruby, JavaScript
   - **Implementation**: 
     1. Create adapter layer: Elixir refactoring ops → MetaAST transformations
     2. Use Metastatic to parse source → MetaAST
@@ -355,7 +355,7 @@ end
 5. Check result for success or rollback status
 
 **Limitations:**
-- Currently Elixir-only (Erlang/Python/JS planned)
+- Currently Elixir-only (Erlang/Python/Ruby/JS planned)
 - Requires files to be in knowledge graph
 - AST manipulation may lose some formatting (use `:format` option)
 

@@ -301,7 +301,9 @@ defmodule Ragex.Analyzers.Directory do
       ".elixir_ls",
       "__pycache__",
       ".pytest_cache",
-      ".mypy_cache"
+      ".mypy_cache",
+      ".bundle",
+      "vendor/bundle"
     ]
   end
 
