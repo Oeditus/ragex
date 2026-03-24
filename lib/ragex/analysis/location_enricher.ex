@@ -197,8 +197,9 @@ defmodule Ragex.Analysis.LocationEnricher do
 
     case result do
       {:ok, func_info} ->
-        # Build enriched location with graph data
-        build_enriched_location(func_info, existing_location, file)
+        # Build enriched location with graph data, but preserve the original
+        # issue line if it's more specific than the function's start line.
+        build_enriched_location(func_info, existing_location, file, search_line)
 
       {:error, :not_found} ->
         # No function found, return file-level location
@@ -210,8 +211,8 @@ defmodule Ragex.Analysis.LocationEnricher do
     context = Map.get(issue, :context, %{})
 
     cond do
-      Map.has_key?(context, :line) -> context.line
-      Map.has_key?(context, :start_line) -> context.start_line
+      is_map(context) and is_integer(context[:line]) -> context.line
+      is_map(context) and is_integer(context[:start_line]) -> context.start_line
       true -> nil
     end
   end
@@ -369,10 +370,19 @@ defmodule Ragex.Analysis.LocationEnricher do
     }
   end
 
-  defp build_enriched_location(func_info, existing_location, _file) do
+  defp build_enriched_location(func_info, existing_location, _file, original_line) do
+    # Prefer the original issue line (from MetaAST) over the function start line.
+    # The function start line is useful context but the issue's actual line is more precise.
+    enriched_line =
+      cond do
+        is_integer(original_line) and original_line > 0 -> original_line
+        is_integer(func_info.line) -> func_info.line
+        true -> nil
+      end
+
     base_location = %{
       file: func_info.file,
-      line: func_info.line,
+      line: enriched_line,
       module: func_info.module,
       function: func_info.function,
       arity: func_info.arity
