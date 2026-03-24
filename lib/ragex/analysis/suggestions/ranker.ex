@@ -33,8 +33,6 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
       # => %{...suggestion, priority: :high, priority_score: 0.72}
   """
 
-  require Logger
-
   @benefit_weight 0.4
   @impact_weight 0.2
   @risk_weight 0.2

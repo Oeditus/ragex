@@ -23,8 +23,6 @@ defmodule Ragex.AI.Features.Context do
   alias Ragex.Graph.{Algorithms, Store}
   alias Ragex.Retrieval.Hybrid
 
-  require Logger
-
   @type context_map :: %{
           required(:type) => atom(),
           required(:primary) => any(),

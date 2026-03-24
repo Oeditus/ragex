@@ -10,7 +10,6 @@ defmodule Mix.Tasks.Ragex.Ai.Cache.Stats do
   """
 
   use Mix.Task
-  require Logger
   alias Ragex.AI.Cache
   alias Ragex.CLI.{Colors, Output}
 

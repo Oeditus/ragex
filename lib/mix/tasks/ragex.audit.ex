@@ -49,8 +49,6 @@ defmodule Mix.Tasks.Ragex.Audit do
 
   use Mix.Task
 
-  require Logger
-
   alias Ragex.Agent.Core
   alias Ragex.Analysis.{BusinessLogic, DependencyGraph, Quality}
   alias Ragex.Graph.Store

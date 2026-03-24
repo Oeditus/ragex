@@ -154,10 +154,8 @@ defmodule Ragex.Agent.Core do
           # Generate report from issues
           issues = session.metadata[:issues] || %{}
 
-          case generate_report(session_id, issues, opts) do
-            {:ok, report, _ai_status} -> {:ok, report}
-            error -> error
-          end
+          {:ok, report, _ai_status} = generate_report(session_id, issues, opts)
+          {:ok, report}
 
         report ->
           {:ok, report}

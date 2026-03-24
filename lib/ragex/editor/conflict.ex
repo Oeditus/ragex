@@ -11,7 +11,6 @@ defmodule Ragex.Editor.Conflict do
   """
 
   alias Ragex.Graph.Store
-  require Logger
 
   @type conflict_type ::
           :name_conflict

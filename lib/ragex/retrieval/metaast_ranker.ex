@@ -23,8 +23,6 @@ defmodule Ragex.Retrieval.MetaASTRanker do
   4. Cross-language semantic matches
   """
 
-  require Logger
-
   @doc """
   Calculate MetaAST-based ranking boost for a retrieval result.
 

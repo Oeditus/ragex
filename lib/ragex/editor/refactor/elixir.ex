@@ -6,8 +6,6 @@ defmodule Ragex.Editor.Refactor.Elixir do
   transforming Elixir AST, preserving comments and formatting where possible.
   """
 
-  require Logger
-
   @doc """
   Renames a function definition and all its calls within a source file.
 

@@ -20,8 +20,6 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
   - Relevant metrics
   """
 
-  require Logger
-
   @complexity_threshold_high 15
   @loc_threshold_long 50
   @loc_threshold_medium 30

@@ -55,8 +55,6 @@ defmodule Mix.Tasks.Ragex.Cache.Refresh do
   alias Ragex.Embeddings.{FileTracker, Persistence}
   alias Ragex.Graph.Store
 
-  require Logger
-
   @shortdoc "Refresh embeddings cache (incremental or full)"
 
   @impl Mix.Task

@@ -371,7 +371,7 @@ defmodule Ragex.Analysis.Duplication do
     Duplication Analysis Summary
     ============================
     AST-Based Clones: #{ast_clones_count}
-    #{if ast_clones_count do
+    #{if ast_clones_count > 0 do
       type_counts = group_by_clone_type(ast_clones)
 
       type_counts |> Enum.map_join("\n", fn {type, count} -> "  - #{format_clone_type(type)}: #{count}" end)

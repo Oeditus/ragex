@@ -83,11 +83,7 @@ defmodule Ragex.AI.Provider.Ollama do
   def info do
     config = get_config([])
 
-    endpoint =
-      case config do
-        {:ok, %{endpoint: ep}} -> ep
-        _ -> @default_endpoint
-      end
+    {:ok, %{endpoint: endpoint}} = config
 
     %{
       name: "Ollama",

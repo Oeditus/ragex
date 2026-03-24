@@ -15,7 +15,6 @@ defmodule Mix.Tasks.Ragex.Ai.Usage.Stats do
   """
 
   use Mix.Task
-  require Logger
   alias Ragex.AI.Usage
   alias Ragex.CLI.{Colors, Output}
 

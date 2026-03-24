@@ -56,10 +56,6 @@ defmodule Ragex.Analyzers.Erlang do
 
   defp parse_forms([], forms), do: {:ok, Enum.reverse(forms)}
 
-  defp parse_forms([{:dot, _} | _rest] = tokens, forms) when tokens == [] do
-    {:ok, Enum.reverse(forms)}
-  end
-
   defp parse_forms(tokens, forms) do
     # Find the next dot token to get one complete form
     case find_form_tokens(tokens, []) do

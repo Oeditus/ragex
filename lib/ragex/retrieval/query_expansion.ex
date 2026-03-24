@@ -21,8 +21,6 @@ defmodule Ragex.Retrieval.QueryExpansion do
 
   alias Ragex.Retrieval.MetaASTRanker
 
-  require Logger
-
   @doc """
   Expand a query string with semantic features and synonyms.
 

@@ -33,7 +33,6 @@ defmodule Ragex.Analysis.LocationEnricher do
   """
 
   alias Ragex.Graph.Store
-  require Logger
 
   @type location :: %{
           optional(:file) => String.t(),

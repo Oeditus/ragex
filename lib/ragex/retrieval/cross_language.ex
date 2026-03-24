@@ -19,8 +19,6 @@ defmodule Ragex.Retrieval.CrossLanguage do
   alias Ragex.Graph.Store
   alias Ragex.Retrieval.MetaASTRanker
 
-  require Logger
-
   @doc """
   Search for semantically equivalent constructs across languages.
 
@@ -250,16 +248,11 @@ defmodule Ragex.Retrieval.CrossLanguage do
   end
 
   defp resolve_source_node(_language, node_id) when is_tuple(node_id) do
-    # Assume it's already a node_id
+    # Try as node_id first, fall back to treating as MetaAST pattern
     case Store.find_node(:function, node_id) do
-      nil -> {:error, "Node not found: #{inspect(node_id)}"}
+      nil -> {:ok, %{meta_ast: node_id}}
       node -> {:ok, node}
     end
-  end
-
-  defp resolve_source_node(_language, meta_ast) when is_tuple(meta_ast) do
-    # Assume it's a MetaAST pattern
-    {:ok, %{meta_ast: meta_ast}}
   end
 
   defp resolve_source_node(_language, other) do

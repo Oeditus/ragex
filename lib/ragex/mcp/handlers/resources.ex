@@ -158,11 +158,9 @@ defmodule Ragex.MCP.Handlers.Resources do
             cache_file: cache_info.cache_path,
             cache_size_bytes: cache_info.file_size,
             cache_valid: cache_info.valid?,
-            embeddings_count:
-              if(cache_info.metadata, do: cache_info.metadata.entity_count, else: 0),
-            model_name:
-              if(cache_info.metadata, do: Atom.to_string(cache_info.metadata.model_id), else: nil),
-            last_saved: if(cache_info.metadata, do: cache_info.metadata.timestamp, else: nil),
+            embeddings_count: cache_info.metadata.entity_count,
+            model_name: Atom.to_string(cache_info.metadata.model_id),
+            last_saved: cache_info.metadata.timestamp,
             tracked_files: tracker_stats.total_files,
             changed_files: tracker_stats.changed_files,
             unchanged_files: tracker_stats.unchanged_files,

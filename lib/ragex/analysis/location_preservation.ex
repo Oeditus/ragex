@@ -28,7 +28,6 @@ defmodule Ragex.Analysis.LocationPreservation do
   """
 
   alias Ragex.Analysis.{ASTLocationExtractor, LocationEnricher}
-  require Logger
 
   @doc """
   Executes analysis function with location preservation.

@@ -165,7 +165,7 @@ defmodule Ragex.MCP.SocketServer do
         {:ok, message} ->
           Logger.info("[HANDLER] Processing message: #{inspect(Map.get(message, "method"))}")
           response = process_message(message)
-          Logger.info("[HANDLER] Generated response for ID: #{inspect(Map.get(response, "id"))}")
+          Logger.info("[HANDLER] Generated response for ID: #{inspect(response.id)}")
 
           case Protocol.encode(response) do
             {:ok, json} ->
@@ -279,7 +279,7 @@ defmodule Ragex.MCP.SocketServer do
         }
 
         response = Protocol.success_response(formatted, id)
-        Logger.info("[HANDLER] Response prepared with id: #{inspect(Map.get(response, "id"))}")
+        Logger.info("[HANDLER] Response prepared with id: #{inspect(response.id)}")
         response
 
       {:error, reason} ->

@@ -196,8 +196,6 @@ defmodule Ragex.RAG.ContextBuilder do
     end)
   end
 
-  defp serialize_keyword(other), do: other
-
   defp serialize_meta_ast_metadata(nil), do: nil
 
   defp serialize_meta_ast_metadata(meta) when is_map(meta) do

@@ -15,7 +15,6 @@ defmodule Mix.Tasks.Ragex.Ai.Cache.Clear do
   """
 
   use Mix.Task
-  require Logger
   alias Ragex.AI.Cache
   alias Ragex.CLI.{Colors, Output, Progress, Prompt}
 
@@ -40,7 +39,7 @@ defmodule Mix.Tasks.Ragex.Ai.Cache.Clear do
           IO.puts("")
         else
           if Prompt.confirm("Clear entire AI cache?", default: :no) do
-            spinner = Progress.spinner("Clearing cache...")
+            spinner = Progress.spinner(label: "Clearing cache...")
             :ok = Cache.clear()
             Progress.stop_spinner(spinner, Colors.success("✓ Cache cleared successfully"))
           else
@@ -71,7 +70,7 @@ defmodule Mix.Tasks.Ragex.Ai.Cache.Clear do
           IO.puts("")
         else
           if Prompt.confirm("Clear cache for operation '#{operation}'?", default: :no) do
-            spinner = Progress.spinner("Clearing cache for #{operation}...")
+            spinner = Progress.spinner(label: "Clearing cache for #{operation}...")
             :ok = Cache.clear(operation)
             Progress.stop_spinner(spinner, Colors.success("✓ Cache cleared for #{operation}"))
           else

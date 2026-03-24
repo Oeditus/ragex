@@ -213,9 +213,6 @@ defmodule Ragex.Analysis.Quality do
 
           {:error, :not_found} ->
             {:error, {:metrics_not_found, file_path}}
-
-          error ->
-            error
         end
     end
   end
@@ -307,9 +304,6 @@ defmodule Ragex.Analysis.Quality do
 
           {:error, :not_found} ->
             {:error, {:metrics_not_found, file_path}}
-
-          error ->
-            error
         end
     end
   end
