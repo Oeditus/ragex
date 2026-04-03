@@ -219,23 +219,23 @@ defmodule Ragex.Analysis.LocationEnricher do
 
   defp extract_function_from_context(issue) do
     context = Map.get(issue, :context, %{})
+    location = Map.get(issue, :location, %{}) || %{}
 
-    cond do
-      # Metastatic smells often have function_name in context
-      Map.has_key?(context, :function_name) ->
-        func_name = context.function_name
-        # Convert to atom if it's a string
-        func_atom = if is_binary(func_name), do: String.to_atom(func_name), else: func_name
-        {:ok, func_atom}
+    # Check multiple sources for function name:
+    # 1. context.function_name (Metastatic smells)
+    # 2. context.function (Metastatic metadata merged into context)
+    # 3. location.function (from format_location in BusinessLogic)
+    func_name =
+      Map.get(context, :function_name) ||
+        Map.get(context, :function) ||
+        Map.get(location, :function)
 
-      # Also check for :function field
-      Map.has_key?(context, :function) ->
-        func_name = context.function
-        func_atom = if is_binary(func_name), do: String.to_atom(func_name), else: func_name
-        {:ok, func_atom}
-
-      true ->
-        :error
+    if func_name do
+      # Convert to atom if it's a string
+      func_atom = if is_binary(func_name), do: String.to_atom(func_name), else: func_name
+      {:ok, func_atom}
+    else
+      :error
     end
   end
 

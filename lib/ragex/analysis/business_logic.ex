@@ -508,6 +508,12 @@ defmodule Ragex.Analysis.BusinessLogic do
     # Extract location from issue or node metadata
     location = extract_location(meta_issue)
 
+    # Merge metadata into context so LocationEnricher can find function names.
+    # Metastatic issues have :metadata (not :context), but downstream code
+    # expects function names in :context.
+    metadata = Map.get(meta_issue, :metadata, %{})
+    context = Map.get(meta_issue, :context, %{}) |> Map.merge(metadata)
+
     %{
       analyzer: meta_issue.analyzer,
       category: meta_issue.category,
@@ -515,7 +521,7 @@ defmodule Ragex.Analysis.BusinessLogic do
       message: message,
       description: message,
       suggestion: Map.get(meta_issue, :suggestion),
-      context: Map.get(meta_issue, :context, %{}),
+      context: context,
       location: format_location(location),
       line: if(location, do: Map.get(location, :line), else: nil),
       column: if(location, do: Map.get(location, :column), else: nil),
@@ -524,35 +530,53 @@ defmodule Ragex.Analysis.BusinessLogic do
   end
 
   defp extract_location(meta_issue) do
-    # First try the issue's location field
+    # First try the issue's location field (from Metastatic's Analyzer.issue/1)
     issue_location = Map.get(meta_issue, :location)
 
-    # If location has actual values, use it
+    # If location has actual line/column values, use it
     if issue_location && (issue_location[:line] || issue_location[:column]) do
       issue_location
     else
-      # Try to extract from metadata context (Metastatic metadata may include function_name, etc.)
+      # Location was nil or had nil values; try to extract from node metadata.
+      # This is critical for Ruby/Python/JS where MetaAST nodes store location
+      # in keyword metadata (e.g., [line: 5, col: 2]).
+      node_location =
+        case Map.get(meta_issue, :node) do
+          nil -> nil
+          node when is_tuple(node) -> extract_location_from_node(node)
+          _ -> nil
+        end
+
+      # Extract function name from Metastatic metadata
       metadata = Map.get(meta_issue, :metadata, %{})
       function_name = Map.get(metadata, :function) || Map.get(metadata, :function_name)
 
-      if function_name do
-        %{
-          line: nil,
-          column: nil,
-          function: function_name
-        }
-      else
-        # Try to extract from node metadata
-        case Map.get(meta_issue, :node) do
-          nil ->
-            nil
+      # Also check if the issue location had function/module context even without line
+      issue_function = issue_location && Map.get(issue_location, :function)
+      issue_module = issue_location && Map.get(issue_location, :module)
 
-          node when is_tuple(node) ->
-            extract_location_from_node(node)
+      cond do
+        # Node had line info -- best source
+        node_location && node_location[:line] ->
+          node_location
+          |> Map.put(:function, function_name || (node_location[:function] || issue_function))
+          |> Map.put(:module, issue_module)
 
-          _ ->
-            nil
-        end
+        # No line anywhere but we have a function name
+        function_name ->
+          %{
+            line: nil,
+            column: nil,
+            function: function_name,
+            module: issue_module
+          }
+
+        # Return whatever we could find
+        node_location ->
+          node_location
+
+        true ->
+          nil
       end
     end
   end
@@ -565,15 +589,37 @@ defmodule Ragex.Analysis.BusinessLogic do
 
   # Recursively traverse MetaAST node to find line/column metadata
   defp find_line_in_node(node) when is_tuple(node) do
-    # Check each element of the tuple
-    node
-    |> Tuple.to_list()
-    |> Enum.find_value(&find_line_in_node/1)
+    # MetaAST nodes are 3-tuples: {type, keyword_meta, children}
+    # Check keyword metadata directly first for efficiency
+    case node do
+      {_type, meta, children} when is_list(meta) ->
+        case extract_keyword_location(meta) do
+          nil ->
+            # Recurse into children only
+            find_line_in_node(children)
+
+          location ->
+            location
+        end
+
+      _ ->
+        # Generic tuple: check each element
+        node
+        |> Tuple.to_list()
+        |> Enum.find_value(&find_line_in_node/1)
+    end
   end
 
   defp find_line_in_node(list) when is_list(list) do
-    # Check each element of the list
-    Enum.find_value(list, &find_line_in_node/1)
+    # First check if this is a keyword list with :line metadata
+    case extract_keyword_location(list) do
+      nil ->
+        # Not a keyword list with line info, check each element
+        Enum.find_value(list, &find_line_in_node/1)
+
+      location ->
+        location
+    end
   end
 
   defp find_line_in_node(meta) when is_map(meta) do
@@ -582,6 +628,25 @@ defmodule Ragex.Analysis.BusinessLogic do
   end
 
   defp find_line_in_node(_), do: nil
+
+  # Extract location from a keyword list (MetaAST metadata format)
+  defp extract_keyword_location(kw) when is_list(kw) do
+    if Keyword.keyword?(kw) do
+      line = Keyword.get(kw, :line)
+      col = Keyword.get(kw, :col) || Keyword.get(kw, :column)
+      function = Keyword.get(kw, :function)
+
+      if line do
+        %{line: line, column: col, function: function}
+      else
+        nil
+      end
+    else
+      nil
+    end
+  end
+
+  defp extract_keyword_location(_), do: nil
 
   defp extract_meta_location(meta) when is_map(meta) do
     line = Map.get(meta, :line) || Map.get(meta, :start_line)
