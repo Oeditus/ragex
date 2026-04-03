@@ -242,61 +242,98 @@ defmodule Ragex.CLI.Chat do
   end
 
   defp render_stream(stream) do
-    # Add thinking block (rendered dimmed/faint)
-    Owl.LiveScreen.add_block(:thinking,
-      state: "",
-      render: fn
-        "" -> ""
-        text -> Owl.Data.tag("[thinking] " <> format_thinking_text(text), :faint)
-      end
-    )
+    live_screen? = live_screen_available?()
 
-    # Use LiveScreen for live-updating response block
-    Owl.LiveScreen.add_block(:response,
-      state: "",
-      render: fn
-        "" -> Owl.Data.tag("...", :faint)
-        text -> format_assistant_text(text)
-      end
-    )
+    if live_screen? do
+      # Add thinking block (rendered dimmed/faint)
+      Owl.LiveScreen.add_block(:thinking,
+        state: "",
+        render: fn
+          "" -> ""
+          text -> Owl.Data.tag("[thinking] " <> format_thinking_text(text), :faint)
+        end
+      )
+
+      # Use LiveScreen for live-updating response block
+      Owl.LiveScreen.add_block(:response,
+        state: "",
+        render: fn
+          "" -> Owl.Data.tag("...", :faint)
+          text -> format_assistant_text(text)
+        end
+      )
+    end
 
     result =
-      Enum.reduce(stream, %{content: "", thinking: "", sources: [], usage: %{}}, fn chunk, acc ->
-        case chunk do
-          %{thinking: thinking_text, done: false}
-          when is_binary(thinking_text) and thinking_text != "" ->
-            new_thinking = acc.thinking <> thinking_text
-            Owl.LiveScreen.update(:thinking, new_thinking)
-            %{acc | thinking: new_thinking}
+      Enum.reduce(
+        stream,
+        %{content: "", thinking: "", sources: [], usage: %{}, phase: :init},
+        fn chunk, acc ->
+          case chunk do
+            %{thinking: thinking_text, done: false}
+            when is_binary(thinking_text) and thinking_text != "" ->
+              new_thinking = acc.thinking <> thinking_text
 
-          %{content: text, done: false} when is_binary(text) and text != "" ->
-            # When content starts arriving, clear thinking display
-            if acc.thinking != "" and acc.content == "" do
-              Owl.LiveScreen.update(:thinking, "")
-            end
+              if live_screen? do
+                Owl.LiveScreen.update(:thinking, new_thinking)
+              else
+                # Direct output for non-interactive terminals
+                if acc.phase != :thinking do
+                  IO.write(Colors.muted("[thinking] "))
+                end
 
-            new_content = acc.content <> text
-            Owl.LiveScreen.update(:response, new_content)
-            %{acc | content: new_content}
+                IO.write(Colors.muted(thinking_text))
+              end
 
-          %{done: true, metadata: metadata} ->
-            # Clear thinking block on completion
-            Owl.LiveScreen.update(:thinking, "")
-            sources = Map.get(metadata, :sources, [])
-            usage = Map.get(metadata, :usage, %{})
-            %{acc | sources: sources, usage: usage}
+              %{acc | thinking: new_thinking, phase: :thinking}
 
-          {:error, reason} ->
-            Logger.warning("Stream error: #{inspect(reason)}")
-            acc
+            %{content: text, done: false} when is_binary(text) and text != "" ->
+              if live_screen? do
+                # When content starts arriving, clear thinking display
+                if acc.thinking != "" and acc.content == "" do
+                  Owl.LiveScreen.update(:thinking, "")
+                end
 
-          _ ->
-            acc
+                new_content = acc.content <> text
+                Owl.LiveScreen.update(:response, new_content)
+              else
+                # Transition from thinking to answering
+                if acc.phase == :thinking do
+                  IO.puts("")
+                end
+
+                IO.write(text)
+              end
+
+              new_content = acc.content <> text
+              %{acc | content: new_content, phase: :answering}
+
+            %{done: true, metadata: metadata} ->
+              if live_screen? do
+                Owl.LiveScreen.update(:thinking, "")
+              end
+
+              sources = Map.get(metadata, :sources, [])
+              usage = Map.get(metadata, :usage, %{})
+              %{acc | sources: sources, usage: usage, phase: :done}
+
+            {:error, reason} ->
+              Logger.warning("Stream error: #{inspect(reason)}")
+              acc
+
+            _ ->
+              acc
+          end
         end
-      end)
+      )
 
-    # Flush the live block and print final content statically
-    Owl.LiveScreen.flush()
+    if live_screen? do
+      # Flush the live blocks and print final content statically
+      Owl.LiveScreen.flush()
+    else
+      # Ensure final newline for direct output mode
+      if result.phase in [:answering, :thinking], do: IO.puts("")
+    end
 
     # Print thinking summary if any was collected
     if result.thinking != "" do
@@ -307,8 +344,15 @@ defmodule Ragex.CLI.Chat do
     {:ok, result}
   rescue
     e ->
-      Owl.LiveScreen.flush()
+      if live_screen_available?(), do: Owl.LiveScreen.flush()
       {:error, {:stream_error, Exception.message(e)}}
+  end
+
+  defp live_screen_available? do
+    case Process.whereis(Owl.LiveScreen) do
+      pid when is_pid(pid) -> Process.alive?(pid)
+      nil -> false
+    end
   end
 
   defp format_thinking_text(text) do
