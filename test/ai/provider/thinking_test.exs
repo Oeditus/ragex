@@ -28,9 +28,9 @@ defmodule Ragex.AI.Provider.ThinkingParsingTest do
 
       done_chunks = Enum.filter(chunks, &Map.get(&1, :done, false))
 
-      assert length(thinking_chunks) >= 1
-      assert length(content_chunks) >= 1
-      assert length(done_chunks) >= 1
+      assert match?([_ | _], thinking_chunks)
+      assert match?([_ | _], content_chunks)
+      assert match?([_ | _], done_chunks)
 
       assert hd(thinking_chunks).thinking == "thinking..."
       assert hd(content_chunks).content == "answer"
@@ -126,8 +126,8 @@ defmodule Ragex.AI.Provider.ThinkingParsingTest do
       content_chunks =
         Enum.filter(chunks, &(Map.get(&1, :content, "") != "" and not Map.get(&1, :done, false)))
 
-      assert length(thinking_chunks) >= 1
-      assert length(content_chunks) >= 1
+      assert match?([_ | _], thinking_chunks)
+      assert match?([_ | _], content_chunks)
     end
   end
 
