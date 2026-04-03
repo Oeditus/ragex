@@ -195,13 +195,17 @@ defmodule Ragex.AI.Provider.Ollama do
     end
   end
 
-  defp parse_response(%{"response" => content, "model" => model} = body) do
+  defp parse_response(%{"response" => raw_content, "model" => model} = body) do
+    # Separate thinking content from response content
+    {reasoning_content, content} = extract_think_tags(raw_content)
+
     # Ollama doesn't provide token counts in non-streaming mode by default
     # Estimate tokens (very rough: 1 token ≈ 4 characters)
-    estimated_tokens = div(String.length(content), 4)
+    estimated_tokens = div(String.length(raw_content), 4)
 
     response = %{
       content: content,
+      reasoning_content: reasoning_content,
       model: model,
       usage: %{
         # Not provided by Ollama
@@ -261,7 +265,17 @@ defmodule Ragex.AI.Provider.Ollama do
 
     stream =
       Stream.resource(
-        fn -> %{task: task, buffer: "", model: config.model, done: false, total_content: ""} end,
+        fn ->
+          %{
+            task: task,
+            buffer: "",
+            model: config.model,
+            done: false,
+            total_content: "",
+            think_state: :detecting,
+            think_buffer: ""
+          }
+        end,
         fn state ->
           if state.done do
             {:halt, state}
@@ -289,13 +303,7 @@ defmodule Ragex.AI.Provider.Ollama do
           Enum.flat_map_reduce(lines, %{state | buffer: remaining}, fn line, acc ->
             case Jason.decode(line) do
               {:ok, %{"response" => content, "done" => false}} ->
-                chunk = %{
-                  content: content,
-                  done: false,
-                  metadata: %{provider: :ollama, local: true}
-                }
-
-                {[chunk], %{acc | total_content: acc.total_content <> content}}
+                classify_ollama_content(content, acc)
 
               {:ok, %{"done" => true} = data} ->
                 # Final chunk with token estimation
@@ -303,6 +311,7 @@ defmodule Ragex.AI.Provider.Ollama do
 
                 final_chunk = %{
                   content: "",
+                  thinking: nil,
                   done: true,
                   metadata: %{
                     provider: :ollama,
@@ -319,13 +328,7 @@ defmodule Ragex.AI.Provider.Ollama do
                 {[final_chunk], %{acc | done: true}}
 
               {:ok, %{"response" => content}} ->
-                chunk = %{
-                  content: content,
-                  done: false,
-                  metadata: %{provider: :ollama, local: true}
-                }
-
-                {[chunk], %{acc | total_content: acc.total_content <> content}}
+                classify_ollama_content(content, acc)
 
               _ ->
                 {[], acc}
@@ -342,6 +345,7 @@ defmodule Ragex.AI.Provider.Ollama do
 
           final_chunk = %{
             content: "",
+            thinking: nil,
             done: true,
             metadata: %{
               provider: :ollama,
@@ -362,6 +366,190 @@ defmodule Ragex.AI.Provider.Ollama do
         {[{:error, error}], %{state | done: true}}
     after
       30_000 -> {[{:error, :timeout}], %{state | done: true}}
+    end
+  end
+
+  # Classify content from Ollama stream, detecting <think>...</think> tags
+  # State machine: :detecting -> :thinking -> :answering
+  defp classify_ollama_content(content, acc) do
+    combined = acc.think_buffer <> content
+
+    case acc.think_state do
+      :detecting ->
+        cond do
+          # Full opening tag found
+          String.contains?(combined, "<think>") ->
+            # Split on <think> -- anything before it is content, rest is thinking
+            [before, after_tag] = String.split(combined, "<think>", parts: 2)
+
+            chunks =
+              if before != "" and String.trim(before) != "" do
+                [
+                  %{
+                    content: before,
+                    thinking: nil,
+                    done: false,
+                    metadata: %{provider: :ollama, local: true}
+                  }
+                ]
+              else
+                []
+              end
+
+            # Check if closing tag is also in this chunk
+            if String.contains?(after_tag, "</think>") do
+              [thinking_text, rest] = String.split(after_tag, "</think>", parts: 2)
+
+              thinking_chunks =
+                if thinking_text != "" do
+                  [
+                    %{
+                      content: "",
+                      thinking: thinking_text,
+                      done: false,
+                      metadata: %{provider: :ollama, local: true, phase: :thinking}
+                    }
+                  ]
+                else
+                  []
+                end
+
+              rest_chunks =
+                if rest != "" and String.trim(rest) != "" do
+                  [
+                    %{
+                      content: rest,
+                      thinking: nil,
+                      done: false,
+                      metadata: %{provider: :ollama, local: true, phase: :answering}
+                    }
+                  ]
+                else
+                  []
+                end
+
+              {chunks ++ thinking_chunks ++ rest_chunks,
+               %{
+                 acc
+                 | think_state: :answering,
+                   think_buffer: "",
+                   total_content: acc.total_content <> content
+               }}
+            else
+              # Still in thinking, emit what we have
+              thinking_chunks =
+                if after_tag != "" do
+                  [
+                    %{
+                      content: "",
+                      thinking: after_tag,
+                      done: false,
+                      metadata: %{provider: :ollama, local: true, phase: :thinking}
+                    }
+                  ]
+                else
+                  []
+                end
+
+              {chunks ++ thinking_chunks,
+               %{
+                 acc
+                 | think_state: :thinking,
+                   think_buffer: "",
+                   total_content: acc.total_content <> content
+               }}
+            end
+
+          # Could be a partial "<thi" at the end -- buffer it
+          String.ends_with?(combined, "<") or
+              Regex.match?(~r/<t(?:h(?:i(?:n(?:k)?)?)?)?$/, combined) ->
+            {[], %{acc | think_buffer: combined, total_content: acc.total_content <> content}}
+
+          # No think tags, regular content
+          true ->
+            chunk = %{
+              content: combined,
+              thinking: nil,
+              done: false,
+              metadata: %{provider: :ollama, local: true}
+            }
+
+            {[chunk], %{acc | think_buffer: "", total_content: acc.total_content <> content}}
+        end
+
+      :thinking ->
+        if String.contains?(combined, "</think>") do
+          [thinking_text, rest] = String.split(combined, "</think>", parts: 2)
+
+          thinking_chunks =
+            if thinking_text != "" do
+              [
+                %{
+                  content: "",
+                  thinking: thinking_text,
+                  done: false,
+                  metadata: %{provider: :ollama, local: true, phase: :thinking}
+                }
+              ]
+            else
+              []
+            end
+
+          rest_chunks =
+            if rest != "" and String.trim(rest) != "" do
+              [
+                %{
+                  content: rest,
+                  thinking: nil,
+                  done: false,
+                  metadata: %{provider: :ollama, local: true, phase: :answering}
+                }
+              ]
+            else
+              []
+            end
+
+          {thinking_chunks ++ rest_chunks,
+           %{
+             acc
+             | think_state: :answering,
+               think_buffer: "",
+               total_content: acc.total_content <> content
+           }}
+        else
+          # Still thinking
+          chunk = %{
+            content: "",
+            thinking: combined,
+            done: false,
+            metadata: %{provider: :ollama, local: true, phase: :thinking}
+          }
+
+          {[chunk], %{acc | think_buffer: "", total_content: acc.total_content <> content}}
+        end
+
+      :answering ->
+        chunk = %{
+          content: combined,
+          thinking: nil,
+          done: false,
+          metadata: %{provider: :ollama, local: true, phase: :answering}
+        }
+
+        {[chunk], %{acc | think_buffer: "", total_content: acc.total_content <> content}}
+    end
+  end
+
+  # Extract <think>...</think> from non-streaming response
+  defp extract_think_tags(content) do
+    case Regex.run(~r/<think>(.*?)<\/think>(.*)$/s, content) do
+      [_, thinking, rest] ->
+        thinking = String.trim(thinking)
+        rest = String.trim(rest)
+        {if(thinking == "", do: nil, else: thinking), rest}
+
+      nil ->
+        {nil, content}
     end
   end
 

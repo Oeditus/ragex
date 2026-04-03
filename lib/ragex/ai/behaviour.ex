@@ -9,6 +9,7 @@ defmodule Ragex.AI.Behaviour do
   @typedoc "AI provider response"
   @type response :: %{
           content: String.t(),
+          reasoning_content: String.t() | nil,
           model: String.t(),
           usage: map(),
           metadata: map()
@@ -17,6 +18,7 @@ defmodule Ragex.AI.Behaviour do
   @typedoc "Streaming chunk from AI provider"
   @type chunk :: %{
           content: String.t(),
+          thinking: String.t() | nil,
           done: boolean(),
           metadata: map()
         }

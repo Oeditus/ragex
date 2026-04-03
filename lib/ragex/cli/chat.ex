@@ -242,6 +242,15 @@ defmodule Ragex.CLI.Chat do
   end
 
   defp render_stream(stream) do
+    # Add thinking block (rendered dimmed/faint)
+    Owl.LiveScreen.add_block(:thinking,
+      state: "",
+      render: fn
+        "" -> ""
+        text -> Owl.Data.tag("[thinking] " <> format_thinking_text(text), :faint)
+      end
+    )
+
     # Use LiveScreen for live-updating response block
     Owl.LiveScreen.add_block(:response,
       state: "",
@@ -252,14 +261,27 @@ defmodule Ragex.CLI.Chat do
     )
 
     result =
-      Enum.reduce(stream, %{content: "", sources: [], usage: %{}}, fn chunk, acc ->
+      Enum.reduce(stream, %{content: "", thinking: "", sources: [], usage: %{}}, fn chunk, acc ->
         case chunk do
-          %{content: text, done: false} when is_binary(text) ->
+          %{thinking: thinking_text, done: false}
+          when is_binary(thinking_text) and thinking_text != "" ->
+            new_thinking = acc.thinking <> thinking_text
+            Owl.LiveScreen.update(:thinking, new_thinking)
+            %{acc | thinking: new_thinking}
+
+          %{content: text, done: false} when is_binary(text) and text != "" ->
+            # When content starts arriving, clear thinking display
+            if acc.thinking != "" and acc.content == "" do
+              Owl.LiveScreen.update(:thinking, "")
+            end
+
             new_content = acc.content <> text
             Owl.LiveScreen.update(:response, new_content)
             %{acc | content: new_content}
 
           %{done: true, metadata: metadata} ->
+            # Clear thinking block on completion
+            Owl.LiveScreen.update(:thinking, "")
             sources = Map.get(metadata, :sources, [])
             usage = Map.get(metadata, :usage, %{})
             %{acc | sources: sources, usage: usage}
@@ -276,11 +298,30 @@ defmodule Ragex.CLI.Chat do
     # Flush the live block and print final content statically
     Owl.LiveScreen.flush()
 
+    # Print thinking summary if any was collected
+    if result.thinking != "" do
+      thinking_lines = result.thinking |> String.split("\n") |> length()
+      IO.puts(Colors.muted("[Thinking: #{thinking_lines} lines]"))
+    end
+
     {:ok, result}
   rescue
     e ->
       Owl.LiveScreen.flush()
       {:error, {:stream_error, Exception.message(e)}}
+  end
+
+  defp format_thinking_text(text) do
+    # Truncate thinking text for display to last N lines
+    lines = String.split(text, "\n")
+    max_display_lines = 6
+
+    if length(lines) > max_display_lines do
+      displayed = Enum.take(lines, -max_display_lines)
+      "...\n" <> Enum.join(displayed, "\n")
+    else
+      text
+    end
   end
 
   defp run_analysis(state) do

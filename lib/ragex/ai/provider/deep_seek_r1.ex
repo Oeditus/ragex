@@ -288,6 +288,7 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
     message = get_in(body, ["choices", Access.at(0), "message"]) || %{}
 
     content = message["content"]
+    reasoning_content = message["reasoning_content"]
     tool_calls = parse_tool_calls(message["tool_calls"])
 
     usage = Map.get(body, "usage", %{})
@@ -297,6 +298,7 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
     {:ok,
      %{
        content: content,
+       reasoning_content: reasoning_content,
        tool_calls: tool_calls,
        model: model,
        usage: usage,
@@ -346,6 +348,7 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
 
                 final_chunk = %{
                   content: "",
+                  thinking: nil,
                   done: true,
                   metadata: %{
                     finish_reason: finish_reason,
@@ -370,6 +373,7 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
         else
           final_chunk = %{
             content: "",
+            thinking: nil,
             done: true,
             metadata: %{
               finish_reason: "stop",
@@ -410,6 +414,7 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
          %{"choices" => [choice | _]} <- data do
       delta = choice["delta"] || %{}
       content = delta["content"] || ""
+      reasoning_content = delta["reasoning_content"] || ""
       finish_reason = choice["finish_reason"]
       usage = data["usage"]
 
@@ -417,8 +422,24 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
         finish_reason != nil ->
           {:done, finish_reason, usage}
 
+        reasoning_content != "" ->
+          chunk = %{
+            content: "",
+            thinking: reasoning_content,
+            done: false,
+            metadata: %{provider: :deepseek_r1, phase: :thinking}
+          }
+
+          {:chunk, chunk, usage}
+
         content != "" ->
-          chunk = %{content: content, done: false, metadata: %{provider: :deepseek_r1}}
+          chunk = %{
+            content: content,
+            thinking: nil,
+            done: false,
+            metadata: %{provider: :deepseek_r1, phase: :answering}
+          }
+
           {:chunk, chunk, usage}
 
         true ->

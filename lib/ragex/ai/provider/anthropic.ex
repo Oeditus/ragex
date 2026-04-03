@@ -179,6 +179,7 @@ defmodule Ragex.AI.Provider.Anthropic do
         temperature: config.temperature,
         max_tokens: config.max_tokens
       }
+      |> maybe_add_thinking(opts)
       |> maybe_add_tools(opts)
       |> maybe_add_tool_choice(opts)
 
@@ -199,6 +200,19 @@ defmodule Ragex.AI.Provider.Anthropic do
       {:error, reason} ->
         Logger.error("Anthropic HTTP request failed: #{inspect(reason)}")
         {:error, {:http_error, reason}}
+    end
+  end
+
+  defp maybe_add_thinking(body, opts) do
+    case Keyword.get(opts, :thinking) do
+      nil ->
+        body
+
+      %{} = thinking_config ->
+        Map.put(body, :thinking, thinking_config)
+
+      _ ->
+        body
     end
   end
 
@@ -228,6 +242,12 @@ defmodule Ragex.AI.Provider.Anthropic do
       |> Enum.filter(&(&1["type"] == "text"))
       |> Enum.map_join("", & &1["text"])
 
+    # Extract thinking content
+    reasoning_content =
+      content_blocks
+      |> Enum.filter(&(&1["type"] == "thinking"))
+      |> Enum.map_join("", & &1["thinking"])
+
     # Extract tool use blocks
     tool_calls = parse_tool_use_blocks(content_blocks)
 
@@ -235,6 +255,7 @@ defmodule Ragex.AI.Provider.Anthropic do
 
     response = %{
       content: if(content == "", do: nil, else: content),
+      reasoning_content: if(reasoning_content == "", do: nil, else: reasoning_content),
       tool_calls: tool_calls,
       model: body["model"],
       usage: %{
@@ -274,17 +295,19 @@ defmodule Ragex.AI.Provider.Anthropic do
     end
   end
 
-  defp stream_api({system, messages}, config, api_key, _opts) do
+  defp stream_api({system, messages}, config, api_key, opts) do
     url = "#{config.endpoint}/messages"
 
-    body = %{
-      model: config.model,
-      messages: messages,
-      system: system,
-      temperature: config.temperature,
-      max_tokens: config.max_tokens,
-      stream: true
-    }
+    body =
+      %{
+        model: config.model,
+        messages: messages,
+        system: system,
+        temperature: config.temperature,
+        max_tokens: config.max_tokens,
+        stream: true
+      }
+      |> maybe_add_thinking(opts)
 
     headers = [
       {"x-api-key", api_key},
@@ -323,14 +346,15 @@ defmodule Ragex.AI.Provider.Anthropic do
     stream =
       Stream.resource(
         fn ->
-          # Initial state with usage tracking
+          # Initial state with usage tracking and block type tracking
           %{
             task: task,
             buffer: "",
             usage: %{input_tokens: 0, output_tokens: 0},
             model: config.model,
             stop_reason: nil,
-            done: false
+            done: false,
+            current_block_type: nil
           }
         end,
         fn state ->
@@ -364,11 +388,32 @@ defmodule Ragex.AI.Provider.Anthropic do
         {chunks, new_state} =
           Enum.flat_map_reduce(events, %{state | buffer: remaining}, fn event, acc ->
             case parse_anthropic_event(event) do
+              {:block_start, block_type} ->
+                {[], %{acc | current_block_type: block_type}}
+
+              {:block_stop} ->
+                {[], %{acc | current_block_type: nil}}
+
+              {:thinking, text} ->
+                chunk = %{
+                  content: "",
+                  thinking: text,
+                  done: false,
+                  metadata: %{provider: :anthropic, phase: :thinking}
+                }
+
+                {[chunk], acc}
+
+              {:signature, _sig} ->
+                # Store signature in metadata, no chunk to emit
+                {[], acc}
+
               {:text, text} ->
                 chunk = %{
                   content: text,
+                  thinking: nil,
                   done: false,
-                  metadata: %{provider: :anthropic}
+                  metadata: %{provider: :anthropic, phase: :answering}
                 }
 
                 {[chunk], acc}
@@ -381,6 +426,7 @@ defmodule Ragex.AI.Provider.Anthropic do
                 # Final chunk with usage stats
                 final_chunk = %{
                   content: "",
+                  thinking: nil,
                   done: true,
                   metadata: %{
                     stop_reason: stop_reason || acc.stop_reason || "end_turn",
@@ -411,6 +457,7 @@ defmodule Ragex.AI.Provider.Anthropic do
           # Send final done chunk
           final_chunk = %{
             content: "",
+            thinking: nil,
             done: true,
             metadata: %{
               stop_reason: state.stop_reason || "end_turn",
@@ -464,11 +511,34 @@ defmodule Ragex.AI.Provider.Anthropic do
           _ -> :skip
         end
 
-      ["event: content_block_delta", "data: " <> json] ->
-        # Extract text delta
+      ["event: content_block_start", "data: " <> json] ->
+        # Track which block type we're entering (thinking vs text)
         with {:ok, data} <- Jason.decode(json),
-             %{"delta" => %{"text" => text}} <- data do
-          {:text, text}
+             %{"content_block" => %{"type" => block_type}} <- data do
+          {:block_start, block_type}
+        else
+          _ -> :skip
+        end
+
+      ["event: content_block_stop" | _] ->
+        {:block_stop}
+
+      ["event: content_block_delta", "data: " <> json] ->
+        with {:ok, data} <- Jason.decode(json),
+             %{"delta" => delta} <- data do
+          case delta do
+            %{"type" => "thinking_delta", "thinking" => text} ->
+              {:thinking, text}
+
+            %{"type" => "text_delta", "text" => text} ->
+              {:text, text}
+
+            %{"type" => "signature_delta", "signature" => sig} ->
+              {:signature, sig}
+
+            _ ->
+              :skip
+          end
         else
           _ -> :skip
         end

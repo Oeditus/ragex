@@ -227,11 +227,13 @@ defmodule Ragex.AI.Provider.OpenAI do
 
   defp parse_response(%{"choices" => [%{"message" => message} | _]} = body) do
     content = message["content"]
+    reasoning_content = message["reasoning_content"]
     tool_calls = parse_tool_calls(message["tool_calls"])
     usage = body["usage"] || %{}
 
     response = %{
       content: content,
+      reasoning_content: reasoning_content,
       tool_calls: tool_calls,
       model: body["model"],
       usage: %{
@@ -371,6 +373,7 @@ defmodule Ragex.AI.Provider.OpenAI do
 
                 final_chunk = %{
                   content: "",
+                  thinking: nil,
                   done: true,
                   metadata: %{
                     finish_reason: finish_reason,
@@ -400,6 +403,7 @@ defmodule Ragex.AI.Provider.OpenAI do
           # Send final done chunk
           final_chunk = %{
             content: "",
+            thinking: nil,
             done: true,
             metadata: %{
               finish_reason: "stop",
@@ -447,6 +451,7 @@ defmodule Ragex.AI.Provider.OpenAI do
          %{"choices" => [choice | _]} <- data do
       delta = choice["delta"] || %{}
       content = delta["content"] || ""
+      reasoning_content = delta["reasoning_content"] || ""
       finish_reason = choice["finish_reason"]
       usage = extract_usage(data)
 
@@ -454,11 +459,22 @@ defmodule Ragex.AI.Provider.OpenAI do
         finish_reason != nil ->
           {:done, finish_reason, usage}
 
+        reasoning_content != "" ->
+          chunk = %{
+            content: "",
+            thinking: reasoning_content,
+            done: false,
+            metadata: %{provider: :openai, phase: :thinking}
+          }
+
+          {:chunk, chunk, usage}
+
         content != "" ->
           chunk = %{
             content: content,
+            thinking: nil,
             done: false,
-            metadata: %{provider: :openai}
+            metadata: %{provider: :openai, phase: :answering}
           }
 
           {:chunk, chunk, usage}

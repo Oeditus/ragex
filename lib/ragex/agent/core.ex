@@ -315,7 +315,10 @@ defmodule Ragex.Agent.Core do
     # Merge and deduplicate by path
     all_complex =
       (cyclomatic_complex ++ cognitive_complex)
-      |> Enum.uniq_by(fn item -> item[:path] || item end)
+      |> Enum.uniq_by(fn
+        %{path: path} -> path
+        item -> item
+      end)
 
     issues = %{
       dead_code:

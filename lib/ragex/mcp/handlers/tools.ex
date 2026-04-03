@@ -4236,6 +4236,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     include_code = Map.get(params, "include_code", true)
     provider = parse_provider(Map.get(params, "provider"))
     show_chunks = Map.get(params, "show_chunks", false)
+    show_thinking = Map.get(params, "show_thinking", false)
 
     opts = [
       limit: limit,
@@ -4259,6 +4260,7 @@ defmodule Ragex.MCP.Handlers.Tools do
            streaming: true,
            chunks_count: result.chunks_count
          }
+         |> maybe_add_thinking(result, show_thinking)
          |> maybe_add_chunks(result, show_chunks)}
 
       {:error, reason} ->
@@ -4331,19 +4333,30 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp collect_stream_chunks(stream, show_chunks) do
     chunks = if show_chunks, do: [], else: nil
 
-    {content, metadata, collected_chunks} =
-      Enum.reduce(stream, {"", nil, chunks}, fn
-        %{done: false, content: chunk_content} = chunk, {acc_content, _meta, acc_chunks} ->
+    {content, thinking, metadata, collected_chunks} =
+      Enum.reduce(stream, {"", "", nil, chunks}, fn
+        %{done: false, content: chunk_content, thinking: chunk_thinking} = chunk,
+        {acc_content, acc_thinking, _meta, acc_chunks} ->
           new_chunks = if show_chunks, do: [chunk | acc_chunks], else: acc_chunks
-          {acc_content <> chunk_content, nil, new_chunks}
+          new_thinking = if chunk_thinking, do: acc_thinking <> chunk_thinking, else: acc_thinking
 
-        %{done: true, metadata: final_meta}, {acc_content, _meta, acc_chunks} ->
-          {acc_content, final_meta, acc_chunks}
+          new_content =
+            if chunk_content != "", do: acc_content <> chunk_content, else: acc_content
 
-        {:error, reason}, {acc_content, meta, acc_chunks} ->
+          {new_content, new_thinking, nil, new_chunks}
+
+        %{done: false, content: chunk_content} = chunk,
+        {acc_content, acc_thinking, _meta, acc_chunks} ->
+          new_chunks = if show_chunks, do: [chunk | acc_chunks], else: acc_chunks
+          {acc_content <> chunk_content, acc_thinking, nil, new_chunks}
+
+        %{done: true, metadata: final_meta}, {acc_content, acc_thinking, _meta, acc_chunks} ->
+          {acc_content, acc_thinking, final_meta, acc_chunks}
+
+        {:error, reason}, {acc_content, acc_thinking, meta, acc_chunks} ->
           # Handle error chunks
           new_meta = if meta, do: Map.put(meta, :error, reason), else: %{error: reason}
-          {acc_content, new_meta, acc_chunks}
+          {acc_content, acc_thinking, new_meta, acc_chunks}
 
         _other, acc ->
           acc
@@ -4353,6 +4366,7 @@ defmodule Ragex.MCP.Handlers.Tools do
 
     %{
       content: content,
+      thinking: if(thinking == "", do: nil, else: thinking),
       model: metadata[:model],
       sources_count: length(metadata[:sources] || []),
       chunks_count: if(show_chunks, do: length(collected_chunks), else: :not_tracked),
@@ -4360,6 +4374,12 @@ defmodule Ragex.MCP.Handlers.Tools do
       metadata: metadata
     }
   end
+
+  defp maybe_add_thinking(result, %{thinking: thinking}, true) when is_binary(thinking) do
+    Map.put(result, :thinking, thinking)
+  end
+
+  defp maybe_add_thinking(result, _stream_result, _show_thinking), do: result
 
   defp maybe_add_chunks(result, %{chunks: chunks}, true) when is_list(chunks) do
     Map.put(result, :chunks, chunks)

@@ -307,9 +307,16 @@ defmodule Ragex.RAG.Pipeline do
       max_tokens: Keyword.get(opts, :max_tokens, 2048)
     ]
 
-    case Keyword.get(opts, :response_format) do
-      :json -> Keyword.put(base, :response_format, :json)
-      _ -> base
+    base =
+      case Keyword.get(opts, :response_format) do
+        :json -> Keyword.put(base, :response_format, :json)
+        _ -> base
+      end
+
+    # Forward thinking/extended thinking options to provider
+    case Keyword.get(opts, :thinking) do
+      nil -> base
+      thinking_config -> Keyword.put(base, :thinking, thinking_config)
     end
   end
 
@@ -323,18 +330,26 @@ defmodule Ragex.RAG.Pipeline do
         {:error, _} -> content
       end
 
-    {:ok,
-     %{
-       content: parsed_content,
-       raw_content: content,
-       sources: format_sources(retrieval_results),
-       model: ai_response.model,
-       usage: ai_response.usage,
-       metadata: %{
-         retrieval_count: length(retrieval_results),
-         timestamp: DateTime.utc_now()
-       }
-     }}
+    response = %{
+      content: parsed_content,
+      raw_content: content,
+      sources: format_sources(retrieval_results),
+      model: ai_response.model,
+      usage: ai_response.usage,
+      metadata: %{
+        retrieval_count: length(retrieval_results),
+        timestamp: DateTime.utc_now()
+      }
+    }
+
+    # Include reasoning_content if present
+    response =
+      case Map.get(ai_response, :reasoning_content) do
+        nil -> response
+        reasoning -> Map.put(response, :reasoning_content, reasoning)
+      end
+
+    {:ok, response}
   end
 
   defp format_response({:error, reason}, _results) do
