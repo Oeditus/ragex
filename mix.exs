@@ -267,6 +267,7 @@ defmodule Ragex.MixProject do
         Ragex.Editor.Validators.Erlang,
         Ragex.Editor.Validators.Javascript,
         Ragex.Editor.Validators.Python,
+        Ragex.Editor.Validators.Ruby,
         Ragex.Editor.Visualize
       ],
       "Code Analysis & Quality": [
