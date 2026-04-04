@@ -92,8 +92,12 @@ defmodule Ragex.Agent.Report do
       format_quality_overview(issues[:quality_metrics]),
       format_section("Dead Code", issues[:dead_code], &format_dead_code/1),
       format_section("Code Duplicates", issues[:duplicates], &format_duplicate/1),
-      format_section("Security Issues", issues[:security], &format_security/1),
-      format_section("Code Smells", issues[:smells], &format_smell/1),
+      format_section(
+        "Security Vulnerabilities",
+        flatten_security_results(issues[:security]),
+        &format_security/1
+      ),
+      format_section("Code Smells", flatten_smell_results(issues[:smells]), &format_smell/1),
       format_section("High Complexity", issues[:complexity], &format_complexity/1),
       format_section("Circular Dependencies", issues[:circular_deps], &format_circular_dep/1),
       format_section("Refactoring Suggestions", issues[:suggestions], &format_suggestion/1)
@@ -215,12 +219,15 @@ defmodule Ragex.Agent.Report do
 
   defp format_security(item) when is_map(item) do
     severity = item[:severity] || item["severity"] || "unknown"
-    type = item[:type] || item["type"] || item[:vulnerability] || "issue"
+    category = item[:category] || item[:type] || item["type"] || item[:vulnerability] || "issue"
     file = item[:file] || item["file"] || "unknown"
-    line = item[:line] || item["line"] || "?"
+    context = item[:context] || %{}
+    line = item[:line] || item["line"] || context[:line] || "?"
     desc = item[:description] || item["description"] || item[:message] || ""
+    cwe = item[:cwe] || item["cwe"]
+    recommendation = item[:recommendation] || item["recommendation"]
 
-    severity_emoji =
+    severity_label =
       case severity do
         s when s in ["critical", :critical] -> "[CRITICAL]"
         s when s in ["high", :high] -> "[HIGH]"
@@ -228,15 +235,20 @@ defmodule Ragex.Agent.Report do
         _ -> "[LOW]"
       end
 
-    "- #{severity_emoji} **#{type}** in `#{file}:#{line}`: #{desc}"
+    cwe_ref = if cwe, do: " (CWE-#{cwe})", else: ""
+    rec_text = if recommendation, do: " -- #{recommendation}", else: ""
+
+    "- #{severity_label} **#{category}**#{cwe_ref} in `#{file}:#{line}`: #{desc}#{rec_text}"
   end
 
   defp format_security(item), do: "- #{inspect(item)}"
 
   defp format_smell(item) when is_map(item) do
     type = item[:type] || item["type"] || item[:smell] || "smell"
-    file = item[:file] || item["file"] || "unknown"
-    line = item[:line] || item["line"] || "?"
+    file = item[:file] || item["file"] || item[:path] || "unknown"
+    context = item[:context] || %{}
+    location = item[:location] || %{}
+    line = item[:line] || item["line"] || location[:line] || context[:line] || "?"
     message = item[:message] || item["message"] || item[:description] || ""
 
     "- **#{type}** in `#{file}:#{line}`: #{message}"
@@ -365,6 +377,41 @@ defmodule Ragex.Agent.Report do
     | Refactoring Suggestions | #{counts.suggestions} |
     """
   end
+
+  # Flatten per-file security analysis_result maps into individual vulnerability maps.
+  # Security.analyze_directory/2 returns [{file, vulnerabilities, ...}] where each
+  # vulnerability carries :category, :severity, :cwe, :context (with :line/:col), etc.
+  defp flatten_security_results(nil), do: nil
+  defp flatten_security_results([]), do: []
+
+  defp flatten_security_results(results) when is_list(results) do
+    Enum.flat_map(results, fn
+      %{vulnerabilities: vulns, file: file} when is_list(vulns) ->
+        Enum.map(vulns, fn vuln -> Map.put_new(vuln, :file, file) end)
+
+      # Already a flat vulnerability or unknown shape -- pass through
+      other ->
+        [other]
+    end)
+  end
+
+  # Flatten directory_result map (from Smells.detect_smells) into individual smell maps.
+  # The directory_result has shape %{results: [%{path, smells: [...], ...}]}.
+  defp flatten_smell_results(nil), do: nil
+  defp flatten_smell_results([]), do: []
+  defp flatten_smell_results(items) when is_list(items), do: items
+
+  defp flatten_smell_results(%{results: results}) when is_list(results) do
+    Enum.flat_map(results, fn
+      %{smells: smells, path: path} when is_list(smells) ->
+        Enum.map(smells, fn smell -> Map.put_new(smell, :file, path) end)
+
+      other ->
+        [other]
+    end)
+  end
+
+  defp flatten_smell_results(_other), do: nil
 
   defp round_metric(nil), do: 0
   defp round_metric(val) when is_float(val), do: Float.round(val, 1)
