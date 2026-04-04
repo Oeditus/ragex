@@ -1,9 +1,9 @@
 defmodule Mix.Tasks.Ragex.Audit do
   @moduledoc """
-  Generates an AI-powered code audit report as JSON.
+  Generates an AI-powered code audit report.
 
   Combines comprehensive static analysis with an AI-generated professional
-  code audit report. The output is a JSON document containing all structured
+  code audit report. By default outputs a JSON document containing all structured
   analysis results plus an `"audit"` field with the AI-generated Markdown report.
 
   ## Usage
@@ -13,7 +13,8 @@ defmodule Mix.Tasks.Ragex.Audit do
   ## Options
 
     * `--path PATH` - Directory to analyze (default: current directory)
-    * `--output FILE` - Output file (default: stdout)
+    * `--format FORMAT` - Output format: `json` (default) or `markdown`
+    * `--output FILE` - Write output to file instead of stdout
     * `--dead-code` - Include dead code analysis (disabled by default, can be slow)
     * `--provider PROVIDER` - AI provider: deepseek_r1, openai, anthropic, ollama
     * `--model MODEL` - Model name override
@@ -23,16 +24,24 @@ defmodule Mix.Tasks.Ragex.Audit do
 
   ## Examples
 
-      # Audit current directory
+      # Audit current directory (JSON to stdout)
       mix ragex.audit
 
-      # Audit specific directory, save to file
+      # Render AI audit report in terminal
+      mix ragex.audit --format markdown
+
+      # Save rendered markdown to file (ANSI escape sequences stripped)
+      mix ragex.audit --format markdown --output report.md
+
+      # Audit specific directory, save JSON to file
       mix ragex.audit --path lib/ --output audit.json
 
       # Include dead code analysis with progress
       mix ragex.audit --dead-code --verbose --output report.json
 
   ## Output Format
+
+  ### JSON (default)
 
   JSON with the following top-level keys:
 
@@ -43,9 +52,15 @@ defmodule Mix.Tasks.Ragex.Audit do
     * `results` - Structured analysis results (compatible with `mix ragex.analyze --format json`)
     * `summary` - Issue counts by category
     * `config` - Analysis configuration used
+
+  ### Markdown (`--format markdown`)
+
+  Renders only the AI-generated audit report. When printed to stdout, uses
+  ANSI-styled Markdown (via Marcli). When written to a file (`--output`),
+  escape sequences are stripped for clean readable Markdown.
   """
 
-  @shortdoc "Generates AI-powered code audit report as JSON"
+  @shortdoc "Generates AI-powered code audit report"
 
   use Mix.Task
 
@@ -59,6 +74,7 @@ defmodule Mix.Tasks.Ragex.Audit do
       OptionParser.parse(args,
         strict: [
           path: :string,
+          format: :string,
           output: :string,
           dead_code: :boolean,
           provider: :string,
@@ -67,7 +83,7 @@ defmodule Mix.Tasks.Ragex.Audit do
           with_empty: :boolean,
           help: :boolean
         ],
-        aliases: [p: :path, o: :output, m: :model, h: :help]
+        aliases: [p: :path, f: :format, o: :output, m: :model, h: :help]
       )
 
     if opts[:help] do
@@ -82,6 +98,7 @@ defmodule Mix.Tasks.Ragex.Audit do
   defp run_audit(opts) do
     verbose = Keyword.get(opts, :verbose, false)
     path = Keyword.get(opts, :path, File.cwd!()) |> Path.expand()
+    format = Keyword.get(opts, :format, "json")
     output_file = Keyword.get(opts, :output)
 
     # Disable MCP server for non-interactive JSON output
@@ -112,25 +129,31 @@ defmodule Mix.Tasks.Ragex.Audit do
 
     case Core.analyze_project(path, core_opts) do
       {:ok, result} ->
-        if verbose, do: progress("AI report generated. Running supplementary analyses...")
+        case format do
+          "markdown" ->
+            output_markdown(result.report, output_file, verbose)
 
-        supplementary = run_supplementary(path)
-        graph_stats = Store.stats()
-        modules = Store.list_nodes(:module, :infinity)
-        functions = Store.list_nodes(:function, :infinity)
+          _ ->
+            if verbose, do: progress("AI report generated. Running supplementary analyses...")
 
-        json_report =
-          build_json(path, result, supplementary, graph_stats, modules, functions, opts)
+            supplementary = run_supplementary(path)
+            graph_stats = Store.stats()
+            modules = Store.list_nodes(:module, :infinity)
+            functions = Store.list_nodes(:function, :infinity)
 
-        encoded = Jason.encode!(json_report, pretty: true)
+            json_report =
+              build_json(path, result, supplementary, graph_stats, modules, functions, opts)
 
-        case output_file do
-          nil ->
-            IO.puts(encoded)
+            encoded = Jason.encode!(json_report, pretty: true)
 
-          file ->
-            File.write!(file, encoded)
-            if verbose, do: progress("Audit report written to #{file}")
+            case output_file do
+              nil ->
+                IO.puts(encoded)
+
+              file ->
+                File.write!(file, encoded)
+                if verbose, do: progress("Audit report written to #{file}")
+            end
         end
 
       {:error, reason} ->
@@ -171,7 +194,9 @@ defmodule Mix.Tasks.Ragex.Audit do
         dependencies: supplementary.dependencies || %{modules: %{}},
         quality: supplementary.quality_score || %{overall_score: 0}
       }
-      |> then(fn r -> if with_empty, do: r, else: filter_non_empty(r) end)
+      |> then(fn r ->
+        if with_empty, do: r, else: r |> filter_empty_within_results() |> filter_non_empty()
+      end)
 
     %{
       timestamp: DateTime.utc_now(),
@@ -207,11 +232,74 @@ defmodule Mix.Tasks.Ragex.Audit do
   defp empty_result?(%{dead_functions: []}), do: true
   defp empty_result?(%{cycles: []}), do: true
   defp empty_result?(%{items: []}), do: true
+  defp empty_result?(%{total_issues: 0, results: []}), do: true
   defp empty_result?(%{total_issues: 0}), do: true
   defp empty_result?(%{modules: m}) when map_size(m) == 0, do: true
   defp empty_result?(%{overall_score: _}), do: false
   defp empty_result?(m) when m == %{}, do: true
   defp empty_result?(_), do: false
+
+  defp filter_empty_within_results(results) do
+    Map.new(results, fn {key, value} -> {key, filter_empty_nodes(key, value)} end)
+  end
+
+  defp filter_empty_nodes(:security, %{issues: issues} = data) do
+    filtered =
+      Enum.reject(issues, fn issue ->
+        Map.get(issue, :has_vulnerabilities?, true) == false and
+          Enum.empty?(Map.get(issue, :vulnerabilities, []))
+      end)
+
+    %{data | issues: filtered}
+  end
+
+  defp filter_empty_nodes(:business_logic, %{results: results} = data) do
+    filtered =
+      Enum.reject(results, fn result ->
+        Map.get(result, :has_issues?, true) == false and
+          Enum.empty?(Map.get(result, :issues, []))
+      end)
+
+    %{data | results: filtered}
+  end
+
+  defp filter_empty_nodes(:smells, %{smells: smells} = data) do
+    case smells do
+      %{results: results} ->
+        filtered =
+          Enum.reject(results, fn result ->
+            Map.get(result, :has_smells?, true) == false and
+              Enum.empty?(Map.get(result, :smells, []))
+          end)
+
+        %{data | smells: %{smells | results: filtered}}
+
+      _ ->
+        data
+    end
+  end
+
+  defp filter_empty_nodes(_key, data), do: data
+
+  defp output_markdown(nil, _output_file, _verbose) do
+    IO.puts(:stderr, "No AI report was generated.")
+    System.halt(1)
+  end
+
+  defp output_markdown("", _output_file, _verbose) do
+    IO.puts(:stderr, "AI report is empty.")
+    System.halt(1)
+  end
+
+  defp output_markdown(report, nil, _verbose) do
+    IO.puts(Marcli.render(report))
+  end
+
+  defp output_markdown(report, file, verbose) do
+    rendered = Marcli.render(report, escape_sequences: false)
+    File.write!(file, rendered)
+    if verbose, do: progress("Markdown report written to #{file}")
+  end
 
   # Helpers
 
