@@ -197,14 +197,14 @@ defmodule Ragex.Analysis.Cache do
   end
 
   defp find_changed_files(cached_fingerprints) do
+    # Compare cached hashes directly against the filesystem.
+    # This avoids depending on the in-memory FileTracker ETS table,
+    # which may not yet be populated on fresh startup.
     cached_fingerprints
     |> Enum.filter(fn {path, cached_hash} ->
-      case FileTracker.has_changed?(path) do
-        {:unchanged, %{content_hash: ^cached_hash}} -> false
-        {:unchanged, _} -> true
-        {:changed, _} -> true
-        {:deleted, _} -> true
-        {:new, _} -> true
+      case File.read(path) do
+        {:ok, content} -> :crypto.hash(:sha256, content) != cached_hash
+        {:error, _} -> true
       end
     end)
     |> Enum.map(fn {path, _} -> path end)

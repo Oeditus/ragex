@@ -152,7 +152,7 @@ defmodule Ragex.Agent.Executor do
   end
 
   defp execute_step(state) do
-    verbose = Keyword.get(state.opts, :verbose, true)
+    debug? = Application.get_env(:ragex, :debug_ai_responses, false)
 
     with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
          {:ok, response} <- call_llm(state, messages) do
@@ -163,7 +163,7 @@ defmodule Ragex.Agent.Executor do
         nil ->
           # No tool calls - we're done
           content = response.content || ""
-          if verbose, do: print_assistant_response(content, state.iterations)
+          if debug?, do: print_assistant_response(content, state.iterations)
           # Save assistant response
           Memory.add_message(state.session_id, :assistant, content)
           {:done, content, updated_state}
@@ -171,14 +171,14 @@ defmodule Ragex.Agent.Executor do
         [] ->
           # Empty tool calls - we're done
           content = response.content || ""
-          if verbose, do: print_assistant_response(content, state.iterations)
+          if debug?, do: print_assistant_response(content, state.iterations)
           Memory.add_message(state.session_id, :assistant, content)
           {:done, content, updated_state}
 
         tool_calls when is_list(tool_calls) ->
           # Execute tool calls
           Logger.debug("Agent making #{length(tool_calls)} tool call(s)")
-          if verbose, do: print_tool_calls(tool_calls, response.content, state.iterations)
+          if debug?, do: print_tool_calls(tool_calls, response.content, state.iterations)
 
           # Save assistant message with tool calls
           Memory.add_message(state.session_id, :assistant, response.content || "",
@@ -191,7 +191,7 @@ defmodule Ragex.Agent.Executor do
           # Add tool results to conversation
           Enum.each(results, fn {tool_call, result} ->
             result_str = format_tool_result(tool_call.name, result)
-            if verbose, do: print_tool_result(tool_call.name, result_str)
+            if debug?, do: print_tool_result(tool_call.name, result_str)
 
             Memory.add_message(state.session_id, :tool, result_str,
               tool_call_id: tool_call.id,

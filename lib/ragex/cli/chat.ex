@@ -233,7 +233,7 @@ defmodule Ragex.CLI.Chat do
     case Core.chat(state.session_id, query) do
       {:ok, %{content: content}} ->
         IO.puts("")
-        IO.puts(format_assistant_text(content))
+        IO.puts(Marcli.render(content))
         {:ok, %{content: content, sources: []}}
 
       {:error, reason} ->
@@ -242,6 +242,8 @@ defmodule Ragex.CLI.Chat do
   end
 
   defp render_stream(stream) do
+    # Ensure LiveScreen is running for progressive Marcli rendering
+    ensure_live_screen()
     live_screen? = live_screen_available?()
 
     if live_screen? do
@@ -254,12 +256,12 @@ defmodule Ragex.CLI.Chat do
         end
       )
 
-      # Use LiveScreen for live-updating response block
+      # Use LiveScreen for live-updating response block with Marcli rendering
       Owl.LiveScreen.add_block(:response,
         state: "",
         render: fn
           "" -> Owl.Data.tag("...", :faint)
-          text -> format_assistant_text(text)
+          text -> Marcli.render(text)
         end
       )
     end
@@ -288,13 +290,14 @@ defmodule Ragex.CLI.Chat do
               %{acc | thinking: new_thinking, phase: :thinking}
 
             %{content: text, done: false} when is_binary(text) and text != "" ->
+              new_content = acc.content <> text
+
               if live_screen? do
                 # When content starts arriving, clear thinking display
                 if acc.thinking != "" and acc.content == "" do
                   Owl.LiveScreen.update(:thinking, "")
                 end
 
-                new_content = acc.content <> text
                 Owl.LiveScreen.update(:response, new_content)
               else
                 # Transition from thinking to answering
@@ -305,7 +308,6 @@ defmodule Ragex.CLI.Chat do
                 IO.write(text)
               end
 
-              new_content = acc.content <> text
               %{acc | content: new_content, phase: :answering}
 
             %{done: true, metadata: metadata} ->
@@ -331,8 +333,13 @@ defmodule Ragex.CLI.Chat do
       # Flush the live blocks and print final content statically
       Owl.LiveScreen.flush()
     else
-      # Ensure final newline for direct output mode
-      if result.phase in [:answering, :thinking], do: IO.puts("")
+      # Non-LiveScreen fallback: render accumulated content with Marcli
+      if result.phase in [:thinking], do: IO.puts("")
+
+      if result.content != "" do
+        IO.puts("")
+        IO.puts(Marcli.render(result.content))
+      end
     end
 
     # Print thinking summary if any was collected
@@ -352,6 +359,12 @@ defmodule Ragex.CLI.Chat do
     case Process.whereis(Owl.LiveScreen) do
       pid when is_pid(pid) -> Process.alive?(pid)
       nil -> false
+    end
+  end
+
+  defp ensure_live_screen do
+    unless live_screen_available?() do
+      Owl.LiveScreen.start_link(name: Owl.LiveScreen, refresh_every: 100)
     end
   end
 
@@ -436,7 +449,7 @@ defmodule Ragex.CLI.Chat do
         # Display the AI-generated report if available
         if result.report && result.report != "" do
           IO.puts("")
-          IO.puts(format_assistant_text(result.report))
+          IO.puts(Marcli.render(result.report))
           IO.puts("")
         end
 
@@ -655,27 +668,6 @@ defmodule Ragex.CLI.Chat do
     IO.puts("")
     Owl.IO.puts(box)
     IO.puts("")
-  end
-
-  defp format_assistant_text(text) do
-    # Apply basic styling: dim code fences, keep content readable
-    text
-    |> String.split("\n")
-    |> Enum.map_join("\n", fn line ->
-      cond do
-        String.starts_with?(line, "```") ->
-          Colors.muted(line)
-
-        String.starts_with?(line, "#") ->
-          Colors.bold(line)
-
-        String.starts_with?(line, "- ") or String.starts_with?(line, "* ") ->
-          Colors.info("  " <> line)
-
-        true ->
-          line
-      end
-    end)
   end
 
   defp format_analysis_summary(summary) do

@@ -70,6 +70,9 @@ defmodule Ragex.MixProject do
       {:exla, "~> 0.9"},
       # AI Provider
       {:req, "~> 0.5"},
+      # Terminal Markdown rendering
+      {:marcli, "~> 0.1"},
+      {:makeup_elixir, "~> 1.0", optional: true},
       # Metastatic MetaAST
       case System.get_env("LOCAL_METASTATIC") do
         nil -> {:metastatic, "~> 0.5"}
