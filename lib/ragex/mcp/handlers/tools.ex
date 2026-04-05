@@ -43,6 +43,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   alias Ragex.Embeddings.Helper, as: EmbeddingsHelper
   alias Ragex.Graph.Algorithms
   alias Ragex.Graph.Store
+  alias Ragex.MCP.Server, as: MCPServer
   alias Ragex.RAG.Pipeline
   alias Ragex.Retrieval.{CrossLanguage, Hybrid, QueryExpansion}
   alias Ragex.VectorStore
@@ -4392,7 +4393,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp maybe_add_chunks(result, _stream_result, _show_chunks), do: result
 
   defp notify_ai_progress(%{content: content, done: false}) when content != "" do
-    Ragex.MCP.Server.send_notification("ai/progress", %{
+    MCPServer.send_notification("ai/progress", %{
       type: "content",
       text: content,
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
@@ -4401,7 +4402,7 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp notify_ai_progress(%{thinking: thinking, done: false})
        when is_binary(thinking) and thinking != "" do
-    Ragex.MCP.Server.send_notification("ai/progress", %{
+    MCPServer.send_notification("ai/progress", %{
       type: "thinking",
       text: thinking,
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
@@ -8129,7 +8130,7 @@ defmodule Ragex.MCP.Handlers.Tools do
       Keyword.merge(opts,
         on_chunk: fn chunk -> notify_ai_progress(chunk) end,
         on_tool_progress: fn %{name: name} ->
-          Ragex.MCP.Server.send_notification("ai/progress", %{
+          MCPServer.send_notification("ai/progress", %{
             type: "tool_call",
             tool: name,
             timestamp: DateTime.utc_now() |> DateTime.to_iso8601()

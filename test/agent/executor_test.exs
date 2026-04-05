@@ -203,7 +203,7 @@ defmodule Ragex.Agent.ExecutorTest do
       assert is_binary(result.content)
       assert result.content != ""
       # Chunks should have been delivered
-      assert length(chunks) > 0
+      assert match?([_ | _], chunks)
     end
 
     @tag :external_api
