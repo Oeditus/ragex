@@ -4343,11 +4343,15 @@ defmodule Ragex.MCP.Handlers.Tools do
           new_content =
             if chunk_content != "", do: acc_content <> chunk_content, else: acc_content
 
+          # Emit progress notification for MCP clients
+          notify_ai_progress(chunk)
+
           {new_content, new_thinking, nil, new_chunks}
 
         %{done: false, content: chunk_content} = chunk,
         {acc_content, acc_thinking, _meta, acc_chunks} ->
           new_chunks = if show_chunks, do: [chunk | acc_chunks], else: acc_chunks
+          notify_ai_progress(chunk)
           {acc_content <> chunk_content, acc_thinking, nil, new_chunks}
 
         %{done: true, metadata: final_meta}, {acc_content, acc_thinking, _meta, acc_chunks} ->
@@ -4386,6 +4390,25 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp maybe_add_chunks(result, _stream_result, _show_chunks), do: result
+
+  defp notify_ai_progress(%{content: content, done: false}) when content != "" do
+    Ragex.MCP.Server.send_notification("ai/progress", %{
+      type: "content",
+      text: content,
+      timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+    })
+  end
+
+  defp notify_ai_progress(%{thinking: thinking, done: false})
+       when is_binary(thinking) and thinking != "" do
+    Ragex.MCP.Server.send_notification("ai/progress", %{
+      type: "thinking",
+      text: thinking,
+      timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+    })
+  end
+
+  defp notify_ai_progress(_chunk), do: :ok
 
   defp parse_provider(nil), do: nil
   defp parse_provider("deepseek_r1"), do: :deepseek_r1
@@ -8101,7 +8124,20 @@ defmodule Ragex.MCP.Handlers.Tools do
     opts = []
     opts = if provider, do: Keyword.put(opts, :provider, provider), else: opts
 
-    case Core.chat(session_id, message, opts) do
+    # Use streaming with MCP progress notifications
+    opts =
+      Keyword.merge(opts,
+        on_chunk: fn chunk -> notify_ai_progress(chunk) end,
+        on_tool_progress: fn %{name: name} ->
+          Ragex.MCP.Server.send_notification("ai/progress", %{
+            type: "tool_call",
+            tool: name,
+            timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+          })
+        end
+      )
+
+    case Core.stream_chat(session_id, message, opts) do
       {:ok, result} ->
         {:ok,
          %{

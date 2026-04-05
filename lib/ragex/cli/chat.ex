@@ -230,13 +230,107 @@ defmodule Ragex.CLI.Chat do
   defp try_agent_chat(query, state) do
     state = ensure_session(state)
 
-    case Core.chat(state.session_id, query) do
+    ensure_live_screen()
+    live_screen? = live_screen_available?()
+
+    if live_screen? do
+      Owl.LiveScreen.add_block(:agent_thinking,
+        state: "",
+        render: fn
+          "" -> ""
+          text -> Owl.Data.tag("[thinking] " <> format_thinking_text(text), :faint)
+        end
+      )
+
+      Owl.LiveScreen.add_block(:agent_response,
+        state: "",
+        render: fn
+          "" -> Owl.Data.tag("...", :faint)
+          text -> Marcli.render(text)
+        end
+      )
+
+      Owl.LiveScreen.add_block(:agent_tools,
+        state: "",
+        render: fn
+          "" -> ""
+          text -> Owl.Data.tag(text, :faint)
+        end
+      )
+    end
+
+    {:ok, acc_agent} = Agent.start_link(fn -> %{content: "", thinking: "", phase: :init} end)
+
+    on_chunk = fn chunk ->
+      acc = Agent.get(acc_agent, & &1)
+
+      case chunk do
+        %{thinking: thinking} when is_binary(thinking) and thinking != "" ->
+          new_thinking = acc.thinking <> thinking
+          Agent.update(acc_agent, &%{&1 | thinking: new_thinking, phase: :thinking})
+
+          if live_screen? do
+            Owl.LiveScreen.update(:agent_thinking, new_thinking)
+          else
+            if acc.phase != :thinking, do: IO.write(Colors.muted("[thinking] "))
+            IO.write(Colors.muted(thinking))
+          end
+
+        %{content: text} when is_binary(text) and text != "" ->
+          new_content = acc.content <> text
+          Agent.update(acc_agent, &%{&1 | content: new_content, phase: :answering})
+
+          if live_screen? do
+            if acc.thinking != "" and acc.content == "" do
+              Owl.LiveScreen.update(:agent_thinking, "")
+            end
+
+            Owl.LiveScreen.update(:agent_response, new_content)
+          else
+            if acc.phase == :thinking, do: IO.puts("")
+            IO.write(text)
+          end
+
+        _ ->
+          :ok
+      end
+    end
+
+    on_tool_progress = fn %{name: name} ->
+      if live_screen? do
+        Owl.LiveScreen.update(:agent_tools, "[calling #{name}...]")
+      else
+        IO.puts(Colors.muted("  [calling #{name}...]"))
+      end
+    end
+
+    opts = [
+      on_chunk: on_chunk,
+      on_tool_progress: on_tool_progress
+    ]
+
+    result = Core.stream_chat(state.session_id, query, opts)
+    Agent.stop(acc_agent)
+
+    if live_screen? do
+      Owl.LiveScreen.update(:agent_thinking, "")
+      Owl.LiveScreen.update(:agent_tools, "")
+      Owl.LiveScreen.flush()
+    end
+
+    case result do
       {:ok, %{content: content}} ->
-        IO.puts("")
-        IO.puts(Marcli.render(content))
+        unless live_screen? do
+          if content != "" do
+            IO.puts("")
+            IO.puts(Marcli.render(content))
+          end
+        end
+
         {:ok, %{content: content, sources: []}}
 
       {:error, reason} ->
+        if live_screen?, do: Owl.LiveScreen.flush()
         {:error, reason}
     end
   end

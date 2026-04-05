@@ -25,7 +25,7 @@ defmodule Ragex.Agent.Executor do
 
   require Logger
 
-  alias Ragex.Agent.{Memory, ToolSchema}
+  alias Ragex.Agent.{Memory, StreamConsumer, ToolSchema}
   alias Ragex.AI.Config
   alias Ragex.CLI.Colors
   alias Ragex.MCP.Handlers.Tools, as: MCPTools
@@ -99,6 +99,59 @@ defmodule Ragex.Agent.Executor do
   end
 
   @doc """
+  Run the agent execution loop with streaming support.
+
+  Same as `run/2` but streams the final AI response in real-time via callbacks.
+  Intermediate tool-call steps use blocking `generate` (provider stream parsers
+  don't yet handle tool_call deltas), but the final text response is streamed
+  chunk-by-chunk so the user gets immediate feedback.
+
+  ## Additional Options
+
+  - `:on_chunk` - `(chunk -> :ok)` callback for real-time content/thinking delivery
+  - `:on_phase` - `(:thinking | :answering | :done -> :ok)` phase transition callback
+  - `:on_tool_progress` - `(map() -> :ok)` callback when tool calls are being executed
+
+  ## Returns
+
+  Same as `run/2`.
+  """
+  @spec stream_run(String.t(), keyword()) :: {:ok, run_result()} | {:error, term()}
+  def stream_run(session_id, opts \\ []) do
+    max_iterations = Keyword.get(opts, :max_iterations, @default_max_iterations)
+    provider = get_provider(opts)
+    provider_name = get_provider_name(opts)
+    tools = get_tools(provider_name, opts)
+
+    state = %{
+      session_id: session_id,
+      provider: provider,
+      provider_name: provider_name,
+      tools: tools,
+      opts: opts,
+      iterations: 0,
+      tool_calls_made: 0,
+      total_usage: %{prompt_tokens: 0, completion_tokens: 0, total_tokens: 0},
+      streaming: true
+    }
+
+    case execute_streaming_loop(state, max_iterations) do
+      {:ok, final_state, content} ->
+        {:ok,
+         %{
+           content: content,
+           iterations: final_state.iterations,
+           tool_calls_made: final_state.tool_calls_made,
+           usage: final_state.total_usage,
+           session_id: session_id
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Execute a single step of the agent loop.
 
   Useful for debugging or manual step-through.
@@ -125,6 +178,128 @@ defmodule Ragex.Agent.Executor do
   end
 
   # Private functions
+
+  # --- Streaming execution loop ---
+
+  defp execute_streaming_loop(state, max_iterations)
+       when state.iterations >= max_iterations do
+    Logger.warning("Agent reached max iterations (#{max_iterations})")
+
+    case Memory.get_messages(state.session_id, limit: 1) do
+      {:ok, [%{role: :assistant, content: content}]} when not is_nil(content) ->
+        {:ok, state, content}
+
+      other ->
+        {:error, {:max_iterations_exceeded, other}}
+    end
+  end
+
+  defp execute_streaming_loop(state, max_iterations) do
+    case execute_streaming_step(state) do
+      {:continue, updated_state} ->
+        execute_streaming_loop(updated_state, max_iterations)
+
+      {:done, content, updated_state} ->
+        {:ok, updated_state, content}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp execute_streaming_step(state) do
+    on_chunk = Keyword.get(state.opts, :on_chunk, fn _chunk -> :ok end)
+    on_phase = Keyword.get(state.opts, :on_phase, fn _phase -> :ok end)
+    on_tool_progress = Keyword.get(state.opts, :on_tool_progress, fn _info -> :ok end)
+
+    with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
+         {:ok, stream} <- call_llm_stream(state, messages),
+         {:ok, response} <-
+           StreamConsumer.consume(stream, on_chunk: on_chunk, on_phase: on_phase) do
+      updated_state = update_usage(state, response.usage)
+
+      if response.content && response.content != "" do
+        # Stream produced content -> final text response (streamed in real-time)
+        Memory.add_message(state.session_id, :assistant, response.content)
+        {:done, response.content, updated_state}
+      else
+        # Stream produced empty content -> LLM likely returned tool_calls
+        # that the stream parser skipped. Fall back to blocking generate.
+        Logger.debug("Stream empty, falling back to generate for tool calls")
+        execute_step_with_tool_progress(state, on_tool_progress)
+      end
+    else
+      {:error, reason} ->
+        # stream_generate failed, fall back to blocking generate
+        Logger.warning("stream_generate failed (#{inspect(reason)}), falling back to generate")
+
+        execute_step_with_tool_progress(state, on_tool_progress)
+    end
+  end
+
+  defp execute_step_with_tool_progress(state, on_tool_progress) do
+    debug? = Application.get_env(:ragex, :debug_ai_responses, false)
+
+    with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
+         {:ok, response} <- call_llm(state, messages) do
+      updated_state = update_usage(state, response.usage)
+
+      case response.tool_calls do
+        nil ->
+          content = response.content || ""
+          if debug?, do: print_assistant_response(content, state.iterations)
+          Memory.add_message(state.session_id, :assistant, content)
+          {:done, content, updated_state}
+
+        [] ->
+          content = response.content || ""
+          if debug?, do: print_assistant_response(content, state.iterations)
+          Memory.add_message(state.session_id, :assistant, content)
+          {:done, content, updated_state}
+
+        tool_calls when is_list(tool_calls) ->
+          Logger.debug("Agent making #{length(tool_calls)} tool call(s)")
+          if debug?, do: print_tool_calls(tool_calls, response.content, state.iterations)
+
+          Memory.add_message(state.session_id, :assistant, response.content || "",
+            tool_calls: tool_calls
+          )
+
+          # Notify tool progress
+          Enum.each(tool_calls, fn tc ->
+            on_tool_progress.(%{
+              type: :tool_call,
+              name: tc.name,
+              iteration: state.iterations
+            })
+          end)
+
+          results = execute_tool_calls(tool_calls, state)
+
+          Enum.each(results, fn {tool_call, result} ->
+            result_str = format_tool_result(tool_call.name, result)
+            if debug?, do: print_tool_result(tool_call.name, result_str)
+
+            Memory.add_message(state.session_id, :tool, result_str,
+              tool_call_id: tool_call.id,
+              name: tool_call.name
+            )
+
+            Memory.add_tool_result(state.session_id, tool_call.id, result)
+          end)
+
+          updated_state = %{
+            updated_state
+            | iterations: updated_state.iterations + 1,
+              tool_calls_made: updated_state.tool_calls_made + length(tool_calls)
+          }
+
+          {:continue, updated_state}
+      end
+    end
+  end
+
+  # --- Non-streaming execution loop ---
 
   defp execute_loop(state, max_iterations) when state.iterations >= max_iterations do
     Logger.warning("Agent reached max iterations (#{max_iterations})")
@@ -231,6 +406,23 @@ defmodule Ragex.Agent.Executor do
     prompt = build_prompt_from_messages(user_messages)
 
     state.provider.generate(prompt, %{messages: user_messages}, [
+      {:system_prompt, system_prompt} | opts
+    ])
+  end
+
+  defp call_llm_stream(state, messages) do
+    opts = [
+      tools: state.tools,
+      temperature: Keyword.get(state.opts, :temperature, @default_temperature),
+      max_tokens: Keyword.get(state.opts, :max_tokens, @default_max_tokens),
+      tool_choice: Keyword.get(state.opts, :tool_choice, "auto")
+    ]
+
+    formatted_messages = format_messages_for_provider(messages, state.provider_name)
+    {system_prompt, user_messages} = extract_system_prompt(formatted_messages, state.session_id)
+    prompt = build_prompt_from_messages(user_messages)
+
+    state.provider.stream_generate(prompt, %{messages: user_messages}, [
       {:system_prompt, system_prompt} | opts
     ])
   end

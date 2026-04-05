@@ -1204,6 +1204,16 @@ mix ragex.cache.clear --current
 mix ragex.cache.clear --all --force
 ```
 
+## TODO: Streaming Enhancements
+
+The following streaming improvements are planned but not yet implemented:
+
+- **Tool-call delta parsing in providers**: Currently, streaming parsers for all four providers (DeepSeek, OpenAI, Anthropic, Ollama) silently skip `tool_calls` deltas in the SSE stream. Adding index-based `function.arguments` accumulation would allow real-time thinking tokens even during intermediate tool-call steps in the agent loop. This requires per-provider work (OpenAI/DeepSeek: `delta.tool_calls[i]`; Anthropic: `content_block_start` + `input_json_delta`; Ollama: not supported by API).
+
+- **Full MCP streaming protocol**: Emit individual JSON-RPC streaming responses (not just notifications) per chunk, allowing MCP clients to render responses incrementally. Includes cancellation support via MCP protocol.
+
+- **Stream caching and replay**: Cache reconstructed responses from consumed streams so that repeated queries can be served from cache without re-calling the AI provider.
+
 ## Supported Languages
 
 | Language | Extensions | Parser | Status |

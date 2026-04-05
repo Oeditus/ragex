@@ -142,6 +142,39 @@ defmodule Ragex.Agent.Core do
   end
 
   @doc """
+  Continue a conversation with streaming support.
+
+  Same as `chat/3` but streams the final AI response in real-time via callbacks.
+  Intermediate tool-call steps use blocking calls, but the final text response
+  is streamed chunk-by-chunk.
+
+  ## Additional Options
+
+  - `:on_chunk` - `(chunk -> :ok)` callback for real-time content/thinking delivery
+  - `:on_phase` - `(:thinking | :answering | :done -> :ok)` phase transition callback
+  - `:on_tool_progress` - `(map() -> :ok)` callback when tools are being called
+
+  ## Returns
+
+  Same as `chat/3`.
+  """
+  @spec stream_chat(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def stream_chat(session_id, message, opts \\ []) do
+    Logger.debug("Agent stream_chat: session=#{session_id}")
+
+    with {:ok, _session} <- Memory.get_session(session_id),
+         :ok <- Memory.add_message(session_id, :user, message),
+         {:ok, result} <- Executor.stream_run(session_id, opts) do
+      {:ok,
+       %{
+         content: result.content,
+         tool_calls_made: result.tool_calls_made,
+         usage: result.usage
+       }}
+    end
+  end
+
+  @doc """
   Get the generated report from a session.
 
   If not yet generated, generates it on-demand.

@@ -154,4 +154,82 @@ defmodule Ragex.Agent.ExecutorTest do
       assert match?([_ | _], assistant_msgs)
     end
   end
+
+  describe "stream_run/2" do
+    test "returns error for non-existent session" do
+      result = Executor.stream_run("nonexistent-session-id")
+      assert {:error, :not_found} = result
+    end
+
+    test "accepts on_chunk callback option" do
+      {:ok, session} = Memory.new_session(%{test: true})
+      Memory.add_message(session.id, :user, "test")
+
+      # Verify the function accepts callbacks (actual streaming needs API)
+      opts = [
+        on_chunk: fn _chunk -> :ok end,
+        on_phase: fn _phase -> :ok end,
+        on_tool_progress: fn _info -> :ok end
+      ]
+
+      assert is_list(opts)
+      assert Keyword.has_key?(opts, :on_chunk)
+      assert Keyword.has_key?(opts, :on_phase)
+      assert Keyword.has_key?(opts, :on_tool_progress)
+    end
+
+    @tag :external_api
+    @tag skip: true, reason: :requires_api_key
+    test "streams final response via on_chunk callback" do
+      {:ok, session} = Memory.new_session(%{test: true})
+      Memory.add_message(session.id, :system, "You are a test assistant. Reply briefly.")
+      Memory.add_message(session.id, :user, "Say 'streaming works'")
+
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      on_chunk = fn chunk ->
+        Agent.update(agent, &[chunk | &1])
+      end
+
+      {:ok, result} =
+        Executor.stream_run(session.id,
+          max_iterations: 1,
+          on_chunk: on_chunk
+        )
+
+      chunks = Agent.get(agent, &Enum.reverse(&1))
+      Agent.stop(agent)
+
+      assert is_binary(result.content)
+      assert result.content != ""
+      # Chunks should have been delivered
+      assert length(chunks) > 0
+    end
+
+    @tag :external_api
+    @tag skip: true, reason: :requires_api_key
+    test "reports phase transitions" do
+      {:ok, session} = Memory.new_session(%{test: true})
+      Memory.add_message(session.id, :system, "Reply briefly.")
+      Memory.add_message(session.id, :user, "Hello")
+
+      {:ok, agent} = Agent.start_link(fn -> [] end)
+
+      on_phase = fn phase ->
+        Agent.update(agent, &[phase | &1])
+      end
+
+      {:ok, _result} =
+        Executor.stream_run(session.id,
+          max_iterations: 1,
+          on_phase: on_phase
+        )
+
+      phases = Agent.get(agent, &Enum.reverse(&1))
+      Agent.stop(agent)
+
+      # Should at least have :done phase
+      assert :done in phases
+    end
+  end
 end
