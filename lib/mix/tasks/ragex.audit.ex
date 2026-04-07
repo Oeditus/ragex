@@ -192,13 +192,13 @@ defmodule Mix.Tasks.Ragex.Audit do
         got_chunks = Agent.get(first_chunk_agent, & &1)
         Agent.stop(first_chunk_agent)
 
-        unless got_chunks do
-          # No streaming chunks arrived (e.g., cached/basic report) - render now
-          stop_stderr_spinner(report_spinner)
-          IO.puts(Marcli.render(content))
-        else
+        if got_chunks do
           # Streaming happened - re-render cleanly with Marcli
           IO.write("\n")
+          IO.puts(Marcli.render(content))
+        else
+          # No streaming chunks arrived (e.g., cached/basic report) - render now
+          stop_stderr_spinner(report_spinner)
           IO.puts(Marcli.render(content))
         end
 
