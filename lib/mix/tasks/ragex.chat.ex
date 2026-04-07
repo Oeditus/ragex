@@ -27,6 +27,7 @@ defmodule Mix.Tasks.Ragex.Chat do
   - `--strategy`, `-s` - Retrieval strategy: fusion, semantic_first, graph_first
   - `--dead-code` - Enable dead code analysis (disabled by default, slow on large codebases)
   - `--skip-analysis` - Skip initial codebase analysis
+  - `--debug` - Show AI conversation details (messages, tool calls, responses) on stderr
   - `--help`, `-h` - Show this help
 
   ## Interactive Commands
@@ -51,6 +52,7 @@ defmodule Mix.Tasks.Ragex.Chat do
           strategy: :string,
           skip_analysis: :boolean,
           dead_code: :boolean,
+          debug: :boolean,
           help: :boolean
         ],
         aliases: [
@@ -66,6 +68,11 @@ defmodule Mix.Tasks.Ragex.Chat do
     else
       Mix.Task.run("app.start")
 
+      # Enable AI debug logging when --debug is set
+      if opts[:debug] do
+        Application.put_env(:ragex, :debug_ai_responses, true)
+      end
+
       chat_opts =
         []
         |> maybe_put(:path, opts[:path])
@@ -74,6 +81,7 @@ defmodule Mix.Tasks.Ragex.Chat do
         |> maybe_put(:strategy, parse_strategy(opts[:strategy]))
         |> maybe_put(:skip_analysis, opts[:skip_analysis])
         |> maybe_put(:include_dead_code, opts[:dead_code])
+        |> maybe_put(:debug, opts[:debug])
 
       Chat.start(chat_opts)
     end

@@ -64,6 +64,8 @@ defmodule Ragex.CLI.Chat do
     skip_analysis = Keyword.get(opts, :skip_analysis, false)
     include_dead_code = Keyword.get(opts, :include_dead_code, false)
 
+    debug = Keyword.get(opts, :debug, false)
+
     state = %{
       session_id: nil,
       path: path,
@@ -73,7 +75,8 @@ defmodule Ragex.CLI.Chat do
       last_sources: [],
       message_count: 0,
       analyzed: false,
-      include_dead_code: include_dead_code
+      include_dead_code: include_dead_code,
+      debug: debug
     }
 
     render_banner(state)
@@ -251,132 +254,30 @@ defmodule Ragex.CLI.Chat do
   defp try_agent_chat(query, state) do
     state = ensure_session(state)
 
-    ensure_live_screen()
-    live_screen? = live_screen_available?()
+    # Use blocking Core.chat (not stream_chat) because the agent's ReAct loop
+    # needs to properly capture tool_calls from the LLM response. The stream
+    # parser (StreamConsumer) cannot parse tool_call deltas, so providers like
+    # DeepSeek R1 that return content + tool_calls simultaneously have their
+    # tool calls silently dropped, truncating the response.
+    spinner = start_phase_timer("Generating response")
 
-    # Non-LiveScreen: start phase timer for visual feedback during waits
-    timer_pid = unless live_screen?, do: start_phase_timer("Awaiting response")
+    chat_opts =
+      []
+      |> maybe_add(:provider, state.provider)
+      |> maybe_add(:model, state.model)
 
-    if live_screen? do
-      Owl.LiveScreen.add_block(:agent_thinking,
-        state: "",
-        render: fn
-          "" -> ""
-          text -> Owl.Data.tag("[thinking] " <> format_thinking_text(text), :faint)
-        end
-      )
+    if state.debug, do: IO.puts(:stderr, Colors.muted("[debug] agent chat: blocking mode"))
 
-      Owl.LiveScreen.add_block(:agent_response,
-        state: "",
-        render: fn
-          :cleared -> ""
-          "" -> Owl.Data.tag("...", :faint)
-          text -> Marcli.render(text)
-        end
-      )
-
-      Owl.LiveScreen.add_block(:agent_tools,
-        state: "",
-        render: fn
-          "" -> ""
-          text -> Owl.Data.tag(text, :faint)
-        end
-      )
-
-      # Status block with auto-updating elapsed timer
-      add_status_block(System.monotonic_time(:millisecond), :agent_status)
-    end
-
-    {:ok, acc_agent} =
-      Agent.start_link(fn ->
-        %{content: "", thinking: "", phase: :init, timer_pid: timer_pid}
-      end)
-
-    on_chunk = fn chunk ->
-      acc = Agent.get(acc_agent, & &1)
-
-      # Stop non-LiveScreen timer on first real output
-      if acc.timer_pid do
-        stop_phase_timer(acc.timer_pid)
-        Agent.update(acc_agent, &%{&1 | timer_pid: nil})
-      end
-
-      case chunk do
-        %{thinking: thinking} when is_binary(thinking) and thinking != "" ->
-          new_thinking = acc.thinking <> thinking
-          Agent.update(acc_agent, &%{&1 | thinking: new_thinking, phase: :thinking})
-
-          if live_screen? do
-            Owl.LiveScreen.update(:agent_thinking, new_thinking)
-            Owl.LiveScreen.update(:agent_status, "Thinking")
-          else
-            if acc.phase != :thinking, do: IO.write(Colors.muted("[thinking] "))
-            IO.write(Colors.muted(thinking))
-          end
-
-        %{content: text} when is_binary(text) and text != "" ->
-          new_content = acc.content <> text
-          Agent.update(acc_agent, &%{&1 | content: new_content, phase: :answering})
-
-          if live_screen? do
-            if acc.thinking != "" and acc.content == "" do
-              Owl.LiveScreen.update(:agent_thinking, "")
-            end
-
-            Owl.LiveScreen.update(:agent_response, new_content)
-            Owl.LiveScreen.update(:agent_status, "Generating response")
-          else
-            if acc.phase == :thinking, do: IO.puts("")
-            IO.write(text)
-          end
-
-        _ ->
-          :ok
-      end
-    end
-
-    on_tool_progress = fn %{name: name} ->
-      # Stop non-LiveScreen timer if still running during tool calls
-      acc = Agent.get(acc_agent, & &1)
-
-      if acc.timer_pid do
-        stop_phase_timer(acc.timer_pid)
-        Agent.update(acc_agent, &%{&1 | timer_pid: nil})
-      end
-
-      if live_screen? do
-        Owl.LiveScreen.update(:agent_tools, "[calling #{name}...]")
-        Owl.LiveScreen.update(:agent_status, "Calling #{name}")
-      else
-        IO.puts(Colors.muted("  [calling #{name}...]"))
-      end
-    end
-
-    opts = [
-      on_chunk: on_chunk,
-      on_tool_progress: on_tool_progress
-    ]
-
-    result = Core.stream_chat(state.session_id, query, opts)
-
-    # Cleanup timer from Agent state
-    final_acc = Agent.get(acc_agent, & &1)
-    if final_acc.timer_pid, do: stop_phase_timer(final_acc.timer_pid)
-    Agent.stop(acc_agent)
-
-    if live_screen? do
-      # Clear live blocks before flush to avoid duplicate content;
-      # content will be printed statically below for reliable display.
-      Owl.LiveScreen.update(:agent_thinking, "")
-      Owl.LiveScreen.update(:agent_response, :cleared)
-      Owl.LiveScreen.update(:agent_tools, "")
-      Owl.LiveScreen.update(:agent_status, "")
-      Owl.LiveScreen.flush()
-    end
+    result = Core.chat(state.session_id, query, chat_opts)
+    stop_phase_timer(spinner)
 
     case result do
-      {:ok, %{content: content}} ->
-        # Always render final content statically (LiveScreen is ephemeral)
+      {:ok, %{content: content, tool_calls_made: tc}} ->
+        if state.debug do
+          IO.puts(:stderr, Colors.muted("[debug] tool calls made: #{tc}"))
+          dump_session_messages(state.session_id)
+        end
+
         if content != "" do
           IO.puts("")
           IO.puts(Marcli.render(content))
@@ -385,7 +286,6 @@ defmodule Ragex.CLI.Chat do
         {:ok, %{content: content, sources: []}}
 
       {:error, reason} ->
-        if live_screen?, do: Owl.LiveScreen.flush()
         {:error, reason}
     end
   end
@@ -898,6 +798,30 @@ defmodule Ragex.CLI.Chat do
 
   defp maybe_add(opts, _key, nil), do: opts
   defp maybe_add(opts, key, value), do: Keyword.put(opts, key, value)
+
+  # Debug helpers
+
+  defp dump_session_messages(session_id) do
+    case Memory.get_messages(session_id) do
+      {:ok, messages} ->
+        IO.puts(:stderr, Colors.muted("[debug] Session messages (#{length(messages)}):"))
+
+        Enum.each(messages, fn msg ->
+          role = msg.role
+          content = msg.content || ""
+          preview = content |> String.slice(0, 200) |> String.replace("\n", " ")
+          tool_info = if msg[:name], do: " [#{msg[:name]}]", else: ""
+
+          IO.puts(
+            :stderr,
+            Colors.muted("  [#{role}#{tool_info}] #{preview}#{if String.length(content) > 200, do: "...", else: ""}")
+          )
+        end)
+
+      _ ->
+        :ok
+    end
+  end
 
   # Status indicator helpers for streaming progress feedback
 

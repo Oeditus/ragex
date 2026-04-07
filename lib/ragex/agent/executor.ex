@@ -79,7 +79,8 @@ defmodule Ragex.Agent.Executor do
       opts: opts,
       iterations: 0,
       tool_calls_made: 0,
-      total_usage: %{prompt_tokens: 0, completion_tokens: 0, total_tokens: 0}
+      total_usage: %{prompt_tokens: 0, completion_tokens: 0, total_tokens: 0},
+      tool_call_history: %{}
     }
 
     case execute_loop(state, max_iterations) do
@@ -132,7 +133,8 @@ defmodule Ragex.Agent.Executor do
       iterations: 0,
       tool_calls_made: 0,
       total_usage: %{prompt_tokens: 0, completion_tokens: 0, total_tokens: 0},
-      streaming: true
+      streaming: true,
+      tool_call_history: %{}
     }
 
     case execute_streaming_loop(state, max_iterations) do
@@ -274,27 +276,48 @@ defmodule Ragex.Agent.Executor do
             })
           end)
 
+          # Execute tools with dedup
           results = execute_tool_calls(tool_calls, state)
 
-          Enum.each(results, fn {tool_call, result} ->
-            result_str = format_tool_result(tool_call.name, result)
-            if debug?, do: print_tool_result(tool_call.name, result_str)
+          # Check if ALL calls were repeats -> force text response
+          all_repeated =
+            Enum.all?(results, fn {_tc, result} ->
+              match?({:ok, %{repeated: true}}, result)
+            end)
 
-            Memory.add_message(state.session_id, :tool, result_str,
-              tool_call_id: tool_call.id,
-              name: tool_call.name
-            )
+          if all_repeated do
+            Enum.each(results, fn {tool_call, result} ->
+              result_str = format_tool_result(tool_call.name, result)
+              if debug?, do: print_tool_result(tool_call.name, result_str)
 
-            Memory.add_tool_result(state.session_id, tool_call.id, result)
-          end)
+              Memory.add_message(state.session_id, :tool, result_str,
+                tool_call_id: tool_call.id,
+                name: tool_call.name
+              )
+            end)
 
-          updated_state = %{
-            updated_state
-            | iterations: updated_state.iterations + 1,
-              tool_calls_made: updated_state.tool_calls_made + length(tool_calls)
-          }
+            force_text_response(updated_state)
+          else
+            Enum.each(results, fn {tool_call, result} ->
+              result_str = format_tool_result(tool_call.name, result)
+              if debug?, do: print_tool_result(tool_call.name, result_str)
 
-          {:continue, updated_state}
+              Memory.add_message(state.session_id, :tool, result_str,
+                tool_call_id: tool_call.id,
+                name: tool_call.name
+              )
+
+              Memory.add_tool_result(state.session_id, tool_call.id, result)
+            end)
+
+            updated_state =
+              updated_state
+              |> update_tool_history(tool_calls)
+              |> Map.put(:iterations, updated_state.iterations + 1)
+              |> Map.put(:tool_calls_made, updated_state.tool_calls_made + length(tool_calls))
+
+            {:continue, updated_state}
+          end
       end
     end
   end
@@ -360,30 +383,52 @@ defmodule Ragex.Agent.Executor do
             tool_calls: tool_calls
           )
 
-          # Execute each tool and add results
+          # Execute each tool (with dedup) and add results
           results = execute_tool_calls(tool_calls, state)
 
-          # Add tool results to conversation
-          Enum.each(results, fn {tool_call, result} ->
-            result_str = format_tool_result(tool_call.name, result)
-            if debug?, do: print_tool_result(tool_call.name, result_str)
+          # Check if ALL calls were repeats -> force text response
+          all_repeated =
+            Enum.all?(results, fn {_tc, result} ->
+              match?({:ok, %{repeated: true}}, result)
+            end)
 
-            Memory.add_message(state.session_id, :tool, result_str,
-              tool_call_id: tool_call.id,
-              name: tool_call.name
-            )
+          if all_repeated do
+            # Add the repeat messages to conversation
+            Enum.each(results, fn {tool_call, result} ->
+              result_str = format_tool_result(tool_call.name, result)
+              if debug?, do: print_tool_result(tool_call.name, result_str)
 
-            Memory.add_tool_result(state.session_id, tool_call.id, result)
-          end)
+              Memory.add_message(state.session_id, :tool, result_str,
+                tool_call_id: tool_call.id,
+                name: tool_call.name
+              )
+            end)
 
-          # Update state
-          updated_state = %{
-            updated_state
-            | iterations: updated_state.iterations + 1,
-              tool_calls_made: updated_state.tool_calls_made + length(tool_calls)
-          }
+            # Force a text response without tools
+            force_text_response(updated_state)
+          else
+            # Normal: add tool results and continue
+            Enum.each(results, fn {tool_call, result} ->
+              result_str = format_tool_result(tool_call.name, result)
+              if debug?, do: print_tool_result(tool_call.name, result_str)
 
-          {:continue, updated_state}
+              Memory.add_message(state.session_id, :tool, result_str,
+                tool_call_id: tool_call.id,
+                name: tool_call.name
+              )
+
+              Memory.add_tool_result(state.session_id, tool_call.id, result)
+            end)
+
+            # Update state with history
+            updated_state =
+              updated_state
+              |> update_tool_history(tool_calls)
+              |> Map.put(:iterations, updated_state.iterations + 1)
+              |> Map.put(:tool_calls_made, updated_state.tool_calls_made + length(tool_calls))
+
+            {:continue, updated_state}
+          end
       end
     end
   end
@@ -499,12 +544,52 @@ defmodule Ragex.Agent.Executor do
     """
   end
 
-  defp execute_tool_calls(tool_calls, _state) do
+  defp execute_tool_calls(tool_calls, state) do
+    history = Map.get(state, :tool_call_history, %{})
+
     Enum.map(tool_calls, fn tool_call ->
-      Logger.debug("Executing tool: #{tool_call.name}")
-      result = execute_single_tool(tool_call.name, tool_call.arguments)
-      {tool_call, result}
+      call_key = {tool_call.name, :erlang.phash2(tool_call.arguments)}
+
+      if Map.has_key?(history, call_key) do
+        Logger.warning("Skipping repeated tool call: #{tool_call.name}")
+
+        {tool_call,
+         {:ok,
+          %{
+            repeated: true,
+            message:
+              "This tool was already called with identical arguments. " <>
+                "The result has NOT changed. Use the data from the previous call. " <>
+                "Do NOT call this tool again. Produce your final answer now."
+          }}}
+      else
+        Logger.debug("Executing tool: #{tool_call.name}")
+        result = execute_single_tool(tool_call.name, tool_call.arguments)
+        {tool_call, result}
+      end
     end)
+  end
+
+  defp update_tool_history(state, tool_calls) do
+    new_history =
+      Enum.reduce(tool_calls, state.tool_call_history, fn tc, acc ->
+        Map.put(acc, {tc.name, :erlang.phash2(tc.arguments)}, true)
+      end)
+
+    %{state | tool_call_history: new_history}
+  end
+
+  # When ALL tool calls in an iteration are repeats, force a text response
+  # by calling the LLM without tool definitions.
+  defp force_text_response(state) do
+    Logger.warning("All tool calls repeated. Forcing text response without tools.")
+
+    with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
+         {:ok, response} <- call_llm(%{state | tools: []}, messages) do
+      content = response.content || ""
+      Memory.add_message(state.session_id, :assistant, content)
+      {:done, content, state}
+    end
   end
 
   defp execute_single_tool(tool_name, arguments) do
