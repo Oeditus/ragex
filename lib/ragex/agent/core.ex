@@ -256,19 +256,33 @@ defmodule Ragex.Agent.Core do
   # Private functions
 
   defp finalize_analysis(path, issues, opts) do
-    with {:ok, session} <- create_analysis_session(path, issues, opts),
-         {:ok, report, ai_status} <- generate_report(session.id, issues, opts) do
+    if Keyword.get(opts, :skip_report, false) do
       summary = build_summary(issues)
-      Logger.info("Project analysis complete: #{summary.total_issues} issues found")
+      Logger.info("Analysis complete (report skipped): #{summary.total_issues} issues found")
 
       {:ok,
        %{
-         session_id: session.id,
-         report: report,
-         ai_status: ai_status,
+         session_id: nil,
+         report: nil,
+         ai_status: %{status: "skipped"},
          issues: issues,
          summary: summary
        }}
+    else
+      with {:ok, session} <- create_analysis_session(path, issues, opts),
+           {:ok, report, ai_status} <- generate_report(session.id, issues, opts) do
+        summary = build_summary(issues)
+        Logger.info("Project analysis complete: #{summary.total_issues} issues found")
+
+        {:ok,
+         %{
+           session_id: session.id,
+           report: report,
+           ai_status: ai_status,
+           issues: issues,
+           summary: summary
+         }}
+      end
     end
   end
 
@@ -436,49 +450,7 @@ defmodule Ragex.Agent.Core do
   end
 
   defp generate_ai_report(session_id, issues, opts, project_path, provider_name, config) do
-    # Add system prompt for report generation (with project path constraint)
-    system_prompt = Report.system_prompt(project_path)
-    Memory.add_message(session_id, :system, system_prompt)
-
-    # Collect graph stats for architectural context
-    graph_stats = Store.stats()
-
-    modules =
-      Store.list_nodes(:module, :infinity)
-
-    functions =
-      Store.list_nodes(:function, :infinity)
-
-    # Add user request for report with all available data
-    issues_summary = Report.format_issues_for_llm(issues)
-
-    user_prompt = """
-    Generate a comprehensive Code Quality Audit Report from the following analysis data.
-    All data has been collected by automated static analysis tools. Do NOT make any tool calls.
-    Synthesize everything below into the report structure specified in your instructions.
-
-    ## Codebase Architecture
-
-    - Project path: #{project_path || "unknown"}
-    - Knowledge graph: #{graph_stats.nodes} nodes, #{graph_stats.edges} edges
-    - Modules: #{length(modules)}
-    - Functions: #{length(functions)}
-    - Embeddings: #{graph_stats.embeddings}
-    - Audit date: #{DateTime.utc_now() |> DateTime.to_date() |> Date.to_string()}
-
-    ## Analysis Results
-
-    #{issues_summary}
-
-    ## Analysis Thresholds Applied
-
-    - Cyclomatic complexity threshold: 10 (flagged if >10)
-    - Cognitive complexity threshold: 15 (flagged if >15)
-    - Duplication similarity threshold: 80%
-    - Dead code minimum confidence: 70%
-    """
-
-    Memory.add_message(session_id, :user, user_prompt)
+    setup_report_prompts(session_id, issues, project_path)
 
     # Run the agent to generate report
     case Executor.run(session_id, opts) do
@@ -508,6 +480,98 @@ defmodule Ragex.Agent.Core do
 
         error_note = "[AI report generation failed: #{inspect(reason)}]\n\n"
         {:ok, error_note <> Report.generate_basic_report(issues), ai_status}
+    end
+  end
+
+  defp setup_report_prompts(session_id, issues, project_path) do
+    system_prompt = Report.system_prompt(project_path)
+    Memory.add_message(session_id, :system, system_prompt)
+
+    graph_stats = Store.stats()
+    modules = Store.list_nodes(:module, :infinity)
+    functions = Store.list_nodes(:function, :infinity)
+    issues_summary = Report.format_issues_for_llm(issues)
+
+    user_prompt = """
+    Generate a comprehensive Code Quality Audit Report from the following analysis data.
+    All data has been collected by automated static analysis tools. Do NOT make any tool calls.
+    Synthesize everything below into the report structure specified in your instructions.
+
+    ## Codebase Architecture
+
+    - Project path: #{project_path || "unknown"}
+    - Knowledge graph: #{graph_stats.nodes} nodes, #{graph_stats.edges} edges
+    - Modules: #{length(modules)}
+    - Functions: #{length(functions)}
+    - Embeddings: #{graph_stats.embeddings}
+    - Audit date: #{DateTime.utc_now() |> DateTime.to_date() |> Date.to_string()}
+
+    ## Analysis Results
+
+    #{issues_summary}
+
+    ## Analysis Thresholds Applied
+
+    - Cyclomatic complexity threshold: 10 (flagged if >10)
+    - Cognitive complexity threshold: 15 (flagged if >15)
+    - Duplication similarity threshold: 80%
+    - Dead code minimum confidence: 70%
+    """
+
+    Memory.add_message(session_id, :user, user_prompt)
+  end
+
+  @doc """
+  Generate an AI audit report with streaming support.
+
+  Requires the knowledge graph and embeddings to be populated first
+  (call `analyze_project/2` with `skip_report: true`).
+
+  The `:on_chunk` callback receives streaming chunks as they arrive.
+
+  ## Options
+
+  - `:on_chunk` - `(chunk -> :ok)` callback for real-time content delivery
+  - `:provider` - AI provider override
+  - `:model` - Model override
+  """
+  @spec stream_generate_report(String.t(), map(), keyword()) ::
+          {:ok, String.t(), map()} | {:error, term()}
+  def stream_generate_report(path, issues, opts \\ []) do
+    abs_path = Path.expand(path)
+
+    with {:ok, session} <- create_analysis_session(abs_path, issues, opts) do
+      provider_name = Keyword.get(opts, :provider) || AIConfig.provider_name()
+      config = AIConfig.api_config(provider_name)
+
+      if is_nil(config.api_key) or config.api_key == "" do
+        basic = Report.generate_basic_report(issues)
+        {:ok, basic, %{status: "no_keys", provider: to_string(provider_name)}}
+      else
+        setup_report_prompts(session.id, issues, abs_path)
+
+        case Executor.stream_run(session.id, opts) do
+          {:ok, result} ->
+            Memory.update_metadata(session.id, %{report: result.content})
+
+            ai_status = %{
+              status: "success",
+              provider: to_string(provider_name),
+              model: config.model,
+              chars: String.length(result.content),
+              tokens: result.usage
+            }
+
+            {:ok, result.content, ai_status}
+
+          {:error, reason} ->
+            Logger.error("Streaming report failed: #{inspect(reason)}")
+            error_note = "[AI report generation failed: #{inspect(reason)}]\n\n"
+
+            {:ok, error_note <> Report.generate_basic_report(issues),
+             %{status: "failed", provider: to_string(provider_name), error: inspect(reason)}}
+        end
+      end
     end
   end
 

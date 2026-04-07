@@ -66,6 +66,7 @@ defmodule Mix.Tasks.Ragex.Audit do
 
   alias Ragex.Agent.Core
   alias Ragex.Analysis.{BusinessLogic, DependencyGraph, Quality}
+  alias Ragex.CLI.Progress
   alias Ragex.Graph.Store
 
   @impl Mix.Task
@@ -101,6 +102,9 @@ defmodule Mix.Tasks.Ragex.Audit do
     format = Keyword.get(opts, :format, "json")
     output_file = Keyword.get(opts, :output)
 
+    # Show progress for interactive use (markdown to stdout) or when verbose
+    show_progress = verbose or (format == "markdown" and is_nil(output_file))
+
     # Disable MCP server for non-interactive JSON output
     Application.put_env(:ragex, :start_server, false)
 
@@ -114,8 +118,109 @@ defmodule Mix.Tasks.Ragex.Audit do
       progress("Starting audit: #{path}")
     end
 
-    # Always suppress Executor's stdout printing to keep JSON output clean.
-    # Progress is reported via Logger (stderr) when --verbose.
+    # For interactive markdown to stdout, use two-phase streaming
+    if format == "markdown" and is_nil(output_file) do
+      run_streaming_markdown(path, opts, show_progress)
+    else
+      run_batch(path, opts, format, output_file, verbose, show_progress)
+    end
+  end
+
+  # Two-phase streaming for interactive markdown output:
+  # Phase 1: Analysis with animated spinner (skip_report: true)
+  # Phase 2: Stream report via on_chunk callback
+  defp run_streaming_markdown(path, opts, show_progress) do
+    audit_start = System.monotonic_time(:millisecond)
+    spinner = if show_progress, do: start_stderr_spinner("Analyzing #{Path.basename(path)}")
+
+    core_opts =
+      [
+        include_dead_code: Keyword.get(opts, :dead_code, false),
+        skip_embeddings: false,
+        skip_report: true,
+        verbose: false
+      ]
+      |> maybe_put(:provider, parse_provider(opts[:provider]))
+      |> maybe_put(:model, opts[:model])
+
+    case Core.analyze_project(path, core_opts) do
+      {:ok, result} ->
+        stop_stderr_spinner(spinner)
+        analysis_elapsed = System.monotonic_time(:millisecond) - audit_start
+
+        if show_progress do
+          IO.write(
+            :stderr,
+            "\u2713 Analysis complete (#{Progress.format_elapsed(analysis_elapsed)})\n"
+          )
+        end
+
+        # Phase 2: Stream the AI report
+        stream_audit_report(path, result.issues, opts, show_progress, audit_start)
+
+      {:error, reason} ->
+        stop_stderr_spinner(spinner)
+        IO.puts(:stderr, "Audit failed: #{inspect(reason)}")
+        System.halt(1)
+    end
+  end
+
+  defp stream_audit_report(path, issues, opts, show_progress, audit_start) do
+    report_spinner = if show_progress, do: start_stderr_spinner("Generating report")
+    {:ok, first_chunk_agent} = Agent.start_link(fn -> false end)
+
+    on_chunk = fn
+      %{content: text} when is_binary(text) and text != "" ->
+        unless Agent.get(first_chunk_agent, & &1) do
+          stop_stderr_spinner(report_spinner)
+          Agent.update(first_chunk_agent, fn _ -> true end)
+        end
+
+        IO.write(text)
+
+      _ ->
+        :ok
+    end
+
+    stream_opts =
+      [on_chunk: on_chunk, verbose: false]
+      |> maybe_put(:provider, parse_provider(opts[:provider]))
+      |> maybe_put(:model, opts[:model])
+
+    case Core.stream_generate_report(path, issues, stream_opts) do
+      {:ok, content, _ai_status} ->
+        got_chunks = Agent.get(first_chunk_agent, & &1)
+        Agent.stop(first_chunk_agent)
+
+        unless got_chunks do
+          # No streaming chunks arrived (e.g., cached/basic report) - render now
+          stop_stderr_spinner(report_spinner)
+          IO.puts(Marcli.render(content))
+        else
+          # Streaming happened - re-render cleanly with Marcli
+          IO.write("\n")
+          IO.puts(Marcli.render(content))
+        end
+
+        total_elapsed = System.monotonic_time(:millisecond) - audit_start
+
+        if show_progress do
+          IO.write(:stderr, "\u2713 Done (#{Progress.format_elapsed(total_elapsed)})\n")
+        end
+
+      {:error, reason} ->
+        stop_stderr_spinner(report_spinner)
+        Agent.stop(first_chunk_agent)
+        IO.puts(:stderr, "Report generation failed: #{inspect(reason)}")
+        System.halt(1)
+    end
+  end
+
+  # Batch mode: blocking analysis + report, then output
+  defp run_batch(path, opts, format, output_file, verbose, show_progress) do
+    audit_start = System.monotonic_time(:millisecond)
+    spinner = if show_progress, do: start_stderr_spinner("Analyzing #{Path.basename(path)}")
+
     core_opts =
       [
         include_dead_code: Keyword.get(opts, :dead_code, false),
@@ -125,16 +230,21 @@ defmodule Mix.Tasks.Ragex.Audit do
       |> maybe_put(:provider, parse_provider(opts[:provider]))
       |> maybe_put(:model, opts[:model])
 
-    if verbose, do: progress("Running analysis pipeline...")
-
     case Core.analyze_project(path, core_opts) do
       {:ok, result} ->
+        stop_stderr_spinner(spinner)
+        elapsed = System.monotonic_time(:millisecond) - audit_start
+
+        if show_progress do
+          IO.write(:stderr, "\u2713 Done (#{Progress.format_elapsed(elapsed)})\n")
+        end
+
         case format do
           "markdown" ->
             output_markdown(result.report, output_file, verbose)
 
           _ ->
-            if verbose, do: progress("AI report generated. Running supplementary analyses...")
+            if verbose, do: progress("Running supplementary analyses...")
 
             supplementary = run_supplementary(path)
             graph_stats = Store.stats()
@@ -157,6 +267,7 @@ defmodule Mix.Tasks.Ragex.Audit do
         end
 
       {:error, reason} ->
+        stop_stderr_spinner(spinner)
         IO.puts(:stderr, "Audit failed: #{inspect(reason)}")
         System.halt(1)
     end
@@ -321,4 +432,60 @@ defmodule Mix.Tasks.Ragex.Audit do
   defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 
   defp progress(msg), do: IO.puts(:stderr, msg)
+
+  # Stderr-based progress indicators (safe for stdout piping)
+
+  @spinner_frames [
+    "\u280b",
+    "\u2819",
+    "\u2839",
+    "\u2838",
+    "\u283c",
+    "\u2834",
+    "\u2826",
+    "\u2827",
+    "\u2807",
+    "\u280f"
+  ]
+
+  defp start_stderr_spinner(label) do
+    start_time = System.monotonic_time(:millisecond)
+
+    spawn(fn ->
+      stderr_spinner_loop(label, start_time, 0)
+    end)
+  end
+
+  defp stop_stderr_spinner(nil), do: :ok
+
+  defp stop_stderr_spinner(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      ref = Process.monitor(pid)
+      Process.exit(pid, :kill)
+
+      receive do
+        {:DOWN, ^ref, :process, ^pid, _} -> :ok
+      after
+        100 -> :ok
+      end
+
+      IO.write(:stderr, "\r\e[K")
+    end
+
+    :ok
+  end
+
+  defp stderr_spinner_loop(label, start_time, frame_index) do
+    frame = Enum.at(@spinner_frames, rem(frame_index, length(@spinner_frames)))
+    elapsed_ms = System.monotonic_time(:millisecond) - start_time
+    elapsed_s = div(elapsed_ms, 1000)
+
+    IO.write(:stderr, "\r\e[K#{frame} #{label} (#{elapsed_s}s)")
+
+    receive do
+      :stop -> :ok
+    after
+      80 -> stderr_spinner_loop(label, start_time, frame_index + 1)
+    end
+  end
 end

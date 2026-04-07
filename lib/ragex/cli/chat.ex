@@ -269,6 +269,7 @@ defmodule Ragex.CLI.Chat do
       Owl.LiveScreen.add_block(:agent_response,
         state: "",
         render: fn
+          :cleared -> ""
           "" -> Owl.Data.tag("...", :faint)
           text -> Marcli.render(text)
         end
@@ -364,19 +365,21 @@ defmodule Ragex.CLI.Chat do
     Agent.stop(acc_agent)
 
     if live_screen? do
+      # Clear live blocks before flush to avoid duplicate content;
+      # content will be printed statically below for reliable display.
       Owl.LiveScreen.update(:agent_thinking, "")
+      Owl.LiveScreen.update(:agent_response, :cleared)
       Owl.LiveScreen.update(:agent_tools, "")
-      Owl.LiveScreen.update(:agent_status, :done)
+      Owl.LiveScreen.update(:agent_status, "")
       Owl.LiveScreen.flush()
     end
 
     case result do
       {:ok, %{content: content}} ->
-        unless live_screen? do
-          if content != "" do
-            IO.puts("")
-            IO.puts(Marcli.render(content))
-          end
+        # Always render final content statically (LiveScreen is ephemeral)
+        if content != "" do
+          IO.puts("")
+          IO.puts(Marcli.render(content))
         end
 
         {:ok, %{content: content, sources: []}}
@@ -411,6 +414,7 @@ defmodule Ragex.CLI.Chat do
         Owl.LiveScreen.add_block(:response,
           state: "",
           render: fn
+            :cleared -> ""
             "" -> Owl.Data.tag("...", :faint)
             text -> Marcli.render(text)
           end
@@ -423,7 +427,14 @@ defmodule Ragex.CLI.Chat do
       result =
         Enum.reduce(
           stream,
-          %{content: "", thinking: "", sources: [], usage: %{}, phase: :init, timer_pid: timer_pid},
+          %{
+            content: "",
+            thinking: "",
+            sources: [],
+            usage: %{},
+            phase: :init,
+            timer_pid: timer_pid
+          },
           fn chunk, acc ->
             case chunk do
               %{thinking: thinking_text, done: false}
@@ -471,7 +482,6 @@ defmodule Ragex.CLI.Chat do
               %{done: true, metadata: metadata} ->
                 if live_screen? do
                   Owl.LiveScreen.update(:thinking, "")
-                  Owl.LiveScreen.update(:status, :done)
                 end
 
                 sources = Map.get(metadata, :sources, [])
@@ -492,16 +502,20 @@ defmodule Ragex.CLI.Chat do
       if result.timer_pid, do: stop_phase_timer(result.timer_pid)
 
       if live_screen? do
-        # Flush the live blocks and print final content statically
+        # Clear live blocks before flush to avoid duplicate content;
+        # content will be printed statically below for reliable display.
+        Owl.LiveScreen.update(:thinking, "")
+        Owl.LiveScreen.update(:response, :cleared)
+        Owl.LiveScreen.update(:status, "")
         Owl.LiveScreen.flush()
-      else
-        # Non-LiveScreen fallback: render accumulated content with Marcli
-        if result.phase in [:thinking], do: IO.puts("")
+      end
 
-        if result.content != "" do
-          IO.puts("")
-          IO.puts(Marcli.render(result.content))
-        end
+      # Always render final content statically (LiveScreen is ephemeral)
+      if result.phase in [:thinking], do: IO.puts("")
+
+      if result.content != "" do
+        IO.puts("")
+        IO.puts(Marcli.render(result.content))
       end
 
       # Print thinking summary if any was collected
