@@ -306,6 +306,40 @@ defmodule Ragex.CLI.Progress do
   end
 
   @doc """
+  Formats elapsed time in a human-friendly way.
+
+  ## Examples
+
+      iex> Progress.format_elapsed(500)
+      "0s"
+
+      iex> Progress.format_elapsed(5_000)
+      "5s"
+
+      iex> Progress.format_elapsed(65_000)
+      "1m 5s"
+  """
+  @spec format_elapsed(non_neg_integer()) :: String.t()
+  def format_elapsed(ms) when is_integer(ms) do
+    seconds = div(ms, 1000)
+
+    cond do
+      seconds < 60 ->
+        "#{seconds}s"
+
+      seconds < 3600 ->
+        minutes = div(seconds, 60)
+        secs = rem(seconds, 60)
+        "#{minutes}m #{secs}s"
+
+      true ->
+        hours = div(seconds, 3600)
+        minutes = div(rem(seconds, 3600), 60)
+        "#{hours}h #{minutes}m"
+    end
+  end
+
+  @doc """
   Renders a task list with status indicators.
 
   ## Examples

@@ -30,6 +30,8 @@ defmodule Ragex.CLI.Chat do
   alias Ragex.Graph.Store
   alias Ragex.RAG.Pipeline
 
+  @spinner_frames ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
   @type state :: %{
           session_id: String.t() | nil,
           path: String.t(),
@@ -170,6 +172,8 @@ defmodule Ragex.CLI.Chat do
   end
 
   defp process_query(query, state) do
+    query_start = System.monotonic_time(:millisecond)
+
     # Show thinking indicator
     spinner = start_spinner("Searching codebase...")
 
@@ -195,10 +199,18 @@ defmodule Ragex.CLI.Chat do
           {:error, reason}
       end
 
+    elapsed = System.monotonic_time(:millisecond) - query_start
+
     case result do
       {:ok, response} ->
         IO.puts("")
         render_sources_inline(response.sources)
+
+        IO.puts(
+          Colors.success("\u2713") <>
+            Colors.muted(" Done (#{Progress.format_elapsed(elapsed)})")
+        )
+
         IO.puts("")
 
         # Track in session
@@ -215,13 +227,22 @@ defmodule Ragex.CLI.Chat do
       {:error, {:rate_limited, reason}} ->
         IO.puts("")
         IO.puts(Colors.error("Rate limited: #{reason}"))
-        IO.puts(Colors.muted("Wait a moment and try again."))
+
+        IO.puts(
+          Colors.muted("Wait a moment and try again. (#{Progress.format_elapsed(elapsed)})")
+        )
+
         IO.puts("")
         state
 
       {:error, reason} ->
         IO.puts("")
-        IO.puts(Colors.error("Error: #{inspect(reason)}"))
+
+        IO.puts(
+          Colors.error("Error: #{inspect(reason)}") <>
+            Colors.muted(" (#{Progress.format_elapsed(elapsed)})")
+        )
+
         IO.puts("")
         state
     end
@@ -232,6 +253,9 @@ defmodule Ragex.CLI.Chat do
 
     ensure_live_screen()
     live_screen? = live_screen_available?()
+
+    # Non-LiveScreen: start phase timer for visual feedback during waits
+    timer_pid = unless live_screen?, do: start_phase_timer("Awaiting response")
 
     if live_screen? do
       Owl.LiveScreen.add_block(:agent_thinking,
@@ -257,12 +281,24 @@ defmodule Ragex.CLI.Chat do
           text -> Owl.Data.tag(text, :faint)
         end
       )
+
+      # Status block with auto-updating elapsed timer
+      add_status_block(System.monotonic_time(:millisecond), :agent_status)
     end
 
-    {:ok, acc_agent} = Agent.start_link(fn -> %{content: "", thinking: "", phase: :init} end)
+    {:ok, acc_agent} =
+      Agent.start_link(fn ->
+        %{content: "", thinking: "", phase: :init, timer_pid: timer_pid}
+      end)
 
     on_chunk = fn chunk ->
       acc = Agent.get(acc_agent, & &1)
+
+      # Stop non-LiveScreen timer on first real output
+      if acc.timer_pid do
+        stop_phase_timer(acc.timer_pid)
+        Agent.update(acc_agent, &%{&1 | timer_pid: nil})
+      end
 
       case chunk do
         %{thinking: thinking} when is_binary(thinking) and thinking != "" ->
@@ -271,6 +307,7 @@ defmodule Ragex.CLI.Chat do
 
           if live_screen? do
             Owl.LiveScreen.update(:agent_thinking, new_thinking)
+            Owl.LiveScreen.update(:agent_status, "Thinking")
           else
             if acc.phase != :thinking, do: IO.write(Colors.muted("[thinking] "))
             IO.write(Colors.muted(thinking))
@@ -286,6 +323,7 @@ defmodule Ragex.CLI.Chat do
             end
 
             Owl.LiveScreen.update(:agent_response, new_content)
+            Owl.LiveScreen.update(:agent_status, "Generating response")
           else
             if acc.phase == :thinking, do: IO.puts("")
             IO.write(text)
@@ -297,8 +335,17 @@ defmodule Ragex.CLI.Chat do
     end
 
     on_tool_progress = fn %{name: name} ->
+      # Stop non-LiveScreen timer if still running during tool calls
+      acc = Agent.get(acc_agent, & &1)
+
+      if acc.timer_pid do
+        stop_phase_timer(acc.timer_pid)
+        Agent.update(acc_agent, &%{&1 | timer_pid: nil})
+      end
+
       if live_screen? do
         Owl.LiveScreen.update(:agent_tools, "[calling #{name}...]")
+        Owl.LiveScreen.update(:agent_status, "Calling #{name}")
       else
         IO.puts(Colors.muted("  [calling #{name}...]"))
       end
@@ -310,11 +357,16 @@ defmodule Ragex.CLI.Chat do
     ]
 
     result = Core.stream_chat(state.session_id, query, opts)
+
+    # Cleanup timer from Agent state
+    final_acc = Agent.get(acc_agent, & &1)
+    if final_acc.timer_pid, do: stop_phase_timer(final_acc.timer_pid)
     Agent.stop(acc_agent)
 
     if live_screen? do
       Owl.LiveScreen.update(:agent_thinking, "")
       Owl.LiveScreen.update(:agent_tools, "")
+      Owl.LiveScreen.update(:agent_status, :done)
       Owl.LiveScreen.flush()
     end
 
@@ -339,114 +391,132 @@ defmodule Ragex.CLI.Chat do
     # Ensure LiveScreen is running for progressive Marcli rendering
     ensure_live_screen()
     live_screen? = live_screen_available?()
+    start_time = System.monotonic_time(:millisecond)
 
-    if live_screen? do
-      # Add thinking block (rendered dimmed/faint)
-      Owl.LiveScreen.add_block(:thinking,
-        state: "",
-        render: fn
-          "" -> ""
-          text -> Owl.Data.tag("[thinking] " <> format_thinking_text(text), :faint)
-        end
-      )
+    # Non-LiveScreen: start phase timer for visual feedback during waits
+    timer_pid = unless live_screen?, do: start_phase_timer("Awaiting response")
 
-      # Use LiveScreen for live-updating response block with Marcli rendering
-      Owl.LiveScreen.add_block(:response,
-        state: "",
-        render: fn
-          "" -> Owl.Data.tag("...", :faint)
-          text -> Marcli.render(text)
-        end
-      )
-    end
-
-    result =
-      Enum.reduce(
-        stream,
-        %{content: "", thinking: "", sources: [], usage: %{}, phase: :init},
-        fn chunk, acc ->
-          case chunk do
-            %{thinking: thinking_text, done: false}
-            when is_binary(thinking_text) and thinking_text != "" ->
-              new_thinking = acc.thinking <> thinking_text
-
-              if live_screen? do
-                Owl.LiveScreen.update(:thinking, new_thinking)
-              else
-                # Direct output for non-interactive terminals
-                if acc.phase != :thinking do
-                  IO.write(Colors.muted("[thinking] "))
-                end
-
-                IO.write(Colors.muted(thinking_text))
-              end
-
-              %{acc | thinking: new_thinking, phase: :thinking}
-
-            %{content: text, done: false} when is_binary(text) and text != "" ->
-              new_content = acc.content <> text
-
-              if live_screen? do
-                # When content starts arriving, clear thinking display
-                if acc.thinking != "" and acc.content == "" do
-                  Owl.LiveScreen.update(:thinking, "")
-                end
-
-                Owl.LiveScreen.update(:response, new_content)
-              else
-                # Transition from thinking to answering
-                if acc.phase == :thinking do
-                  IO.puts("")
-                end
-
-                IO.write(text)
-              end
-
-              %{acc | content: new_content, phase: :answering}
-
-            %{done: true, metadata: metadata} ->
-              if live_screen? do
-                Owl.LiveScreen.update(:thinking, "")
-              end
-
-              sources = Map.get(metadata, :sources, [])
-              usage = Map.get(metadata, :usage, %{})
-              %{acc | sources: sources, usage: usage, phase: :done}
-
-            {:error, reason} ->
-              Logger.warning("Stream error: #{inspect(reason)}")
-              acc
-
-            _ ->
-              acc
+    try do
+      if live_screen? do
+        # Add thinking block (rendered dimmed/faint)
+        Owl.LiveScreen.add_block(:thinking,
+          state: "",
+          render: fn
+            "" -> ""
+            text -> Owl.Data.tag("[thinking] " <> format_thinking_text(text), :faint)
           end
-        end
-      )
+        )
 
-    if live_screen? do
-      # Flush the live blocks and print final content statically
-      Owl.LiveScreen.flush()
-    else
-      # Non-LiveScreen fallback: render accumulated content with Marcli
-      if result.phase in [:thinking], do: IO.puts("")
+        # Use LiveScreen for live-updating response block with Marcli rendering
+        Owl.LiveScreen.add_block(:response,
+          state: "",
+          render: fn
+            "" -> Owl.Data.tag("...", :faint)
+            text -> Marcli.render(text)
+          end
+        )
 
-      if result.content != "" do
-        IO.puts("")
-        IO.puts(Marcli.render(result.content))
+        # Status block with auto-updating elapsed timer
+        add_status_block(start_time)
       end
-    end
 
-    # Print thinking summary if any was collected
-    if result.thinking != "" do
-      thinking_lines = result.thinking |> String.split("\n") |> length()
-      IO.puts(Colors.muted("[Thinking: #{thinking_lines} lines]"))
-    end
+      result =
+        Enum.reduce(
+          stream,
+          %{content: "", thinking: "", sources: [], usage: %{}, phase: :init, timer_pid: timer_pid},
+          fn chunk, acc ->
+            case chunk do
+              %{thinking: thinking_text, done: false}
+              when is_binary(thinking_text) and thinking_text != "" ->
+                new_thinking = acc.thinking <> thinking_text
+                acc = stop_timer_on_first_output(acc)
 
-    {:ok, result}
-  rescue
-    e ->
-      if live_screen_available?(), do: Owl.LiveScreen.flush()
-      {:error, {:stream_error, Exception.message(e)}}
+                if live_screen? do
+                  Owl.LiveScreen.update(:thinking, new_thinking)
+                  Owl.LiveScreen.update(:status, "Thinking")
+                else
+                  # Direct output for non-interactive terminals
+                  if acc.phase != :thinking do
+                    IO.write(Colors.muted("[thinking] "))
+                  end
+
+                  IO.write(Colors.muted(thinking_text))
+                end
+
+                %{acc | thinking: new_thinking, phase: :thinking}
+
+              %{content: text, done: false} when is_binary(text) and text != "" ->
+                new_content = acc.content <> text
+                acc = stop_timer_on_first_output(acc)
+
+                if live_screen? do
+                  # When content starts arriving, clear thinking display
+                  if acc.thinking != "" and acc.content == "" do
+                    Owl.LiveScreen.update(:thinking, "")
+                  end
+
+                  Owl.LiveScreen.update(:response, new_content)
+                  Owl.LiveScreen.update(:status, "Generating response")
+                else
+                  # Transition from thinking to answering
+                  if acc.phase == :thinking do
+                    IO.puts("")
+                  end
+
+                  IO.write(text)
+                end
+
+                %{acc | content: new_content, phase: :answering}
+
+              %{done: true, metadata: metadata} ->
+                if live_screen? do
+                  Owl.LiveScreen.update(:thinking, "")
+                  Owl.LiveScreen.update(:status, :done)
+                end
+
+                sources = Map.get(metadata, :sources, [])
+                usage = Map.get(metadata, :usage, %{})
+                %{acc | sources: sources, usage: usage, phase: :done}
+
+              {:error, reason} ->
+                Logger.warning("Stream error: #{inspect(reason)}")
+                acc
+
+              _ ->
+                acc
+            end
+          end
+        )
+
+      # Cleanup phase timer
+      if result.timer_pid, do: stop_phase_timer(result.timer_pid)
+
+      if live_screen? do
+        # Flush the live blocks and print final content statically
+        Owl.LiveScreen.flush()
+      else
+        # Non-LiveScreen fallback: render accumulated content with Marcli
+        if result.phase in [:thinking], do: IO.puts("")
+
+        if result.content != "" do
+          IO.puts("")
+          IO.puts(Marcli.render(result.content))
+        end
+      end
+
+      # Print thinking summary if any was collected
+      if result.thinking != "" do
+        thinking_lines = result.thinking |> String.split("\n") |> length()
+        IO.puts(Colors.muted("[Thinking: #{thinking_lines} lines]"))
+      end
+
+      {:ok, result}
+    rescue
+      e ->
+        stop_phase_timer(timer_pid)
+        if live_screen_available?(), do: Owl.LiveScreen.flush()
+        {:error, {:stream_error, Exception.message(e)}}
+    end
   end
 
   defp live_screen_available? do
@@ -814,4 +884,88 @@ defmodule Ragex.CLI.Chat do
 
   defp maybe_add(opts, _key, nil), do: opts
   defp maybe_add(opts, key, value), do: Keyword.put(opts, key, value)
+
+  # Status indicator helpers for streaming progress feedback
+
+  defp add_status_block(start_time, block_name \\ :status) do
+    frames = @spinner_frames
+
+    Owl.LiveScreen.add_block(block_name,
+      state: "Awaiting response",
+      render: fn
+        :done ->
+          elapsed = System.monotonic_time(:millisecond) - start_time
+          Owl.Data.tag("✓ Done (#{Progress.format_elapsed(elapsed)})", :green)
+
+        "" ->
+          ""
+
+        phase ->
+          elapsed_ms = System.monotonic_time(:millisecond) - start_time
+          elapsed_s = div(elapsed_ms, 1000)
+          frame_idx = rem(div(elapsed_ms, 80), length(frames))
+          frame = Enum.at(frames, frame_idx)
+          Owl.Data.tag("#{frame} #{phase}... (#{elapsed_s}s)", :faint)
+      end
+    )
+  end
+
+  defp start_phase_timer(label) do
+    if Colors.enabled?() do
+      start_time = System.monotonic_time(:millisecond)
+
+      spawn(fn ->
+        phase_timer_loop(@spinner_frames, label, start_time, 0)
+      end)
+    else
+      IO.puts(label <> "...")
+      nil
+    end
+  end
+
+  defp stop_phase_timer(nil), do: :ok
+
+  defp stop_phase_timer(pid) when is_pid(pid) do
+    if Process.alive?(pid) do
+      ref = Process.monitor(pid)
+      Process.exit(pid, :kill)
+
+      receive do
+        {:DOWN, ^ref, :process, ^pid, _} -> :ok
+      after
+        100 -> :ok
+      end
+
+      IO.write("\r\e[K")
+    end
+
+    :ok
+  end
+
+  defp stop_timer_on_first_output(%{timer_pid: nil} = acc), do: acc
+
+  defp stop_timer_on_first_output(%{timer_pid: pid} = acc) do
+    stop_phase_timer(pid)
+    %{acc | timer_pid: nil}
+  end
+
+  defp phase_timer_loop(frames, phase, start_time, frame_index) do
+    frame = Enum.at(frames, rem(frame_index, length(frames)))
+    elapsed_ms = System.monotonic_time(:millisecond) - start_time
+    elapsed_s = div(elapsed_ms, 1000)
+
+    output = Colors.info(frame) <> " " <> phase <> Colors.muted(" (#{elapsed_s}s)")
+    IO.write("\r\e[K" <> output)
+
+    receive do
+      {:update_phase, new_phase} ->
+        phase_timer_loop(frames, new_phase, start_time, frame_index + 1)
+
+      :stop ->
+        :ok
+    after
+      80 ->
+        phase_timer_loop(frames, phase, start_time, frame_index + 1)
+    end
+  end
 end
