@@ -259,10 +259,14 @@ defmodule Ragex.CLI.Chat do
     # parser (StreamConsumer) cannot parse tool_call deltas, so providers like
     # DeepSeek R1 that return content + tool_calls simultaneously have their
     # tool calls silently dropped, truncating the response.
+    #
+    # Override the system prompt: the session has the report generation prompt
+    # ("Do NOT make tool calls") which is wrong for follow-up questions. Replace
+    # it with a conversation prompt that directs the AI to use query tools.
     spinner = start_phase_timer("Generating response")
 
     chat_opts =
-      []
+      [system_prompt_override: conversation_system_prompt(state.path)]
       |> maybe_add(:provider, state.provider)
       |> maybe_add(:model, state.model)
 
@@ -799,6 +803,36 @@ defmodule Ragex.CLI.Chat do
   defp maybe_add(opts, _key, nil), do: opts
   defp maybe_add(opts, key, value), do: Keyword.put(opts, key, value)
 
+  # Conversation system prompt for follow-up questions
+
+  defp conversation_system_prompt(path) do
+    """
+    You are an expert code analysis assistant. The project at #{path} has been
+    FULLY ANALYZED. The knowledge graph, embeddings, and all metrics are populated.
+
+    CRITICAL RULES FOR ANSWERING FOLLOW-UP QUESTIONS:
+    1. The codebase is ALREADY analyzed. Do NOT call analyze_directory or analyze_quality.
+       These tools re-run the entire analysis pipeline which is wasteful and slow.
+    2. The conversation already contains the complete audit report with all findings.
+       Use that data as your primary source.
+    3. For additional detail, use these QUERY tools (they read existing data, not re-analyze):
+       - read_file: read actual source code from a specific file
+       - semantic_search: find code related to a topic by meaning
+       - hybrid_search: combined semantic + graph search
+       - query_graph: query the knowledge graph for module/function details
+       - list_nodes: list modules or functions in the graph
+       - find_callers: find what calls a specific function
+       - find_paths: find dependency paths between modules
+       - find_circular_dependencies: detect circular deps
+       - coupling_report: get coupling metrics
+       - graph_stats: get knowledge graph statistics
+    4. Use at most 2-3 tool calls, then produce your answer.
+    5. Be specific: cite file paths, function names, line numbers, code snippets.
+    6. Respond in clear Markdown. Do NOT generate a full audit report for follow-up questions.
+       Answer the specific question concisely.
+    """
+  end
+
   # Debug helpers
 
   defp dump_session_messages(session_id) do
@@ -814,7 +848,9 @@ defmodule Ragex.CLI.Chat do
 
           IO.puts(
             :stderr,
-            Colors.muted("  [#{role}#{tool_info}] #{preview}#{if String.length(content) > 200, do: "...", else: ""}")
+            Colors.muted(
+              "  [#{role}#{tool_info}] #{preview}#{if String.length(content) > 200, do: "...", else: ""}"
+            )
           )
         end)
 

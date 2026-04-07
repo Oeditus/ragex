@@ -2115,6 +2115,29 @@ defmodule Ragex.MCP.Handlers.Tools do
           }
         },
         %{
+          name: "read_file",
+          description:
+            "Read the contents of a source file. Returns content with line numbers. Use this to inspect actual source code when answering questions about specific modules or functions.",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              path: %{
+                type: "string",
+                description: "Absolute path to the file to read"
+              },
+              start_line: %{
+                type: "integer",
+                description: "Start line (1-indexed, optional)"
+              },
+              end_line: %{
+                type: "integer",
+                description: "End line (1-indexed, optional)"
+              }
+            },
+            required: ["path"]
+          }
+        },
+        %{
           name: "agent_session_info",
           description:
             "Get information about an agent session including message count and issues summary",
@@ -2214,6 +2237,9 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "hybrid_search" ->
         hybrid_search_tool(arguments)
+
+      "read_file" ->
+        read_file_tool(arguments)
 
       "metaast_search" ->
         metaast_search_tool(arguments)
@@ -5003,6 +5029,54 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp visualize_impact_tool(_), do: {:error, "Missing required 'files' parameter"}
+
+  # File reading tool
+
+  defp read_file_tool(%{"path" => path} = params) do
+    start_line = Map.get(params, "start_line")
+    end_line = Map.get(params, "end_line")
+
+    case File.read(path) do
+      {:ok, content} ->
+        lines = String.split(content, "\n")
+        total_lines = length(lines)
+
+        # Apply line range if specified
+        {selected_lines, range_start} =
+          case {start_line, end_line} do
+            {s, e} when is_integer(s) and is_integer(e) and s > 0 ->
+              {Enum.slice(lines, (s - 1)..min(e - 1, total_lines - 1)//1), s}
+
+            {s, nil} when is_integer(s) and s > 0 ->
+              {Enum.slice(lines, (s - 1)..(total_lines - 1)//1), s}
+
+            _ ->
+              {lines, 1}
+          end
+
+        # Add line numbers
+        numbered =
+          selected_lines
+          |> Enum.with_index(range_start)
+          |> Enum.map_join("\n", fn {line, idx} -> "#{idx}|#{line}" end)
+
+        {:ok,
+         %{
+           path: path,
+           total_lines: total_lines,
+           range: %{start: range_start, end: range_start + length(selected_lines) - 1},
+           content: numbered
+         }}
+
+      {:error, :enoent} ->
+        {:error, "File not found: #{path}"}
+
+      {:error, reason} ->
+        {:error, "Failed to read file: #{inspect(reason)}"}
+    end
+  end
+
+  defp read_file_tool(_), do: {:error, "Missing required 'path' parameter"}
 
   # Quality analysis tool implementations (Phase 11)
 

@@ -445,7 +445,12 @@ defmodule Ragex.Agent.Executor do
     formatted_messages = format_messages_for_provider(messages, state.provider_name)
 
     # Build prompt from messages
-    {system_prompt, user_messages} = extract_system_prompt(formatted_messages, state.session_id)
+    {extracted_prompt, user_messages} =
+      extract_system_prompt(formatted_messages, state.session_id)
+
+    # Allow overriding the system prompt (e.g., for chat follow-up questions
+    # where the report generation prompt should be replaced)
+    system_prompt = Keyword.get(state.opts, :system_prompt_override, extracted_prompt)
 
     # Call provider
     prompt = build_prompt_from_messages(user_messages)
@@ -464,7 +469,11 @@ defmodule Ragex.Agent.Executor do
     ]
 
     formatted_messages = format_messages_for_provider(messages, state.provider_name)
-    {system_prompt, user_messages} = extract_system_prompt(formatted_messages, state.session_id)
+
+    {extracted_prompt, user_messages} =
+      extract_system_prompt(formatted_messages, state.session_id)
+
+    system_prompt = Keyword.get(state.opts, :system_prompt_override, extracted_prompt)
     prompt = build_prompt_from_messages(user_messages)
 
     state.provider.stream_generate(prompt, %{messages: user_messages}, [

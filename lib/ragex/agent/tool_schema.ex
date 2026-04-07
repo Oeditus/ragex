@@ -31,6 +31,7 @@ defmodule Ragex.Agent.ToolSchema do
     "list_nodes",
     "semantic_search",
     "hybrid_search",
+    "read_file",
 
     # Quality & issues
     "analyze_quality",
