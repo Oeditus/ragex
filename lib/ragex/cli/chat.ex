@@ -506,9 +506,11 @@ defmodule Ragex.CLI.Chat do
 
     spinner = start_spinner(label)
 
+    # Phase 1: Analysis (skip report generation for streaming)
     analysis_opts = [
       skip_embeddings: false,
-      include_dead_code: state.include_dead_code
+      include_dead_code: state.include_dead_code,
+      skip_report: true
     ]
 
     case Core.analyze_project(state.path, analysis_opts) do
@@ -528,14 +530,10 @@ defmodule Ragex.CLI.Chat do
 
         Owl.IO.puts(box)
 
-        # Display the AI-generated report if available
-        if result.report && result.report != "" do
-          IO.puts("")
-          IO.puts(Marcli.render(result.report))
-          IO.puts("")
-        end
+        # Phase 2: Stream the AI report generation
+        state = stream_initial_report(state, result.issues)
 
-        %{state | session_id: result.session_id, analyzed: true}
+        %{state | analyzed: true}
 
       {:error, reason} ->
         stop_spinner(spinner, nil)
@@ -550,6 +548,59 @@ defmodule Ragex.CLI.Chat do
         else
           state
         end
+    end
+  end
+
+  defp stream_initial_report(state, issues) do
+    report_spinner = start_phase_timer("Generating report")
+    {:ok, first_chunk_agent} = Agent.start_link(fn -> false end)
+
+    on_chunk = fn
+      %{content: text} when is_binary(text) and text != "" ->
+        unless Agent.get(first_chunk_agent, & &1) do
+          stop_phase_timer(report_spinner)
+          IO.puts("")
+          Agent.update(first_chunk_agent, fn _ -> true end)
+        end
+
+        IO.write(text)
+
+      _ ->
+        :ok
+    end
+
+    stream_opts =
+      [on_chunk: on_chunk]
+      |> maybe_add(:provider, state.provider)
+      |> maybe_add(:model, state.model)
+
+    case Core.stream_generate_report(state.path, issues, stream_opts) do
+      {:ok, content, _ai_status} ->
+        got_chunks = Agent.get(first_chunk_agent, & &1)
+        Agent.stop(first_chunk_agent)
+
+        unless got_chunks do
+          stop_phase_timer(report_spinner)
+        end
+
+        # Re-render with Marcli for proper formatting
+        if content != "" do
+          IO.puts("\n")
+          IO.puts(Marcli.render(content))
+          IO.puts("")
+        end
+
+        # The stream_generate_report created a session; retrieve its ID
+        case Core.list_sessions(limit: 1) do
+          [%{id: session_id} | _] -> %{state | session_id: session_id}
+          _ -> state
+        end
+
+      {:error, reason} ->
+        stop_phase_timer(report_spinner)
+        Agent.stop(first_chunk_agent)
+        IO.puts(Colors.error("Report generation failed: #{inspect(reason)}"))
+        state
     end
   end
 
