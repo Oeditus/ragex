@@ -6,7 +6,7 @@ All tools are called via `tools/call` with JSON-RPC 2.0. Resources are read via 
 
 ## Quick Reference
 
-```json path=null start=null
+```json
 {"jsonrpc":"2.0","method":"tools/call","params":{"name":"TOOL_NAME","arguments":{...}},"id":1}
 ```
 
