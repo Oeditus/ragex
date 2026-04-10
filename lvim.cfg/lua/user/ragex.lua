@@ -6,7 +6,7 @@ local M = {}
 -- Configuration
 M.config = {
   project_root = vim.fn.getcwd(),
-  ragex_path = vim.fn.expand("~/Proyectos/Ammotion/ragex"),
+  ragex_path = vim.fn.expand("~/Proyectos/Oeditus/ragex"),
   enabled = true,
   debug = true,  -- Enable to see request/response logs
   auto_analyze = false,  -- Disabled by default, enable with :lua require('user.ragex').config.auto_analyze = true
@@ -44,10 +44,11 @@ function M.execute(method, params, callback, timeout_ms)
 
   debug_log("Request JSON: " .. request)
 
-  -- Connect to persistent socket server
-  -- Note: We rely on Lua timer for timeout, not shell timeout command
+  -- Connect to persistent socket server via Unix socket
+  -- Use subshell with sleep to keep stdin open until server responds
+  -- Without the sleep, socat closes the connection before the response arrives
   local cmd = string.format(
-    "printf '%%s\\n' %s | socat - UNIX-CONNECT:/tmp/ragex_mcp.sock",
+    "(printf '%%s\\n' %s; sleep 10) | socat -T5 STDIO UNIX-CONNECT:/tmp/ragex_mcp.sock",
     vim.fn.shellescape(request)
   )
 

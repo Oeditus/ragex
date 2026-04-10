@@ -74,7 +74,7 @@ local ragex_telescope = require("user.ragex_telescope")
 
 -- Setup Ragex with configuration
 ragex.setup({
-  ragex_path = vim.fn.expand("~/Proyectos/Ammotion/ragex"),
+  ragex_path = vim.fn.expand("~/Proyectos/Oeditus/ragex"),
   enabled = true,
   debug = false,
 })

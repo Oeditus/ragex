@@ -81,12 +81,18 @@ defmodule Ragex.MCP.Server do
   defp read_stdin do
     case IO.read(:stdio, :line) do
       :eof ->
-        Logger.info("Received EOF, shutting down")
-        System.halt(0)
+        Logger.info("Received EOF on stdin")
+
+        # Only halt if socket server is NOT running (pure stdio mode)
+        if Application.get_env(:ragex, :start_server, true) do
+          Logger.info("Socket server is running, stdin reader stopping gracefully")
+        else
+          Logger.info("No socket server, shutting down")
+          System.halt(0)
+        end
 
       {:error, reason} ->
-        Logger.error("Error reading stdin: #{inspect(reason)}")
-        System.halt(1)
+        Logger.warning("Error reading stdin: #{inspect(reason)}, stdin reader stopping")
 
       line when is_binary(line) ->
         line = String.trim(line)

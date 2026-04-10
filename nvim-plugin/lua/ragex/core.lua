@@ -53,10 +53,11 @@ function M.execute(method, params, callback, timeout_ms)
   end
 
   -- Command to send request via socat
-  -- Note: No timeout flag on socat - timeout is managed by Lua timer
-  -- This allows long-running operations to complete without premature connection close
+  -- Use subshell with sleep to keep stdin open until server responds
+  -- Without the sleep, socat closes the connection before the response arrives
+  -- Timeout is managed by Lua timer, not socat flags
   local cmd = string.format(
-    "printf '%%s\\n' %s | socat - UNIX-CONNECT:%s",
+    "(printf '%%s\\n' %s; sleep 10) | socat -T5 STDIO UNIX-CONNECT:%s",
     vim.fn.shellescape(request),
     M.config.socket_path
   )

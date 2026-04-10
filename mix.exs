@@ -124,6 +124,7 @@ defmodule Ragex.MixProject do
         stuff/docs/RESOURCES.md
         stuff/docs/STREAMING.md
         stuff/docs/SUGGESTIONS.md
+        stuff/docs/TOOLS.md
         stuff/docs/USAGE.md
         examples/product_cart/README.md
         examples/product_cart/DEMO.md
@@ -183,7 +184,8 @@ defmodule Ragex.MixProject do
       "stuff/docs/PERSISTENCE.md": [title: "Persistence & Caching"],
       "stuff/docs/PROMPTS.md": [title: "MCP Prompts"],
       "stuff/docs/RESOURCES.md": [title: "MCP Resources"],
-      "stuff/docs/STREAMING.md": [title: "Streaming Notifications"]
+      "stuff/docs/STREAMING.md": [title: "Streaming Notifications"],
+      "stuff/docs/TOOLS.md": [title: "MCP Tools Reference"]
     ]
   end
 

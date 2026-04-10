@@ -3,7 +3,7 @@
     "ragex": {
       "command": "mix",
       "args": ["run", "--no-halt"],
-      "cwd": "/home/am/Proyectos/Ammotion/ragex",
+      "cwd": "/home/am/Proyectos/Oeditus/ragex",
       "env": {
         "MIX_ENV": "prod"
       }

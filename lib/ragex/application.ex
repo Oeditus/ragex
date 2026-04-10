@@ -43,18 +43,31 @@ defmodule Ragex.Application do
       Ragex.Agent.Memory
     ]
 
-    # MCP servers only start if :start_server is true (default)
-    mcp_children =
+    # MCP socket server starts unless :start_server is false
+    socket_children =
       if Application.get_env(:ragex, :start_server, true) do
         [
-          # MCP socket server for persistent connections
-          Ragex.MCP.SocketServer,
+          # MCP socket server for persistent connections (LunarVim, etc.)
+          Ragex.MCP.SocketServer
+        ]
+      else
+        []
+      end
+
+    # MCP stdio server starts only if explicitly enabled
+    # Disabled by default in dev to avoid SIGTTIN when backgrounded
+    stdio_children =
+      if Application.get_env(:ragex, :start_stdio_server,
+           Application.get_env(:ragex, :start_server, true)) do
+        [
           # MCP server handles stdio communication (for stdio-based clients)
           Ragex.MCP.Server
         ]
       else
         []
       end
+
+    mcp_children = socket_children ++ stdio_children
 
     children = base_children ++ mcp_children
 
