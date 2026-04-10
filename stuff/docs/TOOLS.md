@@ -733,7 +733,7 @@ End and clear an agent session.
 
 Resources provide read-only access to Ragex's internal state. Read via `resources/read` with the resource URI.
 
-```json path=null start=null
+```json
 {"jsonrpc":"2.0","method":"resources/read","params":{"uri":"ragex://graph/stats"},"id":1}
 ```
 
@@ -773,7 +773,7 @@ Returns: `overview` (total_nodes, total_edges, average_degree, density), `key_mo
 
 Prompts are templated high-level workflows that compose multiple tools. Retrieved via `prompts/get`.
 
-```json path=null start=null
+```json
 {"jsonrpc":"2.0","method":"prompts/get","params":{"name":"analyze_architecture","arguments":{"path":"/path/to/project"}},"id":1}
 ```
 
@@ -846,7 +846,7 @@ Preview and optionally perform safe semantic renaming with impact analysis.
 
 **Unix socket**: Connect to `/tmp/ragex_mcp.sock`. Each request is a single JSON-RPC 2.0 line terminated by `\n`. Used by editor integrations (NeoVim, LunarVim).
 
-```bash path=null start=null
+```bash
 # Example: ping the socket server
 (echo '{"jsonrpc":"2.0","method":"ping","id":1}'; sleep 3) | socat -T5 STDIO UNIX-CONNECT:/tmp/ragex_mcp.sock
 ```
