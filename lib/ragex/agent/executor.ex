@@ -182,6 +182,16 @@ defmodule Ragex.Agent.Executor do
 
   # Private functions
 
+  # Build Memory.get_context opts, honouring any :context_max_chars passed by caller.
+  defp context_opts(state) do
+    base = [format: state.provider_name]
+
+    case Keyword.get(state.opts, :context_max_chars) do
+      nil -> base
+      max -> Keyword.put(base, :max_chars, max)
+    end
+  end
+
   # --- Streaming execution loop ---
 
   defp execute_streaming_loop(state, max_iterations)
@@ -215,7 +225,7 @@ defmodule Ragex.Agent.Executor do
     on_phase = Keyword.get(state.opts, :on_phase, fn _phase -> :ok end)
     on_tool_progress = Keyword.get(state.opts, :on_tool_progress, fn _info -> :ok end)
 
-    with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
+    with {:ok, messages} <- Memory.get_context(state.session_id, context_opts(state)),
          {:ok, stream} <- call_llm_stream(state, messages),
          {:ok, response} <-
            StreamConsumer.consume(stream, on_chunk: on_chunk, on_phase: on_phase) do
@@ -243,7 +253,7 @@ defmodule Ragex.Agent.Executor do
   defp execute_step_with_tool_progress(state, on_tool_progress) do
     debug? = Application.get_env(:ragex, :debug_ai_responses, false)
 
-    with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
+    with {:ok, messages} <- Memory.get_context(state.session_id, context_opts(state)),
          {:ok, response} <- call_llm(state, messages) do
       updated_state = update_usage(state, response.usage)
 
@@ -353,7 +363,7 @@ defmodule Ragex.Agent.Executor do
   defp execute_step(state) do
     debug? = Application.get_env(:ragex, :debug_ai_responses, false)
 
-    with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
+    with {:ok, messages} <- Memory.get_context(state.session_id, context_opts(state)),
          {:ok, response} <- call_llm(state, messages) do
       # Update usage tracking
       updated_state = update_usage(state, response.usage)
@@ -605,7 +615,7 @@ defmodule Ragex.Agent.Executor do
           "now using all of that information. Do not mention tool call issues."
       )
 
-    with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
+    with {:ok, messages} <- Memory.get_context(state.session_id, context_opts(state)),
          {:ok, response} <- call_llm(%{state | tools: []}, messages) do
       content = response.content || ""
       Memory.add_message(state.session_id, :assistant, content)

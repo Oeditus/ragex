@@ -473,8 +473,14 @@ defmodule Ragex.Agent.Core do
 
     # Restrict the executor to read-only RAG query tools so the AI can retrieve
     # concrete code evidence without re-triggering the heavy analysis pipeline.
+    # Use a large context window so the full issues summary is never truncated
+    # after tool results are appended to the conversation.
     rag_tools = ToolSchema.rag_query_tools(provider_name)
-    report_opts = Keyword.put(opts, :tools, rag_tools)
+
+    report_opts =
+      opts
+      |> Keyword.put(:tools, rag_tools)
+      |> Keyword.put(:context_max_chars, 128_000)
 
     # Run the agent to generate report
     case Executor.run(session_id, report_opts) do
@@ -591,8 +597,15 @@ defmodule Ragex.Agent.Core do
         # text *and* tool_calls in the same first response.  The streaming parser
         # captures the text but drops the tool_call deltas, so stream_run would
         # exit early with just the preamble, never executing the RAG tool calls.
+        # Use a large context window so the full issues summary is never truncated
+        # after tool results are appended to the conversation.
         rag_tools = ToolSchema.rag_query_tools(provider_name)
-        report_opts = opts |> Keyword.put(:tools, rag_tools) |> Keyword.delete(:on_chunk)
+
+        report_opts =
+          opts
+          |> Keyword.put(:tools, rag_tools)
+          |> Keyword.delete(:on_chunk)
+          |> Keyword.put(:context_max_chars, 128_000)
 
         case Executor.run(session.id, report_opts) do
           {:ok, result} ->
