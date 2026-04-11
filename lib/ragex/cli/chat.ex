@@ -354,52 +354,53 @@ defmodule Ragex.CLI.Chat do
 
   defp stream_initial_report(state, issues) do
     report_spinner = start_phase_timer("Generating report")
-    {:ok, first_chunk_agent} = Agent.start_link(fn -> false end)
+    {:ok, spinner_stopped} = Agent.start_link(fn -> false end)
 
+    # The on_chunk callback is fired once by Core.stream_generate_report after
+    # the blocking executor run completes.  Its only job here is to stop the
+    # spinner; the content is rendered via Marcli below, avoiding double output.
     on_chunk = fn
       %{content: text} when is_binary(text) and text != "" ->
-        unless Agent.get(first_chunk_agent, & &1) do
+        unless Agent.get(spinner_stopped, & &1) do
           stop_phase_timer(report_spinner)
-          IO.puts("")
-          Agent.update(first_chunk_agent, fn _ -> true end)
+          Agent.update(spinner_stopped, fn _ -> true end)
         end
-
-        IO.write(text)
 
       _ ->
         :ok
     end
 
-    stream_opts =
+    report_opts =
       [on_chunk: on_chunk]
       |> maybe_add(:provider, state.provider)
       |> maybe_add(:model, state.model)
 
-    case Core.stream_generate_report(state.path, issues, stream_opts) do
+    case Core.stream_generate_report(state.path, issues, report_opts) do
       {:ok, content, _ai_status} ->
-        got_chunks = Agent.get(first_chunk_agent, & &1)
-        Agent.stop(first_chunk_agent)
-
-        unless got_chunks do
+        unless Agent.get(spinner_stopped, & &1) do
           stop_phase_timer(report_spinner)
         end
 
-        # Re-render with Marcli for proper formatting
+        Agent.stop(spinner_stopped)
+
         if content != "" do
-          IO.puts("\n")
+          IO.puts("")
           IO.puts(Marcli.render(content))
           IO.puts("")
         end
 
-        # The stream_generate_report created a session; retrieve its ID
+        # Core.stream_generate_report created a session; capture its ID
         case Core.list_sessions(limit: 1) do
           [%{id: session_id} | _] -> %{state | session_id: session_id}
           _ -> state
         end
 
       {:error, reason} ->
-        stop_phase_timer(report_spinner)
-        Agent.stop(first_chunk_agent)
+        unless Agent.get(spinner_stopped, & &1) do
+          stop_phase_timer(report_spinner)
+        end
+
+        Agent.stop(spinner_stopped)
         IO.puts(Colors.error("Report generation failed: #{inspect(reason)}"))
         state
     end

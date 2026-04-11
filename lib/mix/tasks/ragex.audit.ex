@@ -167,40 +167,34 @@ defmodule Mix.Tasks.Ragex.Audit do
 
   defp stream_audit_report(path, issues, opts, show_progress, audit_start) do
     report_spinner = if show_progress, do: start_stderr_spinner("Generating report")
-    {:ok, first_chunk_agent} = Agent.start_link(fn -> false end)
+    {:ok, spinner_stopped} = Agent.start_link(fn -> false end)
 
+    # on_chunk is fired once by Core.stream_generate_report when the blocking
+    # executor run completes.  Stop the spinner here; content rendered below.
     on_chunk = fn
       %{content: text} when is_binary(text) and text != "" ->
-        unless Agent.get(first_chunk_agent, & &1) do
+        unless Agent.get(spinner_stopped, & &1) do
           stop_stderr_spinner(report_spinner)
-          Agent.update(first_chunk_agent, fn _ -> true end)
+          Agent.update(spinner_stopped, fn _ -> true end)
         end
-
-        IO.write(text)
 
       _ ->
         :ok
     end
 
-    stream_opts =
+    report_opts =
       [on_chunk: on_chunk, verbose: false]
       |> maybe_put(:provider, parse_provider(opts[:provider]))
       |> maybe_put(:model, opts[:model])
 
-    case Core.stream_generate_report(path, issues, stream_opts) do
+    case Core.stream_generate_report(path, issues, report_opts) do
       {:ok, content, _ai_status} ->
-        got_chunks = Agent.get(first_chunk_agent, & &1)
-        Agent.stop(first_chunk_agent)
-
-        if got_chunks do
-          # Streaming happened - re-render cleanly with Marcli
-          IO.write("\n")
-          IO.puts(Marcli.render(content))
-        else
-          # No streaming chunks arrived (e.g., cached/basic report) - render now
+        unless Agent.get(spinner_stopped, & &1) do
           stop_stderr_spinner(report_spinner)
-          IO.puts(Marcli.render(content))
         end
+
+        Agent.stop(spinner_stopped)
+        IO.puts(Marcli.render(content))
 
         total_elapsed = System.monotonic_time(:millisecond) - audit_start
 
@@ -209,8 +203,11 @@ defmodule Mix.Tasks.Ragex.Audit do
         end
 
       {:error, reason} ->
-        stop_stderr_spinner(report_spinner)
-        Agent.stop(first_chunk_agent)
+        unless Agent.get(spinner_stopped, & &1) do
+          stop_stderr_spinner(report_spinner)
+        end
+
+        Agent.stop(spinner_stopped)
         IO.puts(:stderr, "Report generation failed: #{inspect(reason)}")
         System.halt(1)
     end

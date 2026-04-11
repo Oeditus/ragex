@@ -549,23 +549,25 @@ defmodule Ragex.Agent.Core do
   end
 
   @doc """
-  Generate an AI audit report with streaming support.
+  Generate an AI audit report, optionally notifying a callback when ready.
 
   Requires the knowledge graph and embeddings to be populated first
   (call `analyze_project/2` with `skip_report: true`).
 
-  The AI assistant is given the same read-only RAG query tools as in
-  `analyze_project/2`, so it can look up code-level evidence while
-  writing the streamed report.
+  The executor runs in blocking mode so that RAG tool calls (read_file,
+  semantic_search, hybrid_search, etc.) are executed correctly before the
+  final report is written.  Streaming parsers drop `tool_call` deltas, so
+  a streaming executor would mis-identify preamble text as the final report
+  and never execute the tool calls.
 
-  The `:on_chunk` callback receives streaming chunks as they arrive from
-  the final AI text response.  Intermediate tool-call steps are blocking
-  (tool deltas are not yet streamed) and produce no chunks.
+  The `:on_chunk` callback is fired once after the blocking run completes,
+  with the full report content, so callers can use it as a completion signal
+  (e.g. to stop a spinner).
 
   ## Options
 
-  - `:on_chunk` - `(chunk -> :ok)` callback for real-time content delivery
-  - `:on_phase` - `(:thinking | :answering | :done -> :ok)` phase transition callback
+  - `:on_chunk` - `(chunk -> :ok)` completion callback, fired once with
+    `%{content: report_string}` when the report is ready
   - `:provider` - AI provider override
   - `:model` - Model override
   """
@@ -584,13 +586,22 @@ defmodule Ragex.Agent.Core do
       else
         setup_report_prompts(session.id, issues, abs_path)
 
-        # Restrict to read-only RAG tools for the streaming report path as well.
+        # Restrict to read-only RAG tools.
+        # Use blocking Executor.run (not stream_run): the AI may produce preamble
+        # text *and* tool_calls in the same first response.  The streaming parser
+        # captures the text but drops the tool_call deltas, so stream_run would
+        # exit early with just the preamble, never executing the RAG tool calls.
         rag_tools = ToolSchema.rag_query_tools(provider_name)
-        stream_report_opts = Keyword.put(opts, :tools, rag_tools)
+        report_opts = opts |> Keyword.put(:tools, rag_tools) |> Keyword.delete(:on_chunk)
 
-        case Executor.stream_run(session.id, stream_report_opts) do
+        case Executor.run(session.id, report_opts) do
           {:ok, result} ->
             Memory.update_metadata(session.id, %{report: result.content})
+
+            # Notify caller that the report is ready (compatibility with on_chunk interface)
+            if on_chunk = Keyword.get(opts, :on_chunk) do
+              on_chunk.(%{content: result.content})
+            end
 
             ai_status = %{
               status: "success",
@@ -603,10 +614,15 @@ defmodule Ragex.Agent.Core do
             {:ok, result.content, ai_status}
 
           {:error, reason} ->
-            Logger.error("Streaming report failed: #{inspect(reason)}")
+            Logger.error("Report generation failed: #{inspect(reason)}")
             error_note = "[AI report generation failed: #{inspect(reason)}]\n\n"
+            basic = error_note <> Report.generate_basic_report(issues)
 
-            {:ok, error_note <> Report.generate_basic_report(issues),
+            if on_chunk = Keyword.get(opts, :on_chunk) do
+              on_chunk.(%{content: basic})
+            end
+
+            {:ok, basic,
              %{status: "failed", provider: to_string(provider_name), error: inspect(reason)}}
         end
       end
