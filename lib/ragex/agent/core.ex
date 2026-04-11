@@ -522,20 +522,29 @@ defmodule Ragex.Agent.Core do
     functions = Store.list_nodes(:function, :infinity)
     issues_summary = Report.format_issues_for_llm(issues)
 
-    user_prompt = """
-    Generate a comprehensive Code Quality Audit Report from the following analysis data.
-    All data has been collected by automated static analysis tools.
-    Use the provided data as your primary source. You may call RAG query tools
-    (read_file, semantic_search, hybrid_search, query_graph, list_nodes, find_callers,
-    find_paths, graph_stats) to look up specific code details for evidence-based findings.
-    Synthesize everything below into the report structure specified in your instructions.
+    # Derive file counts from the analysis results themselves because the
+    # knowledge graph may be sparse when only a subdirectory was analysed.
+    quality_total = get_in(issues, [:quality_metrics, :total_files]) || 0
+    sec_count = length(issues[:security] || [])
 
-    ## Codebase Architecture
+    module_count = max(length(modules), quality_total)
+    func_count = length(functions)
+
+    user_prompt = """
+    The following is the COMPLETE analysis data for the project at #{project_path || "unknown"}.
+    Generate a comprehensive Code Quality Audit Report from this data NOW.
+    Do NOT claim data is missing or ask for more information — write the full report
+    using everything below.  If a section has zero findings, state that clearly as a
+    positive outcome.
+
+    ## Analysis Scope
 
     - Project path: #{project_path || "unknown"}
-    - Knowledge graph: #{graph_stats.nodes} nodes, #{graph_stats.edges} edges
-    - Modules: #{length(modules)}
-    - Functions: #{length(functions)}
+    - Files analyzed (quality): #{quality_total}
+    - Files scanned (security): #{sec_count}
+    - Modules in knowledge graph: #{module_count}
+    - Functions in knowledge graph: #{func_count}
+    - Graph edges: #{graph_stats.edges}
     - Embeddings: #{graph_stats.embeddings}
     - Audit date: #{DateTime.utc_now() |> DateTime.to_date() |> Date.to_string()}
 

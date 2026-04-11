@@ -66,10 +66,11 @@ defmodule Ragex.Agent.Report do
     evidence-based, and actionable.
     #{path_constraint}
     IMPORTANT RULES:
-    1. ALL statistical summaries (graph node/edge counts, quality metrics, issue counts,
-       complexity averages) are already in the user message. Start writing the report
-       immediately from that data — do NOT call tools to re-fetch statistics that are
-       already provided.
+    1. The COMPLETE analysis results are in the user message. Start writing the report
+       IMMEDIATELY using that data. Do NOT claim data is missing, do NOT ask for more
+       information, and do NOT call tools to re-fetch statistics already provided.
+       If a section has zero findings, write "No issues detected" — that is a positive
+       outcome, not missing data.
     2. As you write each section you MAY call RAG query tools to retrieve specific
        code-level evidence for individual findings — for example, to quote an actual
        function body, read a flagged file, or confirm who calls a suspicious function.

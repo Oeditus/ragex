@@ -464,26 +464,32 @@ defmodule Ragex.Agent.Memory do
   end
 
   defp truncate_for_context(messages, max_chars) do
-    # Start from most recent, work backwards
-    {kept, _} =
-      messages
-      |> Enum.reverse()
-      |> Enum.reduce_while({[], 0}, fn msg, {acc, total_chars} ->
-        msg_chars = String.length(msg.content || "")
+    # System and user messages that form the initial prompt must always be
+    # preserved so the AI retains the analysis context.  Only tool results
+    # and assistant turns that accumulate during execution are candidates for
+    # dropping when the budget is tight.
+    {pinned, evictable} =
+      Enum.split_with(messages, &(&1.role in [:system, :user]))
 
-        if total_chars + msg_chars <= max_chars do
-          {:cont, {[msg | acc], total_chars + msg_chars}}
+    pinned_chars = Enum.reduce(pinned, 0, &(String.length(&1.content || "") + &2))
+    budget = max(0, max_chars - pinned_chars)
+
+    # Fill the remaining budget with the most-recent evictable messages.
+    {kept_evictable, _} =
+      evictable
+      |> Enum.reverse()
+      |> Enum.reduce_while({[], 0}, fn msg, {acc, total} ->
+        chars = String.length(msg.content || "")
+
+        if total + chars <= budget do
+          {:cont, {[msg | acc], total + chars}}
         else
-          # Try to include system messages even if over limit
-          if msg.role == :system do
-            {:cont, {[msg | acc], total_chars + msg_chars}}
-          else
-            {:halt, {acc, total_chars}}
-          end
+          {:halt, {acc, total}}
         end
       end)
 
-    kept
+    # Rebuild in original order: pinned (system/user) first, then evictable.
+    pinned ++ kept_evictable
   end
 
   defp format_for_provider(messages, :openai) do
