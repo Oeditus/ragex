@@ -34,7 +34,7 @@ defmodule Ragex.Agent.Core do
 
   require Logger
 
-  alias Ragex.Agent.{Executor, Memory, Report, ToolSchema}
+  alias Ragex.Agent.{Executor, Memory, Report}
   alias Ragex.AI.Config, as: AIConfig
   alias Ragex.Analyzers.Directory
 
@@ -471,15 +471,16 @@ defmodule Ragex.Agent.Core do
   defp generate_ai_report(session_id, issues, opts, project_path, provider_name, config) do
     setup_report_prompts(session_id, issues, project_path)
 
-    # Restrict the executor to read-only RAG query tools so the AI can retrieve
-    # concrete code evidence without re-triggering the heavy analysis pipeline.
-    # Use a large context window so the full issues summary is never truncated
-    # after tool results are appended to the conversation.
-    rag_tools = ToolSchema.rag_query_tools(provider_name)
-
+    # Run the report executor with NO tools so the LLM writes the report in a
+    # single blocking call.  When tools are enabled DeepSeek R1 (and similar
+    # reasoning models) places the full report in its thinking block and then
+    # emits tool calls instead of the actual response, causing the executor to
+    # loop until the dedup guard fires and force_text_response produces a broken
+    # "data not provided" output.
+    # Large context window keeps the full issues summary intact.
     report_opts =
       opts
-      |> Keyword.put(:tools, rag_tools)
+      |> Keyword.put(:tools, [])
       |> Keyword.put(:context_max_chars, 128_000)
 
     # Run the agent to generate report
@@ -531,11 +532,10 @@ defmodule Ragex.Agent.Core do
     func_count = length(functions)
 
     user_prompt = """
-    The following is the COMPLETE analysis data for the project at #{project_path || "unknown"}.
-    Generate a comprehensive Code Quality Audit Report from this data NOW.
-    Do NOT claim data is missing or ask for more information — write the full report
-    using everything below.  If a section has zero findings, state that clearly as a
-    positive outcome.
+    COMPLETE analysis data for the audit report is below.  Write the full
+    12-section Markdown report now using exclusively this data.
+    Do NOT ask for more data.  Sections with zero findings should state
+    "No issues detected" — that is a positive outcome.
 
     ## Analysis Scope
 
@@ -601,18 +601,12 @@ defmodule Ragex.Agent.Core do
       else
         setup_report_prompts(session.id, issues, abs_path)
 
-        # Restrict to read-only RAG tools.
-        # Use blocking Executor.run (not stream_run): the AI may produce preamble
-        # text *and* tool_calls in the same first response.  The streaming parser
-        # captures the text but drops the tool_call deltas, so stream_run would
-        # exit early with just the preamble, never executing the RAG tool calls.
-        # Use a large context window so the full issues summary is never truncated
-        # after tool results are appended to the conversation.
-        rag_tools = ToolSchema.rag_query_tools(provider_name)
-
+        # No tools: same reasoning as generate_ai_report — reasoning models put
+        # the report in their thinking block then emit tool calls, causing the
+        # executor to loop and eventually emit a broken response.
         report_opts =
           opts
-          |> Keyword.put(:tools, rag_tools)
+          |> Keyword.put(:tools, [])
           |> Keyword.delete(:on_chunk)
           |> Keyword.put(:context_max_chars, 128_000)
 

@@ -66,29 +66,14 @@ defmodule Ragex.Agent.Report do
     evidence-based, and actionable.
     #{path_constraint}
     IMPORTANT RULES:
-    1. The COMPLETE analysis results are in the user message. Start writing the report
-       IMMEDIATELY using that data. Do NOT claim data is missing, do NOT ask for more
-       information, and do NOT call tools to re-fetch statistics already provided.
-       If a section has zero findings, write "No issues detected" — that is a positive
-       outcome, not missing data.
-    2. As you write each section you MAY call RAG query tools to retrieve specific
-       code-level evidence for individual findings — for example, to quote an actual
-       function body, read a flagged file, or confirm who calls a suspicious function.
-       Use tools sparingly and only when they would add concrete evidence to a specific
-       claim. Allowed tools (code-level evidence only):
-       - read_file: read actual source code of a flagged file
-       - semantic_search: find code related to a topic by meaning
-       - hybrid_search: combined semantic + graph search
-       - query_graph: look up specific module/function relationships
-       - list_nodes: list modules or functions by type
-       - find_callers: find callers of a specific function
-       - find_paths: dependency paths between two specific modules
-       - find_circular_dependencies: confirm circular dependency details
-       - coupling_report: coupling metrics for a specific module
-       Do NOT call graph_stats — those statistics are already in the user message.
-    3. Your final response must be a complete Markdown report, NOT a tool call.
-    4. Never fabricate findings. If a category has zero issues, state it clearly as a positive.
-    5. Every claim must be traceable to the provided data or retrieved via tools.
+    1. The COMPLETE analysis data is in the user message.  Write the full 12-section
+       report NOW using only that data.  Do NOT call tools, do NOT ask for more
+       data, do NOT claim data is missing — all statistics, issue counts, and
+       quality metrics are provided below.
+    2. Sections with zero findings must state "No issues detected" explicitly.
+       That is a positive outcome, not missing data.
+    3. Your entire response must be the Markdown report.  Every claim must be
+       traceable to the data in the user message.
 
     REPORT STRUCTURE (mandatory sections):
 
