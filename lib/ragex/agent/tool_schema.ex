@@ -3,8 +3,22 @@ defmodule Ragex.Agent.ToolSchema do
   Converts MCP tool definitions to AI provider tool formats.
 
   Supports:
-  - OpenAI function calling format (also used by DeepSeek R1)
+  - OpenAI function calling format (also used by DeepSeek R1 and Ollama)
   - Anthropic tool use format
+
+  ## Tool sets
+
+  Three tool sets are available:
+
+  - **All tools** (`to_openai_tools/0`, `to_anthropic_tools/0`) — every tool
+    defined in the MCP server.
+  - **Agent tools** (`agent_tools/1`, `tools_for_provider/2`) — curated subset
+    suitable for autonomous agent analysis.  Includes analysis, quality, search,
+    dependency, impact, suggestion, and graph-algorithm tools.
+  - **RAG query tools** (`rag_query_tools/1`) — read-only subset that reads
+    existing knowledge-graph and embedding data without triggering any heavy
+    analysis pipeline.  Used during report generation so the AI can look up
+    code-level evidence without re-running static analysis.
 
   ## Usage
 
@@ -14,11 +28,30 @@ defmodule Ragex.Agent.ToolSchema do
       # Get curated agent tools
       tools = ToolSchema.agent_tools(:openai)
 
+      # Get read-only RAG query tools for report generation
+      tools = ToolSchema.rag_query_tools(:anthropic)
+
       # Lookup specific tool
       {:ok, tool} = ToolSchema.tool_by_name("semantic_search")
   """
 
   alias Ragex.MCP.Handlers.Tools, as: MCPTools
+
+  # Read-only RAG query tools: read existing graph/embedding data without re-running
+  # any heavy analysis pipeline.  Used when the AI should only retrieve context,
+  # not re-analyze the codebase (e.g. during report generation).
+  @rag_tool_names [
+    "read_file",
+    "semantic_search",
+    "hybrid_search",
+    "query_graph",
+    "list_nodes",
+    "find_callers",
+    "find_paths",
+    "find_circular_dependencies",
+    "coupling_report",
+    "graph_stats"
+  ]
 
   # Curated list of tool names useful for agent operations.
   # These are the tools the agent can use during autonomous analysis.
@@ -158,6 +191,27 @@ defmodule Ragex.Agent.ToolSchema do
   """
   @spec agent_tool_names() :: [String.t()]
   def agent_tool_names, do: @agent_tool_names
+
+  @doc """
+  Get read-only RAG query tool names.
+
+  These tools read from the existing knowledge graph and embeddings without
+  triggering any heavy analysis pipeline.
+  """
+  @spec rag_tool_names() :: [String.t()]
+  def rag_tool_names, do: @rag_tool_names
+
+  @doc """
+  Get read-only RAG query tools for a provider.
+
+  Same as `tools_for_provider/2` restricted to `@rag_tool_names`.
+  Useful for report generation where the AI should retrieve context
+  but not re-run the full analysis pipeline.
+  """
+  @spec rag_query_tools(atom()) :: [map()]
+  def rag_query_tools(provider \\ :openai) do
+    tools_for_provider(provider, only: @rag_tool_names)
+  end
 
   @doc """
   Lookup a tool definition by name.

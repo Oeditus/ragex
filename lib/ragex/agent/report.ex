@@ -3,13 +3,42 @@ defmodule Ragex.Agent.Report do
   Report generation utilities for agent analysis.
 
   Handles:
+  - System prompts for AI report generation (with RAG tool access)
   - Formatting raw issues for LLM consumption
-  - System prompts for report generation
-  - Fallback basic report generation
+  - Fallback basic report generation when no AI provider is available
+
+  ## RAG tool access during report generation
+
+  The system prompt returned by `system_prompt/1` permits the AI to call a
+  restricted set of read-only Ragex MCP query tools while writing the report.
+  This allows the AI to retrieve concrete code-level evidence (e.g. quote an
+  actual function body, confirm a dependency path, or look up callers of a
+  flagged function) rather than relying solely on pre-computed statistics.
+
+  The allowed tools are the same 10 tools in `ToolSchema.rag_tool_names/0`:
+  `read_file`, `semantic_search`, `hybrid_search`, `query_graph`, `list_nodes`,
+  `find_callers`, `find_paths`, `find_circular_dependencies`, `coupling_report`,
+  and `graph_stats`.
+
+  Heavy re-analysis tools (`analyze_directory`, `analyze_quality`,
+  `find_dead_code`, `find_duplicates`, etc.) are excluded from the tool set
+  passed to the executor, so the AI cannot accidentally re-trigger the full
+  analysis pipeline.
   """
 
   @doc """
   System prompt for report generation.
+
+  Instructs the AI to act as a senior software architect writing a professional
+  code audit report.  The AI is:
+
+  - Given all static-analysis data in the user message as its primary source.
+  - Permitted to call read-only RAG query tools (see `ToolSchema.rag_tool_names/0`)
+    to retrieve concrete code evidence for specific findings.
+  - Required to produce a 12-section Markdown report as its final response.
+
+  When `project_path` is provided the prompt includes a path-constraint so
+  every file-path tool argument uses the correct absolute path.
 
   ## Parameters
 
@@ -37,11 +66,23 @@ defmodule Ragex.Agent.Report do
     evidence-based, and actionable.
     #{path_constraint}
     IMPORTANT RULES:
-    1. ALL analysis data is provided in the user message. Generate your report from it directly.
-    2. Do NOT make tool calls. The data is complete.
-    3. Your response must be a Markdown report, NOT a tool call.
+    1. ALL analysis data is provided in the user message. Use it as your primary source.
+    2. You MAY call RAG query tools to retrieve concrete code-level evidence that
+       strengthens specific findings (e.g. to quote an actual function, confirm a
+       dependency path, or read a flagged file). Allowed tools:
+       - read_file: read actual source code
+       - semantic_search: find code related to a topic by meaning
+       - hybrid_search: combined semantic + graph search
+       - query_graph: query the knowledge graph
+       - list_nodes: list modules or functions
+       - find_callers: find callers of a function
+       - find_paths: dependency paths between modules
+       - find_circular_dependencies: detect circular deps
+       - coupling_report: coupling metrics
+       - graph_stats: knowledge graph statistics
+    3. Your final response must be a Markdown report, NOT a tool call.
     4. Never fabricate findings. If a category has zero issues, state it clearly as a positive.
-    5. Every claim must be traceable to the data provided.
+    5. Every claim must be traceable to the provided data or retrieved via tools.
 
     REPORT STRUCTURE (mandatory sections):
 

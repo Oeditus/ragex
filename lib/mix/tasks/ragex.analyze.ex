@@ -6,7 +6,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   Analyzes a directory using all available Ragex analysis features:
   - Security vulnerability scanning
-  - Business logic analysis (20 analyzers)
+  - Business logic analysis (33 analyzers, including 13 CWE-based security analyzers)
   - Code complexity metrics
   - Code smell detection
   - Code duplication detection
@@ -24,7 +24,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     * `--output FILE` - Output file for results (default: stdout)
     * `--format FORMAT` - Output format: text, json, markdown (default: text)
     * `--security` - Include security analysis
-    * `--business-logic` - Include business logic analysis (20 analyzers)
+    * `--business-logic` - Include business logic analysis (33 analyzers)
     * `--complexity` - Include complexity analysis
     * `--smells` - Include code smell detection
     * `--duplicates` - Include duplication detection

@@ -250,6 +250,13 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ Cache Integration: Automatic caching of AI responses  
       ▹ Usage Tracking: All requests tracked with cost estimation
 
+    ▸ Agent-Based RAG (chat & audit)  
+      ▹ The AI drives retrieval: agent calls Ragex MCP tools directly instead of receiving pre-fetched context  
+      ▹ `mix ragex.chat`: every question answered via ReAct loop with `hybrid_search`, `semantic_search`, `read_file`, `query_graph`, etc.  
+      ▹ `mix ragex.audit`: AI report enriched by read-only RAG tool calls for concrete evidence (`ToolSchema.rag_query_tools/1`)  
+      ▹ Evidence-based findings: AI can quote actual function bodies, confirm dependency paths, and check coupling metrics  
+      ▹ Safe scoping: heavy re-analysis tools excluded so the analysis pipeline is never re-triggered during report writing
+
     ▸ MCP RAG Tools  
       ▹ `rag_query`: Answer general codebase questions with AI  
       ▹ `rag_explain`: Explain code with aspect focus (purpose, complexity, dependencies, all)  
@@ -435,6 +442,17 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ `mix ragex.ai.{usage.stats,cache.stats,cache.clear}` - Rich formatting, color-coded metrics
 
     ▸ Interactive Wizards
+      ▹ `mix ragex.chat` - AI-powered codebase Q&A via Ragex MCP tools:  
+        • Agent ReAct loop — AI calls `hybrid_search`, `semantic_search`, `read_file`, `query_graph`, etc.  
+        • Initial analysis + streaming audit report on first run  
+        • Multi-turn conversation with session memory  
+        • `--provider` / `--model` overrides; `--skip-analysis` to reuse existing graph  
+        • `--debug` to print tool-call traces to stderr  
+      ▹ `mix ragex.audit` - AI-powered code audit report:  
+        • Static analysis + AI report with optional RAG evidence retrieval  
+        • JSON (default) or Markdown output; `--output FILE` to save  
+        • `--format markdown` renders the report directly in the terminal  
+        • `--verbose` shows progress; `--dead-code` enables dead-code section  
       ▹ `mix ragex.refactor` - Interactive refactoring wizard:
         • 5 operations: rename_function, rename_module, change_signature, extract_function, inline_function
         • Parameter gathering with validation

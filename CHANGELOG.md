@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0]
+
+### Changed
+
+#### `mix ragex.chat` — agent-based RAG via Ragex MCP tools
+
+User queries are now answered exclusively by the agent executor (ReAct loop)
+instead of the previous two-path approach (pipeline first, agent fallback).
+The AI actively calls Ragex MCP query tools (`hybrid_search`, `semantic_search`,
+`read_file`, `query_graph`, `find_callers`, etc.) to retrieve relevant code
+context before composing its answer.  This means the AI drives the retrieval
+rather than having pre-fetched context injected on its behalf.
+
+Behavioural changes:
+- The `--strategy` option is accepted for compatibility but no longer has any
+  effect; all queries go through the agent ReAct loop.
+- Blocking `Core.chat/3` is always used (not streaming) to ensure tool-call
+  responses are captured correctly on providers that mix content and tool_call
+  deltas (e.g. DeepSeek R1).
+- The conversation system prompt no longer caps tool calls at 2-3 per turn;
+  the AI may call as many tools as needed for a thorough answer.
+- The old `render_stream` / `Pipeline.stream_query` path has been removed.
+
+#### `mix ragex.audit` — AI report enriched with RAG evidence retrieval
+
+The AI assistant generating the audit report can now call read-only Ragex MCP
+query tools to retrieve concrete code-level evidence for its findings (e.g.
+quote an actual function body, confirm a circular dependency path, or check
+coupling metrics) rather than being limited to the pre-computed statistics
+alone.
+
+The tool set passed to the executor is restricted to `ToolSchema.rag_tool_names/0`
+(10 read-only tools: `read_file`, `semantic_search`, `hybrid_search`,
+`query_graph`, `list_nodes`, `find_callers`, `find_paths`,
+`find_circular_dependencies`, `coupling_report`, `graph_stats`).  Heavy
+re-analysis tools are excluded so the pipeline is not re-triggered.
+
+### Added
+
+- `ToolSchema.rag_tool_names/0` — returns the list of 10 read-only RAG query
+  tool names.
+- `ToolSchema.rag_query_tools/1` — returns those tools formatted for a given
+  AI provider (`:openai`, `:anthropic`, `:deepseek_r1`, `:ollama`).
+
+### Planned
+- Additional language support (Go, Rust, Java)
+- Cross-language refactoring via Metastatic
+- Production optimizations
+- Enhanced semantic analysis for advanced refactoring operations
+
 ## [0.2.0] - 2026-01-27
 
 ### Added
@@ -95,13 +145,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - STREAMING.md: Streaming notifications guide
 - USAGE.md: Usage examples
 
-## [Unreleased]
-
-### Planned
-- Additional language support (Go, Rust, Java)
-- Cross-language refactoring via Metastatic
-- Production optimizations
-- Enhanced semantic analysis for advanced refactoring operations
-
+[0.11.0]: https://github.com/Oeditus/ragex/releases/tag/v0.11.0
 [0.2.0]: https://github.com/Oeditus/ragex/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Oeditus/ragex/releases/tag/v0.1.0

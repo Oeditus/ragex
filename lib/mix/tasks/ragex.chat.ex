@@ -24,7 +24,8 @@ defmodule Mix.Tasks.Ragex.Chat do
   - `--path`, `-p` - Project path (default: current directory)
   - `--provider` - AI provider: deepseek_r1, openai, anthropic, ollama
   - `--model`, `-m` - Model name override
-  - `--strategy`, `-s` - Retrieval strategy: fusion, semantic_first, graph_first
+  - `--strategy`, `-s` - Accepted for compatibility; has no effect (queries always go through
+    the agent ReAct loop rather than the retrieval pipeline directly)
   - `--dead-code` - Enable dead code analysis (disabled by default, slow on large codebases)
   - `--skip-analysis` - Skip initial codebase analysis
   - `--debug` - Show AI conversation details (messages, tool calls, responses) on stderr

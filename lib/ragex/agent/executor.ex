@@ -52,11 +52,12 @@ defmodule Ragex.Agent.Executor do
   - `session_id` - Active session ID with conversation history
   - `opts` - Options:
     - `:max_iterations` - Maximum tool call iterations (default: 15)
-    - `:provider` - AI provider override (:deepseek_r1, :openai, :anthropic)
-    - `:tools` - Custom tool list (default: agent_tools)
+    - `:provider` - AI provider override (:deepseek_r1, :openai, :anthropic, :ollama)
+    - `:tools` - Custom tool list (default: full agent tool set from `ToolSchema`)
     - `:temperature` - LLM temperature (default: 0.7)
     - `:max_tokens` - Max response tokens (default: 4096)
-    - `:tool_choice` - Tool selection strategy ("auto", "any", or specific tool)
+    - `:tool_choice` - Tool selection strategy ("auto", "any", or specific tool name)
+    - `:system_prompt_override` - Replace the session's system prompt for this run
 
   ## Returns
 

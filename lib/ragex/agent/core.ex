@@ -5,15 +5,27 @@ defmodule Ragex.Agent.Core do
   Orchestrates the full project analysis pipeline:
   1. Analyze project (build knowledge graph, embeddings)
   2. Discover issues (dead code, duplicates, security, smells, complexity)
-  3. Generate AI-polished report
+  3. Generate AI-polished report (AI may use Ragex MCP RAG tools for evidence)
   4. Enable conversation session for follow-up
+
+  ## Report generation and RAG
+
+  During step 3 the AI assistant is given access to a restricted set of
+  read-only Ragex MCP query tools (`ToolSchema.rag_query_tools/1`).  This lets
+  the AI look up concrete code details — reading a flagged file, checking
+  coupling metrics, or finding callers of a complex function — to produce
+  evidence-based findings rather than relying solely on pre-computed statistics.
+  Heavy re-analysis tools are excluded so the pipeline is not re-triggered.
 
   ## Usage
 
       # Full project analysis with report
       {:ok, result} = Agent.Core.analyze_project("/path/to/project")
 
-      # Continue conversation
+      # Skip report generation (e.g. before streaming it separately)
+      {:ok, result} = Agent.Core.analyze_project("/path/to/project", skip_report: true)
+
+      # Continue conversation (agent uses full tool set)
       {:ok, response} = Agent.Core.chat(result.session_id, "Tell me more about the security issues")
 
       # Get just the report
@@ -22,7 +34,7 @@ defmodule Ragex.Agent.Core do
 
   require Logger
 
-  alias Ragex.Agent.{Executor, Memory, Report}
+  alias Ragex.Agent.{Executor, Memory, Report, ToolSchema}
   alias Ragex.AI.Config, as: AIConfig
   alias Ragex.Analyzers.Directory
 
@@ -56,14 +68,21 @@ defmodule Ragex.Agent.Core do
   @doc """
   Analyze a project and generate an AI-polished report.
 
+  The AI report is generated using a restricted set of read-only Ragex MCP
+  query tools so the AI can retrieve concrete code evidence.  Pass
+  `skip_report: true` to skip report generation (e.g. when you intend to
+  stream it later via `stream_generate_report/3`).
+
   ## Parameters
 
   - `path` - Project root path
   - `opts` - Options:
-    - `:provider` - AI provider (:deepseek_r1, :openai, :anthropic)
+    - `:provider` - AI provider (:deepseek_r1, :openai, :anthropic, :ollama)
+    - `:model` - Model name override
     - `:include_suggestions` - Include refactoring suggestions (default: true)
     - `:max_files` - Maximum files to analyze (default: 500)
     - `:skip_embeddings` - Skip embedding generation (default: false)
+    - `:skip_report` - Skip AI report generation (default: false)
     - `:include_dead_code` - Enable dead code analysis (default: false)
     - `:exclude_patterns` - Patterns to exclude (default: standard ignores)
 
@@ -452,8 +471,13 @@ defmodule Ragex.Agent.Core do
   defp generate_ai_report(session_id, issues, opts, project_path, provider_name, config) do
     setup_report_prompts(session_id, issues, project_path)
 
+    # Restrict the executor to read-only RAG query tools so the AI can retrieve
+    # concrete code evidence without re-triggering the heavy analysis pipeline.
+    rag_tools = ToolSchema.rag_query_tools(provider_name)
+    report_opts = Keyword.put(opts, :tools, rag_tools)
+
     # Run the agent to generate report
-    case Executor.run(session_id, opts) do
+    case Executor.run(session_id, report_opts) do
       {:ok, result} ->
         # Save report to session metadata
         Memory.update_metadata(session_id, %{report: result.content})
@@ -494,7 +518,10 @@ defmodule Ragex.Agent.Core do
 
     user_prompt = """
     Generate a comprehensive Code Quality Audit Report from the following analysis data.
-    All data has been collected by automated static analysis tools. Do NOT make any tool calls.
+    All data has been collected by automated static analysis tools.
+    Use the provided data as your primary source. You may call RAG query tools
+    (read_file, semantic_search, hybrid_search, query_graph, list_nodes, find_callers,
+    find_paths, graph_stats) to look up specific code details for evidence-based findings.
     Synthesize everything below into the report structure specified in your instructions.
 
     ## Codebase Architecture
@@ -527,11 +554,18 @@ defmodule Ragex.Agent.Core do
   Requires the knowledge graph and embeddings to be populated first
   (call `analyze_project/2` with `skip_report: true`).
 
-  The `:on_chunk` callback receives streaming chunks as they arrive.
+  The AI assistant is given the same read-only RAG query tools as in
+  `analyze_project/2`, so it can look up code-level evidence while
+  writing the streamed report.
+
+  The `:on_chunk` callback receives streaming chunks as they arrive from
+  the final AI text response.  Intermediate tool-call steps are blocking
+  (tool deltas are not yet streamed) and produce no chunks.
 
   ## Options
 
   - `:on_chunk` - `(chunk -> :ok)` callback for real-time content delivery
+  - `:on_phase` - `(:thinking | :answering | :done -> :ok)` phase transition callback
   - `:provider` - AI provider override
   - `:model` - Model override
   """
@@ -550,7 +584,11 @@ defmodule Ragex.Agent.Core do
       else
         setup_report_prompts(session.id, issues, abs_path)
 
-        case Executor.stream_run(session.id, opts) do
+        # Restrict to read-only RAG tools for the streaming report path as well.
+        rag_tools = ToolSchema.rag_query_tools(provider_name)
+        stream_report_opts = Keyword.put(opts, :tools, rag_tools)
+
+        case Executor.stream_run(session.id, stream_report_opts) do
           {:ok, result} ->
             Memory.update_metadata(session.id, %{report: result.content})
 

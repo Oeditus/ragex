@@ -1,10 +1,21 @@
 defmodule Ragex.CLI.Chat do
   @moduledoc """
-  Interactive terminal chat UI for codebase Q&A using Ragex RAG.
+  Interactive terminal chat UI for codebase Q&A using the Ragex agent.
 
-  Uses `Owl.LiveScreen` for real-time streaming output and
-  `Owl.IO` for styled user input. Backed by the RAG pipeline
-  for retrieval-augmented answers about analyzed codebases.
+  Each user question is handled by the agent executor (ReAct loop) which
+  actively calls Ragex MCP query tools — `hybrid_search`, `semantic_search`,
+  `read_file`, `query_graph`, `find_callers`, etc. — to retrieve relevant
+  code context before composing the answer.  This means the AI itself drives
+  the retrieval rather than having context pre-fetched on its behalf.
+
+  Blocking `Core.chat/3` is used for every query (rather than streaming) so
+  that tool-call responses are reliably captured.  Some providers (e.g.
+  DeepSeek R1) emit content and tool_calls in the same response chunk; the
+  streaming parser would silently drop the tool calls, truncating answers.
+
+  The initial codebase analysis and first-run audit report are generated
+  separately (via `Core.analyze_project/2` and `Core.stream_generate_report/3`)
+  and may include AI tool calls for evidence retrieval as well.
 
   ## Usage
 
@@ -15,7 +26,8 @@ defmodule Ragex.CLI.Chat do
   - `/help`    - Show available commands
   - `/history` - Show conversation history
   - `/clear`   - Clear conversation and start fresh
-  - `/sources` - Show sources from last response
+  - `/sources` - Show sources from last response (empty — agent tracks tool
+                 call results internally, not as named sources)
   - `/analyze` - Re-analyze the codebase
   - `/status`  - Show session and graph stats
   - `/quit`    - Exit the chat
@@ -28,7 +40,6 @@ defmodule Ragex.CLI.Chat do
   alias Ragex.Analysis.Cache, as: AnalysisCache
   alias Ragex.CLI.{Colors, Progress}
   alias Ragex.Graph.Store
-  alias Ragex.RAG.Pipeline
 
   @spinner_frames ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -46,14 +57,20 @@ defmodule Ragex.CLI.Chat do
   @doc """
   Start an interactive chat session.
 
+  Runs the initial codebase analysis (unless `:skip_analysis` is true),
+  streams the opening audit report, then enters an interactive loop where
+  every question is answered by the agent executor using Ragex MCP query tools.
+
   ## Options
 
   - `:path` - Project path to analyze (default: cwd)
   - `:provider` - AI provider atom (default: configured default)
   - `:model` - Model name override
-  - `:strategy` - Retrieval strategy: :fusion, :semantic_first, :graph_first (default: :fusion)
+  - `:strategy` - Accepted for compatibility but not used; queries always go
+                  through the agent ReAct loop rather than the retrieval pipeline
   - `:skip_analysis` - Skip initial analysis (default: false)
   - `:include_dead_code` - Enable dead code analysis (default: false)
+  - `:debug` - Print tool-call details and session messages to stderr (default: false)
   """
   @spec start(keyword()) :: :ok
   def start(opts \\ []) do
@@ -177,37 +194,41 @@ defmodule Ragex.CLI.Chat do
   defp process_query(query, state) do
     query_start = System.monotonic_time(:millisecond)
 
-    # Show thinking indicator
-    spinner = start_spinner("Searching codebase...")
+    # Ensure a session exists before calling Core.chat
+    state = ensure_session(state)
 
-    opts =
-      [strategy: state.strategy, limit: 10, threshold: 0.5]
+    # Use the agent executor with Ragex MCP query tools for RAG.
+    # Blocking Core.chat is used (not stream_chat) because the ReAct loop
+    # must capture tool_call responses from the LLM; streaming parsers can drop
+    # tool_call deltas on providers like DeepSeek R1 that return content + calls
+    # simultaneously.
+    spinner = start_phase_timer("Thinking...")
+
+    if state.debug, do: IO.puts(:stderr, Colors.muted("[debug] agent chat with Ragex MCP tools"))
+
+    chat_opts =
+      [system_prompt_override: conversation_system_prompt(state.path)]
       |> maybe_add(:provider, state.provider)
       |> maybe_add(:model, state.model)
 
-    result =
-      case Pipeline.stream_query(query, opts) do
-        {:ok, stream} ->
-          stop_spinner(spinner, nil)
-          IO.puts("")
-          render_stream(stream)
-
-        {:error, :no_results_found} ->
-          stop_spinner(spinner, nil)
-          # Fall back to agent chat if RAG pipeline finds nothing
-          try_agent_chat(query, state)
-
-        {:error, reason} ->
-          stop_spinner(spinner, nil)
-          {:error, reason}
-      end
+    result = Core.chat(state.session_id, query, chat_opts)
+    stop_phase_timer(spinner)
 
     elapsed = System.monotonic_time(:millisecond) - query_start
 
     case result do
-      {:ok, response} ->
+      {:ok, %{content: content, tool_calls_made: tc}} ->
+        if state.debug do
+          IO.puts(:stderr, Colors.muted("[debug] tool calls made: #{tc}"))
+          dump_session_messages(state.session_id)
+        end
+
+        if content != "" do
+          IO.puts("")
+          IO.puts(Marcli.render(content))
+        end
+
         IO.puts("")
-        render_sources_inline(response.sources)
 
         IO.puts(
           Colors.success("\u2713") <>
@@ -216,16 +237,8 @@ defmodule Ragex.CLI.Chat do
 
         IO.puts("")
 
-        # Track in session
-        state = ensure_session(state)
-        Memory.add_message(state.session_id, :user, query)
-        Memory.add_message(state.session_id, :assistant, response.content)
-
-        %{
-          state
-          | last_sources: response.sources,
-            message_count: state.message_count + 1
-        }
+        # Messages are already tracked by Core.chat -> only update UI state
+        %{state | last_sources: [], message_count: state.message_count + 1}
 
       {:error, {:rate_limited, reason}} ->
         IO.puts("")
@@ -248,218 +261,6 @@ defmodule Ragex.CLI.Chat do
 
         IO.puts("")
         state
-    end
-  end
-
-  defp try_agent_chat(query, state) do
-    state = ensure_session(state)
-
-    # Use blocking Core.chat (not stream_chat) because the agent's ReAct loop
-    # needs to properly capture tool_calls from the LLM response. The stream
-    # parser (StreamConsumer) cannot parse tool_call deltas, so providers like
-    # DeepSeek R1 that return content + tool_calls simultaneously have their
-    # tool calls silently dropped, truncating the response.
-    #
-    # Override the system prompt: the session has the report generation prompt
-    # ("Do NOT make tool calls") which is wrong for follow-up questions. Replace
-    # it with a conversation prompt that directs the AI to use query tools.
-    spinner = start_phase_timer("Generating response")
-
-    chat_opts =
-      [system_prompt_override: conversation_system_prompt(state.path)]
-      |> maybe_add(:provider, state.provider)
-      |> maybe_add(:model, state.model)
-
-    if state.debug, do: IO.puts(:stderr, Colors.muted("[debug] agent chat: blocking mode"))
-
-    result = Core.chat(state.session_id, query, chat_opts)
-    stop_phase_timer(spinner)
-
-    case result do
-      {:ok, %{content: content, tool_calls_made: tc}} ->
-        if state.debug do
-          IO.puts(:stderr, Colors.muted("[debug] tool calls made: #{tc}"))
-          dump_session_messages(state.session_id)
-        end
-
-        if content != "" do
-          IO.puts("")
-          IO.puts(Marcli.render(content))
-        end
-
-        {:ok, %{content: content, sources: []}}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp render_stream(stream) do
-    # Ensure LiveScreen is running for progressive Marcli rendering
-    ensure_live_screen()
-    live_screen? = live_screen_available?()
-    start_time = System.monotonic_time(:millisecond)
-
-    # Non-LiveScreen: start phase timer for visual feedback during waits
-    timer_pid = unless live_screen?, do: start_phase_timer("Awaiting response")
-
-    try do
-      if live_screen? do
-        # Add thinking block (rendered dimmed/faint)
-        Owl.LiveScreen.add_block(:thinking,
-          state: "",
-          render: fn
-            "" -> ""
-            text -> Owl.Data.tag("[thinking] " <> format_thinking_text(text), :faint)
-          end
-        )
-
-        # Use LiveScreen for live-updating response block with Marcli rendering
-        Owl.LiveScreen.add_block(:response,
-          state: "",
-          render: fn
-            :cleared -> ""
-            "" -> Owl.Data.tag("...", :faint)
-            text -> Marcli.render(text)
-          end
-        )
-
-        # Status block with auto-updating elapsed timer
-        add_status_block(start_time)
-      end
-
-      result =
-        Enum.reduce(
-          stream,
-          %{
-            content: "",
-            thinking: "",
-            sources: [],
-            usage: %{},
-            phase: :init,
-            timer_pid: timer_pid
-          },
-          fn chunk, acc ->
-            case chunk do
-              %{thinking: thinking_text, done: false}
-              when is_binary(thinking_text) and thinking_text != "" ->
-                new_thinking = acc.thinking <> thinking_text
-                acc = stop_timer_on_first_output(acc)
-
-                if live_screen? do
-                  Owl.LiveScreen.update(:thinking, new_thinking)
-                  Owl.LiveScreen.update(:status, "Thinking")
-                else
-                  # Direct output for non-interactive terminals
-                  if acc.phase != :thinking do
-                    IO.write(Colors.muted("[thinking] "))
-                  end
-
-                  IO.write(Colors.muted(thinking_text))
-                end
-
-                %{acc | thinking: new_thinking, phase: :thinking}
-
-              %{content: text, done: false} when is_binary(text) and text != "" ->
-                new_content = acc.content <> text
-                acc = stop_timer_on_first_output(acc)
-
-                if live_screen? do
-                  # When content starts arriving, clear thinking display
-                  if acc.thinking != "" and acc.content == "" do
-                    Owl.LiveScreen.update(:thinking, "")
-                  end
-
-                  Owl.LiveScreen.update(:response, new_content)
-                  Owl.LiveScreen.update(:status, "Generating response")
-                else
-                  # Transition from thinking to answering
-                  if acc.phase == :thinking do
-                    IO.puts("")
-                  end
-
-                  IO.write(text)
-                end
-
-                %{acc | content: new_content, phase: :answering}
-
-              %{done: true, metadata: metadata} ->
-                if live_screen? do
-                  Owl.LiveScreen.update(:thinking, "")
-                end
-
-                sources = Map.get(metadata, :sources, [])
-                usage = Map.get(metadata, :usage, %{})
-                %{acc | sources: sources, usage: usage, phase: :done}
-
-              {:error, reason} ->
-                Logger.warning("Stream error: #{inspect(reason)}")
-                acc
-
-              _ ->
-                acc
-            end
-          end
-        )
-
-      # Cleanup phase timer
-      if result.timer_pid, do: stop_phase_timer(result.timer_pid)
-
-      if live_screen? do
-        # Clear live blocks before flush to avoid duplicate content;
-        # content will be printed statically below for reliable display.
-        Owl.LiveScreen.update(:thinking, "")
-        Owl.LiveScreen.update(:response, :cleared)
-        Owl.LiveScreen.update(:status, "")
-        Owl.LiveScreen.flush()
-      end
-
-      # Always render final content statically (LiveScreen is ephemeral)
-      if result.phase in [:thinking], do: IO.puts("")
-
-      if result.content != "" do
-        IO.puts("")
-        IO.puts(Marcli.render(result.content))
-      end
-
-      # Print thinking summary if any was collected
-      if result.thinking != "" do
-        thinking_lines = result.thinking |> String.split("\n") |> length()
-        IO.puts(Colors.muted("[Thinking: #{thinking_lines} lines]"))
-      end
-
-      {:ok, result}
-    rescue
-      e ->
-        stop_phase_timer(timer_pid)
-        if live_screen_available?(), do: Owl.LiveScreen.flush()
-        {:error, {:stream_error, Exception.message(e)}}
-    end
-  end
-
-  defp live_screen_available? do
-    case Process.whereis(Owl.LiveScreen) do
-      pid when is_pid(pid) -> Process.alive?(pid)
-      nil -> false
-    end
-  end
-
-  defp ensure_live_screen do
-    unless live_screen_available?() do
-      Owl.LiveScreen.start_link(name: Owl.LiveScreen, refresh_every: 100)
-    end
-  end
-
-  defp format_thinking_text(text) do
-    # Truncate thinking text for display to last N lines
-    lines = String.split(text, "\n")
-    max_display_lines = 6
-
-    if length(lines) > max_display_lines do
-      displayed = Enum.take(lines, -max_display_lines)
-      "...\n" <> Enum.join(displayed, "\n")
-    else
-      text
     end
   end
 
@@ -749,21 +550,6 @@ defmodule Ragex.CLI.Chat do
     IO.puts("")
   end
 
-  defp render_sources_inline([]), do: :ok
-
-  defp render_sources_inline(sources) do
-    top = Enum.take(sources, 5)
-
-    locations =
-      Enum.map_join(top, ", ", fn s ->
-        file = s[:file] || "?"
-        basename = Path.basename(file)
-        if s[:line], do: "#{basename}:#{s[:line]}", else: basename
-      end)
-
-    IO.puts(Colors.muted("Sources: #{locations}"))
-  end
-
   defp render_status(state) do
     raw_stats = Store.stats()
     modules = Store.list_nodes(:module)
@@ -861,26 +647,25 @@ defmodule Ragex.CLI.Chat do
     You are an expert code analysis assistant. The project at #{path} has been
     FULLY ANALYZED. The knowledge graph, embeddings, and all metrics are populated.
 
-    CRITICAL RULES FOR ANSWERING FOLLOW-UP QUESTIONS:
-    1. The codebase is ALREADY analyzed. Do NOT call analyze_directory or analyze_quality.
-       These tools re-run the entire analysis pipeline which is wasteful and slow.
-    2. The conversation already contains the complete audit report with all findings.
-       Use that data as your primary source.
-    3. For additional detail, use these QUERY tools (they read existing data, not re-analyze):
-       - read_file: read actual source code from a specific file
+    CRITICAL RULES:
+    1. The codebase is ALREADY analyzed. Do NOT call analyze_directory, analyze_quality,
+       find_dead_code, find_duplicates, or scan_security. These re-run the full pipeline.
+    2. Use Ragex MCP query tools to retrieve information from the knowledge graph and
+       embeddings. Call as many tools as needed to give a thorough, accurate answer:
+       - hybrid_search: best general-purpose code search (semantic + graph)
        - semantic_search: find code related to a topic by meaning
-       - hybrid_search: combined semantic + graph search
+       - read_file: read actual source code from a specific file
        - query_graph: query the knowledge graph for module/function details
        - list_nodes: list modules or functions in the graph
        - find_callers: find what calls a specific function
        - find_paths: find dependency paths between modules
-       - find_circular_dependencies: detect circular deps
+       - find_circular_dependencies: detect circular dependencies
        - coupling_report: get coupling metrics
        - graph_stats: get knowledge graph statistics
-    4. Use at most 2-3 tool calls, then produce your answer.
-    5. Be specific: cite file paths, function names, line numbers, code snippets.
-    6. Respond in clear Markdown. Do NOT generate a full audit report for follow-up questions.
-       Answer the specific question concisely.
+    3. Start with hybrid_search or semantic_search to locate relevant code before
+       reading files or querying the graph.
+    4. Be specific: cite file paths, function names, line numbers, code snippets.
+    5. Respond in clear Markdown. Answer the specific question concisely.
     """
   end
 
@@ -908,31 +693,6 @@ defmodule Ragex.CLI.Chat do
       _ ->
         :ok
     end
-  end
-
-  # Status indicator helpers for streaming progress feedback
-
-  defp add_status_block(start_time, block_name \\ :status) do
-    frames = @spinner_frames
-
-    Owl.LiveScreen.add_block(block_name,
-      state: "Awaiting response",
-      render: fn
-        :done ->
-          elapsed = System.monotonic_time(:millisecond) - start_time
-          Owl.Data.tag("✓ Done (#{Progress.format_elapsed(elapsed)})", :green)
-
-        "" ->
-          ""
-
-        phase ->
-          elapsed_ms = System.monotonic_time(:millisecond) - start_time
-          elapsed_s = div(elapsed_ms, 1000)
-          frame_idx = rem(div(elapsed_ms, 80), length(frames))
-          frame = Enum.at(frames, frame_idx)
-          Owl.Data.tag("#{frame} #{phase}... (#{elapsed_s}s)", :faint)
-      end
-    )
   end
 
   defp start_phase_timer(label) do
@@ -965,13 +725,6 @@ defmodule Ragex.CLI.Chat do
     end
 
     :ok
-  end
-
-  defp stop_timer_on_first_output(%{timer_pid: nil} = acc), do: acc
-
-  defp stop_timer_on_first_output(%{timer_pid: pid} = acc) do
-    stop_phase_timer(pid)
-    %{acc | timer_pid: nil}
   end
 
   defp phase_timer_loop(frames, phase, start_time, frame_index) do

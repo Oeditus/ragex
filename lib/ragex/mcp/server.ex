@@ -48,7 +48,7 @@ defmodule Ragex.MCP.Server do
       initialized: false,
       server_info: %{
         name: "ragex",
-        version: "0.1.0"
+        version: Application.spec(:ragex, :vsn) |> to_string() |> then(&(&1 || "0.10.0"))
       }
     }
 

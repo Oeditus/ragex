@@ -57,8 +57,11 @@ defmodule Ragex.Application do
     # MCP stdio server starts only if explicitly enabled
     # Disabled by default in dev to avoid SIGTTIN when backgrounded
     stdio_children =
-      if Application.get_env(:ragex, :start_stdio_server,
-           Application.get_env(:ragex, :start_server, true)) do
+      if Application.get_env(
+           :ragex,
+           :start_stdio_server,
+           Application.get_env(:ragex, :start_server, true)
+         ) do
         [
           # MCP server handles stdio communication (for stdio-based clients)
           Ragex.MCP.Server

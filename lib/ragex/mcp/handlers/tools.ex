@@ -1,8 +1,33 @@
 defmodule Ragex.MCP.Handlers.Tools do
   @moduledoc """
-  Handles MCP tool-related requests.
+  Handles MCP tool-related requests (tools/list and tools/call).
 
-  Implements the tools/list and tools/call methods.
+  Implements the full Ragex MCP tool catalogue (~50 tools across categories):
+
+  - **Core analysis**: `analyze_file`, `analyze_directory`, `query_graph`, `list_nodes`
+  - **File watching**: `watch_directory`, `unwatch_directory`, `list_watched`
+  - **Semantic search**: `semantic_search`, `hybrid_search`, `get_embeddings_stats`,
+    `metaast_search`, `cross_language_alternatives`, `expand_query`, `find_metaast_pattern`
+  - **Graph algorithms**: `find_paths`, `find_callers`, `graph_stats`,
+    `betweenness_centrality`, `closeness_centrality`, `detect_communities`, `export_graph`
+  - **Code editing**: `edit_file`, `edit_files`, `validate_edit`, `rollback_edit`,
+    `edit_history`, `refactor_code`, `advanced_refactor`
+  - **Refactor previews**: `preview_refactor`, `refactor_conflicts`, `undo_refactor`,
+    `refactor_history`, `visualize_impact`
+  - **Quality & complexity**: `analyze_quality`, `quality_report`, `find_complex_code`
+  - **Security**: `scan_security`, `security_audit`, `check_secrets`,
+    `analyze_security_issues`
+  - **Code analysis**: `find_dead_code`, `analyze_dead_code_patterns`, `find_duplicates`,
+    `find_similar_code`, `detect_smells`, `analyze_business_logic`
+  - **Dependencies**: `analyze_dependencies`, `find_circular_dependencies`, `coupling_report`
+  - **Impact & suggestions**: `analyze_impact`, `estimate_refactoring_effort`,
+    `risk_assessment`, `suggest_refactorings`, `explain_suggestion`
+  - **Semantic / OpKind**: `semantic_operations`, `semantic_analysis`
+  - **RAG pipeline**: `rag_query`, `rag_explain`, `rag_suggest` (+ `_stream` variants)
+  - **AI features**: `validate_with_ai`
+  - **AI usage tracking**: `get_ai_usage`, `get_ai_cache_stats`, `clear_ai_cache`
+  - **Agent**: `agent_analyze`, `agent_chat`, `agent_session_info`,
+    `agent_list_sessions`, `agent_clear_session`, `read_file`
   """
   alias Ragex.AI.{Cache, Usage}
 
