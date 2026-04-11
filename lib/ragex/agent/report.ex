@@ -66,21 +66,26 @@ defmodule Ragex.Agent.Report do
     evidence-based, and actionable.
     #{path_constraint}
     IMPORTANT RULES:
-    1. ALL analysis data is provided in the user message. Use it as your primary source.
-    2. You MAY call RAG query tools to retrieve concrete code-level evidence that
-       strengthens specific findings (e.g. to quote an actual function, confirm a
-       dependency path, or read a flagged file). Allowed tools:
-       - read_file: read actual source code
+    1. ALL statistical summaries (graph node/edge counts, quality metrics, issue counts,
+       complexity averages) are already in the user message. Start writing the report
+       immediately from that data — do NOT call tools to re-fetch statistics that are
+       already provided.
+    2. As you write each section you MAY call RAG query tools to retrieve specific
+       code-level evidence for individual findings — for example, to quote an actual
+       function body, read a flagged file, or confirm who calls a suspicious function.
+       Use tools sparingly and only when they would add concrete evidence to a specific
+       claim. Allowed tools (code-level evidence only):
+       - read_file: read actual source code of a flagged file
        - semantic_search: find code related to a topic by meaning
        - hybrid_search: combined semantic + graph search
-       - query_graph: query the knowledge graph
-       - list_nodes: list modules or functions
-       - find_callers: find callers of a function
-       - find_paths: dependency paths between modules
-       - find_circular_dependencies: detect circular deps
-       - coupling_report: coupling metrics
-       - graph_stats: knowledge graph statistics
-    3. Your final response must be a Markdown report, NOT a tool call.
+       - query_graph: look up specific module/function relationships
+       - list_nodes: list modules or functions by type
+       - find_callers: find callers of a specific function
+       - find_paths: dependency paths between two specific modules
+       - find_circular_dependencies: confirm circular dependency details
+       - coupling_report: coupling metrics for a specific module
+       Do NOT call graph_stats — those statistics are already in the user message.
+    3. Your final response must be a complete Markdown report, NOT a tool call.
     4. Never fabricate findings. If a category has zero issues, state it clearly as a positive.
     5. Every claim must be traceable to the provided data or retrieved via tools.
 

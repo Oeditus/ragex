@@ -594,6 +594,17 @@ defmodule Ragex.Agent.Executor do
   defp force_text_response(state) do
     Logger.warning("All tool calls repeated. Forcing text response without tools.")
 
+    # Inject a directive so the AI synthesises already-available data rather
+    # than reporting tool-call limitations as an audit failure.
+    :ok =
+      Memory.add_message(
+        state.session_id,
+        :user,
+        "All necessary data is now available in the conversation from the analysis " <>
+          "summary and previous tool call results. Write your complete final response " <>
+          "now using all of that information. Do not mention tool call issues."
+      )
+
     with {:ok, messages} <- Memory.get_context(state.session_id, format: state.provider_name),
          {:ok, response} <- call_llm(%{state | tools: []}, messages) do
       content = response.content || ""
