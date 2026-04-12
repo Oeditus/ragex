@@ -30,6 +30,7 @@ defmodule Ragex.Analysis.Security do
 
   alias Metastatic.{Adapter, Document}
   alias Metastatic.Analysis.Security, as: MetaSecurity
+  alias Metastatic.Semantic.Enricher
   alias Ragex.Analysis.LocationPreservation
   require Logger
 
@@ -78,7 +79,8 @@ defmodule Ragex.Analysis.Security do
     with {:ok, content} <- File.read(path),
          {:ok, adapter} <- get_adapter(language),
          {:ok, doc} <- parse_document(adapter, content, language),
-         {:ok, meta_result} <- MetaSecurity.analyze(doc, opts) do
+         {:ok, enriched_doc} <- enrich_document(doc, language),
+         {:ok, meta_result} <- MetaSecurity.analyze(enriched_doc, opts) do
       # MetaAST nodes already carry :line/:col; LocationPreservation's
       # enricher fallback handles any remaining gaps via the knowledge graph.
       result = build_result(path, language, meta_result, %{})
@@ -186,6 +188,22 @@ defmodule Ragex.Analysis.Security do
       other -> {:error, {:unexpected_parse_result, other}}
     end
   end
+
+  # Enrich the document with OpKind semantic metadata.
+  # The Elixir adapter already enriches in to_meta/2; for other adapters
+  # (Python, Ruby, Erlang, Haskell) we apply Enricher.enrich_tree here.
+  defp enrich_document(%Document{language: :elixir} = doc, :elixir) do
+    # Already enriched by the Elixir adapter's to_meta/2
+    {:ok, doc}
+  end
+
+  defp enrich_document(%Document{ast: ast, language: language} = doc, language) do
+    {:ok, %{doc | ast: Enricher.enrich_tree(ast, language)}}
+  rescue
+    _ -> {:ok, doc}
+  end
+
+  defp enrich_document(doc, _language), do: {:ok, doc}
 
   defp build_result(path, language, meta_result, location_map) do
     vulns =

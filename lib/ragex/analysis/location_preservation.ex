@@ -27,7 +27,7 @@ defmodule Ragex.Analysis.LocationPreservation do
       # Result now includes native AST locations merged with analysis data
   """
 
-  alias Ragex.Analysis.{ASTLocationExtractor, LocationEnricher}
+  alias Ragex.Analysis.LocationEnricher
 
   @doc """
   Executes analysis function with location preservation.
@@ -53,19 +53,12 @@ defmodule Ragex.Analysis.LocationPreservation do
   """
   @spec with_locations(String.t(), (Metastatic.Document.t() -> any()), keyword()) ::
           {:ok, any()} | {:error, term()}
-  def with_locations(path, _analysis_fn, opts \\ []) do
-    _fallback_enricher = Keyword.get(opts, :fallback_enricher, true)
-    language = Keyword.get(opts, :language, detect_language(path))
-
-    # Step 1: Extract native AST locations
-    {:ok, location_map} = ASTLocationExtractor.extract_from_file(path, language: language)
-
-    # Step 2: Run analysis (analysis_fn needs document)
-    # For now, store location_map for later use
-    # This is a simplified version - full implementation would pass document to analysis_fn
-
-    # Return location_map to be used by calling code
-    {:ok, location_map}
+  def with_locations(_path, _analysis_fn, _opts \\ []) do
+    # MetaAST nodes carry :line/:col metadata natively; native AST location
+    # extraction (ASTLocationExtractor) is no longer needed.
+    # Returns an empty location map. Callers should read location data
+    # directly from MetaAST node metadata or use LocationEnricher.
+    {:ok, %{}}
   end
 
   @doc """
@@ -76,7 +69,7 @@ defmodule Ragex.Analysis.LocationPreservation do
 
   ## Parameters
   - `issues` - List of issue maps from analysis
-  - `location_map` - Map from ASTLocationExtractor
+  - `location_map` - Optional pre-computed location map (pass `%{}` if unavailable)
   - `file_path` - Source file path (for fallback enrichment)
   - `opts` - Keyword options
     - `:fallback_enricher` - Use LocationEnricher when AST locations missing (default: true)
@@ -210,6 +203,4 @@ defmodule Ragex.Analysis.LocationPreservation do
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)
     |> Map.new()
   end
-
-  defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
 end
