@@ -37,7 +37,7 @@ defmodule Ragex.CLI.Chat do
 
   require Logger
 
-  alias Ragex.Agent.{Core, Memory}
+  alias Ragex.Agent.{Core, Memory, ToolSchema}
   alias Ragex.AI.Config, as: AIConfig
   alias Ragex.Analysis.Cache, as: AnalysisCache
   alias Ragex.CLI.{Colors, Progress}
@@ -211,7 +211,7 @@ defmodule Ragex.CLI.Chat do
     # Restrict to read-only RAG query tools so the AI can look up evidence
     # from the existing knowledge graph without re-triggering heavy analysis
     # pipelines (analyze_directory, find_dead_code, find_duplicates, etc.).
-    rag_tools = Ragex.Agent.ToolSchema.rag_query_tools(state.provider || :openai)
+    rag_tools = ToolSchema.rag_query_tools(state.provider || :openai)
 
     chat_opts =
       [
