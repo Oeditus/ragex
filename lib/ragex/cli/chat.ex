@@ -3,10 +3,12 @@ defmodule Ragex.CLI.Chat do
   Interactive terminal chat UI for codebase Q&A using the Ragex agent.
 
   Each user question is handled by the agent executor (ReAct loop) which
-  actively calls Ragex MCP query tools — `hybrid_search`, `semantic_search`,
-  `read_file`, `query_graph`, `find_callers`, etc. — to retrieve relevant
-  code context before composing the answer.  This means the AI itself drives
-  the retrieval rather than having context pre-fetched on its behalf.
+  actively calls Ragex MCP read-only query tools — `hybrid_search`,
+  `semantic_search`, `read_file`, `query_graph`, `find_callers`, etc. —
+  to retrieve relevant code context before composing the answer.  The
+  restricted tool set (`ToolSchema.rag_query_tools/1`) prevents the AI from
+  accidentally re-triggering heavy analysis pipelines while still giving it
+  full read access to the knowledge graph and embeddings.
 
   Blocking `Core.chat/3` is used for every query (rather than streaming) so
   that tool-call responses are reliably captured.  Some providers (e.g.
@@ -15,7 +17,7 @@ defmodule Ragex.CLI.Chat do
 
   The initial codebase analysis and first-run audit report are generated
   separately (via `Core.analyze_project/2` and `Core.stream_generate_report/3`)
-  and may include AI tool calls for evidence retrieval as well.
+  and use no tools (report generation) or the full agent tool set (re-analysis).
 
   ## Usage
 
@@ -206,8 +208,16 @@ defmodule Ragex.CLI.Chat do
 
     if state.debug, do: IO.puts(:stderr, Colors.muted("[debug] agent chat with Ragex MCP tools"))
 
+    # Restrict to read-only RAG query tools so the AI can look up evidence
+    # from the existing knowledge graph without re-triggering heavy analysis
+    # pipelines (analyze_directory, find_dead_code, find_duplicates, etc.).
+    rag_tools = Ragex.Agent.ToolSchema.rag_query_tools(state.provider || :openai)
+
     chat_opts =
-      [system_prompt_override: conversation_system_prompt(state.path)]
+      [
+        system_prompt_override: conversation_system_prompt(state.path),
+        tools: rag_tools
+      ]
       |> maybe_add(:provider, state.provider)
       |> maybe_add(:model, state.model)
 

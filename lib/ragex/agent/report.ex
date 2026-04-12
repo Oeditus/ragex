@@ -3,42 +3,34 @@ defmodule Ragex.Agent.Report do
   Report generation utilities for agent analysis.
 
   Handles:
-  - System prompts for AI report generation (with RAG tool access)
+  - System prompts for AI report generation
   - Formatting raw issues for LLM consumption
   - Fallback basic report generation when no AI provider is available
 
-  ## RAG tool access during report generation
+  ## Tool access during report generation
 
-  The system prompt returned by `system_prompt/1` permits the AI to call a
-  restricted set of read-only Ragex MCP query tools while writing the report.
-  This allows the AI to retrieve concrete code-level evidence (e.g. quote an
-  actual function body, confirm a dependency path, or look up callers of a
-  flagged function) rather than relying solely on pre-computed statistics.
+  The executor is intentionally called with `tools: []` (no tool access) during
+  report generation.  All required analysis data is serialised into the user
+  message so the AI writes the report in a single blocking call.
 
-  The allowed tools are the same 10 tools in `ToolSchema.rag_tool_names/0`:
-  `read_file`, `semantic_search`, `hybrid_search`, `query_graph`, `list_nodes`,
-  `find_callers`, `find_paths`, `find_circular_dependencies`, `coupling_report`,
-  and `graph_stats`.
+  Providing tools during report generation caused a regression with DeepSeek R1
+  and similar reasoning models: they place the entire report in their hidden
+  thinking block and then emit tool calls as the visible response, causing the
+  ReAct loop to iterate until the dedup guard fires and `force_text_response/1`
+  produces a "data not provided" stub instead of the real report.
 
-  Heavy re-analysis tools (`analyze_directory`, `analyze_quality`,
-  `find_dead_code`, `find_duplicates`, etc.) are excluded from the tool set
-  passed to the executor, so the AI cannot accidentally re-trigger the full
-  analysis pipeline.
+  The `ToolSchema.rag_query_tools/1` set is used when the AI has an interactive
+  conversation session (`ragex.chat` follow-up queries), not during report
+  generation.
   """
 
   @doc """
   System prompt for report generation.
 
   Instructs the AI to act as a senior software architect writing a professional
-  code audit report.  The AI is:
-
-  - Given all static-analysis data in the user message as its primary source.
-  - Permitted to call read-only RAG query tools (see `ToolSchema.rag_tool_names/0`)
-    to retrieve concrete code evidence for specific findings.
-  - Required to produce a 12-section Markdown report as its final response.
-
-  When `project_path` is provided the prompt includes a path-constraint so
-  every file-path tool argument uses the correct absolute path.
+  code audit report based solely on the pre-computed analysis data passed in
+  the user message.  No tools are available during report generation — see
+  the module doc for the reasoning.
 
   ## Parameters
 
