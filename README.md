@@ -8,481 +8,432 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 
 <details>
   <summary>Foundation</summary>
-
-    ▸ MCP Server Protocol: Full JSON-RPC 2.0 implementation over both stdio and socket  
-    ▸ Elixir Code Analyzer: AST-based parser extracting modules, functions, calls, and dependencies  
-    ▸ Knowledge Graph: ETS-based storage for code entities and relationships  
-    ▸ MCP Tools:  
-      ▹ `analyze_file`: Parse and index source files  
-      ▹ `query_graph`: Search for modules, functions, and relationships  
+    ▸ MCP Server Protocol: Full JSON-RPC 2.0 implementation over both stdio and socket<br/>
+    ▸ Elixir Code Analyzer: AST-based parser extracting modules, functions, calls, and dependencies<br/>
+    ▸ Knowledge Graph: ETS-based storage for code entities and relationships<br/>
+    ▸ MCP Tools:<br/>
+      ▹ `analyze_file`: Parse and index source files<br/>
+      ▹ `query_graph`: Search for modules, functions, and relationships<br/>
       ▹ `list_nodes`: Browse indexed code entities
 </details>
 <details>
   <summary>Multi-Language Support</summary>
-
-    ▸ Erlang Analyzer: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing  
-    ▸ Python Analyzer: Shells out to Python's `ast` module for comprehensive analysis  
-    ▸ Ruby Analyzer: Uses Metastatic Ruby adapter (parser gem) with native fallback  
-    ▸ JavaScript/TypeScript Analyzer: Regex-based parsing for common JS/TS patterns  
-    ▸ Auto-detection: Automatically detects language from file extension  
-    ▸ Directory Analysis: Batch analyze entire projects with parallel processing  
-    ▸ File Watching: Auto-reindex on file changes  
+    ▸ Erlang Analyzer: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing<br/>
+    ▸ Python Analyzer: Shells out to Python's `ast` module for comprehensive analysis<br/>
+    ▸ Ruby Analyzer: Uses Metastatic Ruby adapter (parser gem) with native fallback<br/>
+    ▸ JavaScript/TypeScript Analyzer: Regex-based parsing for common JS/TS patterns<br/>
+    ▸ Auto-detection: Automatically detects language from file extension<br/>
+    ▸ Directory Analysis: Batch analyze entire projects with parallel processing<br/>
+    ▸ File Watching: Auto-reindex on file changes<br/>
     ▸ Supported Extensions: `.ex`, `.exs`, `.erl`, `.hrl`, `.py`, `.rb`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`
 </details>
 <details>
   <summary>Semantic Search & Hybrid Retrieval</summary>
-
-    ▸ Embeddings Foundation  
-      ▹ Local ML Model: Bumblebee integration with sentence-transformers/all-MiniLM-L6-v2  
-      ▹ Vector Embeddings: 384-dimensional embeddings for code entities  
-      ▹ Automatic Generation: Embeddings created during code analysis  
-      ▹ Text Descriptions: Natural language descriptions for modules and functions  
-      ▹ ETS Storage: Embeddings stored alongside graph entities  
-      ▹ No External APIs: Fully local model inference (~400MB memory)
-
-    ▸ Vector Store  
-      ▹ Cosine Similarity: Fast vector similarity search (<50ms for 100 entities)  
-      ▹ Parallel Search: Concurrent similarity calculations  
-      ▹ Filtering: By node type, similarity threshold, and result limit  
-      ▹ k-NN Search: Nearest neighbor queries  
-      ▹ Statistics API: Vector store metrics and monitoring
-
-    ▸ Semantic Search Tools  
-      ▹ Semantic Search: Natural language code queries ("function to parse JSON")  
-      ▹ Getting Embeddings Stats: ML model and vector store statistics  
-      ▹ Result Enrichment: Context with callers, callees, file locations  
-      ▹ Flexible Filtering: By type, threshold, limit, with context inclusion
-
-    ▸ Hybrid Retrieval  
-      ▹ Hybrid Search: Combines symbolic and semantic approaches  
-      ▹ Three Strategies: Fusion (RRF), semantic-first, graph-first  
-      ▹ Reciprocal Rank Fusion: Intelligent ranking combination (k=60)  
-      ▹ Graph Constraints: Optional symbolic filtering  
-      ▹ Performance: <100ms for typical queries
-
-    ▸ Enhanced Graph Queries  
-      ▹ PageRank: Importance scoring based on call relationships  
-      ▹ Path Finding: Discover call chains between functions (with limits)  
-      ▹ Degree Centrality: In-degree, out-degree, and total degree metrics  
-      ▹ Graph Statistics: Comprehensive codebase analysis  
+    ▸ Embeddings Foundation<br/>
+      ▹ Local ML Model: Bumblebee integration with sentence-transformers/all-MiniLM-L6-v2<br/>
+      ▹ Vector Embeddings: 384-dimensional embeddings for code entities<br/>
+      ▹ Automatic Generation: Embeddings created during code analysis<br/>
+      ▹ Text Descriptions: Natural language descriptions for modules and functions<br/>
+      ▹ ETS Storage: Embeddings stored alongside graph entities<br/>
+      ▹ No External APIs: Fully local model inference (~400MB memory)<br/><br/>
+    ▸ Vector Store<br/>
+      ▹ Cosine Similarity: Fast vector similarity search (less than 50ms for 100 entities)<br/>
+      ▹ Parallel Search: Concurrent similarity calculations<br/>
+      ▹ Filtering: By node type, similarity threshold, and result limit<br/>
+      ▹ k-NN Search: Nearest neighbor queries<br/>
+      ▹ Statistics API: Vector store metrics and monitoring<br/><br/>
+    ▸ Semantic Search Tools<br/>
+      ▹ Semantic Search: Natural language code queries (“function to parse JSON”)<br/>
+      ▹ Getting Embeddings Stats: ML model and vector store statistics<br/>
+      ▹ Result Enrichment: Context with callers, callees, file locations<br/>
+      ▹ Flexible Filtering: By type, threshold, limit, with context inclusion<br/><br/>
+    ▸ Hybrid Retrieval<br/>
+      ▹ Hybrid Search: Combines symbolic and semantic approaches<br/>
+      ▹ Three Strategies: Fusion (RRF), semantic-first, graph-first<br/>
+      ▹ Reciprocal Rank Fusion: Intelligent ranking combination (k is 60)<br/>
+      ▹ Graph Constraints: Optional symbolic filtering<br/>
+      ▹ Performance: <100ms for typical queries<br/><br/>
+    ▸ Enhanced Graph Queries<br/>
+      ▹ PageRank: Importance scoring based on call relationships<br/>
+      ▹ Path Finding: Discover call chains between functions (with limits)<br/>
+      ▹ Degree Centrality: In-degree, out-degree, and total degree metrics<br/>
+      ▹ Graph Statistics: Comprehensive codebase analysis<br/>
       ▹ MCP Tools: `find_paths` and `graph_stats` tools
 </details>
 <details>
   <summary>Production Features</summary>
-
-    ▸ Custom Embedding Models  
-      ▹ Model Registry: 4 pre-configured embedding models  
-      ▹ Flexible Configuration: Config file, environment variable, or default  
-      ▹ Model Compatibility: Automatic detection of compatible models (same dimensions)  
-      ▹ Migration Tool: `mix ragex.embeddings.migrate` for model changes  
-      ▹ Validation: Startup checks for model compatibility
-
-    ▸ Embedding Persistence  
-      ▹ Automatic Cache: Save on shutdown, load on startup  
-      ▹ Model Validation: Ensures cache matches current model  
-      ▹ Project-Specific: Isolated caches per project directory  
-      ▹ Cache Management: Mix tasks for stats and cleanup (`mix ragex.cache.*`)  
-      ▹ Performance: Cold start <5s vs 50s without cache  
-      ▹ Storage: ~15MB per 1,000 entities (ETS binary format)
-
-    ▸ Incremental Embedding Updates  
-      ▹ File Tracking: SHA256 content hashing for change detection  
-      ▹ Smart Diff: Only re-analyzes changed files  
-      ▹ Selective Regeneration: Updates embeddings for modified entities only  
-      ▹ Performance: <5% regeneration on single-file changes  
-      ▹ Mix Task: `mix ragex.cache.refresh` for incremental/full updates
-
-    ▸ Path Finding Limits  
-      ▹ `max_paths` Parametrization: Limits returned paths (default: 100) to prevent hangs  
-      ▹ Early Stopping: DFS traversal stops when max_paths reached  
-      ▹ Dense Graph Detection: Automatic warnings for highly-connected nodes (≥10 edges)  
-      ▹ Configurable Options: max_depth, max_paths, warn_dense flags  
+    ▸ Custom Embedding Models<br/>
+      ▹ Model Registry: 4 pre-configured embedding models<br/>
+      ▹ Flexible Configuration: Config file, environment variable, or default<br/>
+      ▹ Model Compatibility: Automatic detection of compatible models (same dimensions)<br/>
+      ▹ Migration Tool: `mix ragex.embeddings.migrate` for model changes<br/>
+      ▹ Validation: Startup checks for model compatibility<br/><br/>
+    ▸ Embedding Persistence<br/>
+      ▹ Automatic Cache: Save on shutdown, load on startup<br/>
+      ▹ Model Validation: Ensures cache matches current model<br/>
+      ▹ Project-Specific: Isolated caches per project directory<br/>
+      ▹ Cache Management: Mix tasks for stats and cleanup (`mix ragex.cache.*`)<br/>
+      ▹ Performance: Cold start <5s vs 50s without cache<br/>
+      ▹ Storage: ~15MB per 1,000 entities (ETS binary format)<br/><br/>
+    ▸ Incremental Embedding Updates<br/>
+      ▹ File Tracking: SHA256 content hashing for change detection<br/>
+      ▹ Smart Diff: Only re-analyzes changed files<br/>
+      ▹ Selective Regeneration: Updates embeddings for modified entities only<br/>
+      ▹ Performance: <5% regeneration on single-file changes<br/>
+      ▹ Mix Task: `mix ragex.cache.refresh` for incremental/full updates<br/><br/>
+    ▸ Path Finding Limits<br/>
+      ▹ `max_paths` Parametrization: Limits returned paths (default: 100) to prevent hangs<br/>
+      ▹ Early Stopping: DFS traversal stops when max_paths reached<br/>
+      ▹ Dense Graph Detection: Automatic warnings for highly-connected nodes (≥10 edges)<br/>
+      ▹ Configurable Options: max_depth, max_paths, warn_dense flags<br/>
       ▹ Performance: Prevents exponential explosion on dense graphs
 </details>
 <details>
   <summary>Code Editing Capabilities</summary>
-
-    ▸ Core Editor Infrastructure  
-      ▹ Editor Types: Change types (replace, insert, delete) with validation  
-      ▹ Backup Management: Automatic backups with timestamps and project-specific directories  
-      ▹ Core Editor: Atomic operations with concurrent modification detection  
-      ▹ Rollback Support: Restore previous versions from backup history  
-      ▹ Configuration: Backup retention, compression, and directory settings
-
-    ▸ Validation Pipeline  
-      ▹ Validator Behavior: Behavior definition with callbacks and orchestration  
-      ▹ Elixir Validator: Syntax validation using `Code.string_to_quoted/2`  
-      ▹ Erlang Validator: Validation using `:erl_scan` and `:erl_parse`  
-      ▹ Python Validator: Shell-out to Python's `ast.parse()` for syntax checking  
-      ▹ Ruby Validator: `ruby -c` for Ruby syntax checking  
-      ▹ JavaScript Validator: Node.js `vm.Script` for JS/TS validation  
-      ▹ Automatic Detection: Language detection from file extension  
-      ▹ Core Integration: Validators integrated with `Core.edit_file`
-
-    ▸ MCP Edit Tools  
-      ▹ edit_file: MCP tool for safe file editing with validation  
-      ▹ validate_edit: Preview validation before applying changes  
-      ▹ rollback_edit: Undo recent edits via MCP  
-      ▹ edit_history: Query backup history  
-
-    ▸ Advanced Editing  
-      ▹ Format Integration: Auto-format after edits with language-specific formatters  
-      ▹ Formatter Detection: Automatic formatter discovery (mix, rebar3, black, rubocop, prettier)  
-      ▹ Core Integration: `:format` option in `Core.edit_file`  
-      ▹ Multi-file Transactions: Atomic cross-file changes with automatic rollback  
-      ▹ Transaction Validation: Pre-validate all files before applying changes  
-      ▹ MCP Integration: `edit_files` tool for coordinated multi-file edits
-
-    ▸ Semantic Refactoring  
-      ▹ AST Manipulation: Elixir-specific AST parsing and transformation  
-      ▹ Rename Function: Rename functions with automatic call site updates  
-      ▹ Rename Module: Rename modules with reference updates  
-      ▹ Graph Integration: Use knowledge graph to find all affected files  
-      ▹ Arity Support: Handle functions with multiple arities correctly  
-      ▹ Scope Control: Module-level or project-wide refactoring  
-      ▹ MCP Integration: `refactor_code` tool for semantic refactoring
-
-    ▸ Advanced Refactoring
-      ▹ Extract Function: Extract code range into new function (basic support)  
-      ▹ Inline Function: Replace all calls with function body, remove definition (fully working)  
-      ▹ Convert Visibility: Toggle between `def` and `defp` (fully working)  
-      ▹ Rename Parameter: Rename parameter within function scope (fully working)  
-      ▹ Modify Attributes: Add/remove/update module attributes (fully working)  
-      ▹ Change Signature: Add/remove/reorder/rename parameters with call site updates (fully working)  
-      ▹ Move Function: Move function between modules (deferred - requires advanced semantic analysis)  
-      ▹ Extract Module: Extract multiple functions into new module (deferred - requires advanced semantic analysis)  
-      ▹ MCP Integration: `advanced_refactor` tool with 8 operation types  
+    ▸ Core Editor Infrastructure<br/>
+      ▹ Editor Types: Change types (replace, insert, delete) with validation<br/>
+      ▹ Backup Management: Automatic backups with timestamps and project-specific directories<br/>
+      ▹ Core Editor: Atomic operations with concurrent modification detection<br/>
+      ▹ Rollback Support: Restore previous versions from backup history<br/>
+      ▹ Configuration: Backup retention, compression, and directory settings<br/><br/>
+    ▸ Validation Pipeline<br/>
+      ▹ Validator Behavior: Behavior definition with callbacks and orchestration<br/>
+      ▹ Elixir Validator: Syntax validation using `Code.string_to_quoted/2`<br/>
+      ▹ Erlang Validator: Validation using `:erl_scan` and `:erl_parse`<br/>
+      ▹ Python Validator: Shell-out to Python's `ast.parse()` for syntax checking<br/>
+      ▹ Ruby Validator: `ruby -c` for Ruby syntax checking<br/>
+      ▹ JavaScript Validator: Node.js `vm.Script` for JS/TS validation<br/>
+      ▹ Automatic Detection: Language detection from file extension<br/>
+      ▹ Core Integration: Validators integrated with `Core.edit_file`<br/><br/>
+    ▸ MCP Edit Tools<br/>
+      ▹ edit_file: MCP tool for safe file editing with validation<br/>
+      ▹ validate_edit: Preview validation before applying changes<br/>
+      ▹ rollback_edit: Undo recent edits via MCP<br/>
+      ▹ edit_history: Query backup history<br/><br/>
+    ▸ Advanced Editing<br/>
+      ▹ Format Integration: Auto-format after edits with language-specific formatters<br/>
+      ▹ Formatter Detection: Automatic formatter discovery (mix, rebar3, black, rubocop, prettier)<br/>
+      ▹ Core Integration: `:format` option in `Core.edit_file`<br/>
+      ▹ Multi-file Transactions: Atomic cross-file changes with automatic rollback<br/>
+      ▹ Transaction Validation: Pre-validate all files before applying changes<br/>
+      ▹ MCP Integration: `edit_files` tool for coordinated multi-file edits<br/><br/>
+    ▸ Semantic Refactoring<br/>
+      ▹ AST Manipulation: Elixir-specific AST parsing and transformation<br/>
+      ▹ Rename Function: Rename functions with automatic call site updates<br/>
+      ▹ Rename Module: Rename modules with reference updates<br/>
+      ▹ Graph Integration: Use knowledge graph to find all affected files<br/>
+      ▹ Arity Support: Handle functions with multiple arities correctly<br/>
+      ▹ Scope Control: Module-level or project-wide refactoring<br/>
+      ▹ MCP Integration: `refactor_code` tool for semantic refactoring<br/><br/>
+    ▸ Advanced Refactoring<br/>
+      ▹ Extract Function: Extract code range into new function (basic support)<br/>
+      ▹ Inline Function: Replace all calls with function body, remove definition (fully working)<br/>
+      ▹ Convert Visibility: Toggle between `def` and `defp` (fully working)<br/>
+      ▹ Rename Parameter: Rename parameter within function scope (fully working)<br/>
+      ▹ Modify Attributes: Add/remove/update module attributes (fully working)<br/>
+      ▹ Change Signature: Add/remove/reorder/rename parameters with call site updates (fully working)<br/>
+      ▹ Move Function: Move function between modules (deferred - requires advanced semantic analysis)<br/>
+      ▹ Extract Module: Extract multiple functions into new module (deferred - requires advanced semantic analysis)<br/>
+      ▹ MCP Integration: `advanced_refactor` tool with 8 operation types<br/>
       ▹ Status: 6 of 8 operations fully functional, 2 deferred pending semantic analysis enhancements
 </details>
 <details>
   <summary>Advanced Graph Algorithms</summary>
-
-    ▸ Centrality Metrics  
-      ▹ Betweenness Centrality: Identify bridge/bottleneck functions using Brandes’ algorithm  
-      ▹ Closeness Centrality: Identify central functions based on average distance  
-      ▹ Normalized Scores: Configurable 0-1 normalization  
-      ▹ Performance Limits: `max_nodes` parameter for large graphs  
-      ▹ MCP Tools: `betweenness_centrality` and `closeness_centrality`
-
-    ▸ Community Detection  
-      ▹ Louvain Method: Modularity optimization for discovering architectural modules  
-      ▹ Label Propagation: Fast alternative algorithm (O(m) per iteration)  
-      ▹ Hierarchical Structure: Multi-level community detection support  
-      ▹ Weighted Edges: Support for edge weights (call frequency)  
-      ▹ MCP Tool: `detect_communities` with algorithm selection
-
-    ▸ Weighted Graph Support  
-      ▹ Edge Weights: Store call frequency in edge metadata (default: 1.0)  
-      ▹ Weighted Algorithms: Modularity computation with weights  
-      ▹ Store Integration: `get_edge_weight` helper function
-
-    ▸ Graph Visualization  
-      ▹ Graphviz DOT Export: Community clustering, colored nodes, weighted edges  
-      ▹ D3.js JSON Export: Force-directed graph format with metadata  
-      ▹ Node Coloring: By PageRank, betweenness, or degree centrality  
-      ▹ Edge Thickness: Proportional to edge weight  
+    ▸ Centrality Metrics<br/>
+      ▹ Betweenness Centrality: Identify bridge/bottleneck functions using Brandes’ algorithm<br/>
+      ▹ Closeness Centrality: Identify central functions based on average distance<br/>
+      ▹ Normalized Scores: Configurable 0-1 normalization<br/>
+      ▹ Performance Limits: `max_nodes` parameter for large graphs<br/>
+      ▹ MCP Tools: `betweenness_centrality` and `closeness_centrality`<br/><br/>
+    ▸ Community Detection<br/>
+      ▹ Louvain Method: Modularity optimization for discovering architectural modules<br/>
+      ▹ Label Propagation: Fast alternative algorithm (O(m) per iteration)<br/>
+      ▹ Hierarchical Structure: Multi-level community detection support<br/>
+      ▹ Weighted Edges: Support for edge weights (call frequency)<br/>
+      ▹ MCP Tool: `detect_communities` with algorithm selection<br/><br/>
+    ▸ Weighted Graph Support<br/>
+      ▹ Edge Weights: Store call frequency in edge metadata (default: 1.0)<br/>
+      ▹ Weighted Algorithms: Modularity computation with weights<br/>
+      ▹ Store Integration: `get_edge_weight` helper function<br/><br/>
+    ▸ Graph Visualization<br/>
+      ▹ Graphviz DOT Export: Community clustering, colored nodes, weighted edges<br/>
+      ▹ D3.js JSON Export: Force-directed graph format with metadata<br/>
+      ▹ Node Coloring: By PageRank, betweenness, or degree centrality<br/>
+      ▹ Edge Thickness: Proportional to edge weight<br/>
       ▹ MCP Tool: `export_graph` with format selection
 </details>
 <details>
   <summary>MCP Resources & Prompts</summary>
-
-    ▸ Resources (Read-only State Access)  
-      ▹ Graph Statistics: Node/edge counts, PageRank scores, centrality metrics  
-      ▹ Cache Status: Embedding cache health, file tracking, stale entities  
-      ▹ Model Configuration: Active model details, capabilities, readiness  
-      ▹ Project Index: Tracked files, language distribution, entity counts  
-      ▹ Algorithm Catalog: Available algorithms with parameters and complexity  
-      ▹ Analysis Summary: Pre-computed architectural insights and communities  
-      ▹ URI Format: `ragex://<category>/<resource>`  
-      ▹ Documentation: See [RESOURCES.md](RESOURCES.md)
-
-    ▸ Prompts (High-level Workflows)  
-      ▹ Analyze Architecture: Comprehensive architectural analysis (shallow/deep)  
-      ▹ Find Impact: Function importance and refactoring risk assessment  
-      ▹ Explain Code Flow: Narrative execution flow between functions  
-      ▹ Find Similar Code: Hybrid search with natural language descriptions  
-      ▹ Suggest Refactoring: Modularity, coupling, and complexity analysis  
-      ▹ Safe Rename: Impact preview for semantic refactoring operations  
-      ▹ Tool Composition: Each prompt suggests sequence of tools to use  
+    ▸ Resources (Read-only State Access)<br/>
+      ▹ Graph Statistics: Node/edge counts, PageRank scores, centrality metrics<br/>
+      ▹ Cache Status: Embedding cache health, file tracking, stale entities<br/>
+      ▹ Model Configuration: Active model details, capabilities, readiness<br/>
+      ▹ Project Index: Tracked files, language distribution, entity counts<br/>
+      ▹ Algorithm Catalog: Available algorithms with parameters and complexity<br/>
+      ▹ Analysis Summary: Pre-computed architectural insights and communities<br/>
+      ▹ URI Format: `ragex://<category>/<resource>`<br/>
+      ▹ Documentation: See [RESOURCES.md](RESOURCES.md)<br/><br/>
+    ▸ Prompts (High-level Workflows)<br/>
+      ▹ Analyze Architecture: Comprehensive architectural analysis (shallow/deep)<br/>
+      ▹ Find Impact: Function importance and refactoring risk assessment<br/>
+      ▹ Explain Code Flow: Narrative execution flow between functions<br/>
+      ▹ Find Similar Code: Hybrid search with natural language descriptions<br/>
+      ▹ Suggest Refactoring: Modularity, coupling, and complexity analysis<br/>
+      ▹ Safe Rename: Impact preview for semantic refactoring operations<br/>
+      ▹ Tool Composition: Each prompt suggests sequence of tools to use<br/>
       ▹ Documentation: See [PROMPTS.md](PROMPTS.md)
 </details>
 <details>
-  <summary>RAG System (:fire:)</summary>
-
-    ▸ AI Provider Abstraction  
-      ▹ Provider Behaviour: Clean interface for multiple AI providers  
-      ▹ DeepSeek R1: Full integration with deepseek-chat and deepseek-reasoner models  
-      ▹ Streaming Support: All providers support streaming responses (SSE/NDJSON)  
-      ▹ Real-time Responses: Progressive content delivery with token usage tracking  
-      ▹ OpenAI: GPT-4, GPT-4-turbo, GPT-3.5-turbo support  
-      ▹ Anthropic: Claude 3 Opus, Sonnet, and Haiku models  
-      ▹ Ollama: Local LLM support (llama2, mistral, codellama, phi)  
-      ▹ Configuration System: Multi-provider with fallback support  
-      ▹ Provider Registry: GenServer for runtime provider management
-
-    ▸ AI Response Caching  
-      ▹ ETS-based Cache: SHA256 key generation with TTL expiration  
-      ▹ LRU Eviction: Automatic eviction when max size reached  
-      ▹ Operation-specific TTL: Configurable per operation type  
-      ▹ Cache Statistics: Hit rate, misses, puts, evictions tracking  
-      ▹ Mix Tasks: `mix ragex.ai.cache.stats` and `mix ragex.ai.cache.clear`  
-      ▹ Performance: >50% cache hit rate for repeated queries
-
-    ▸ Usage Tracking & Rate Limiting  
-      ▹ Per-provider Tracking: Requests, tokens, and cost estimation  
-      ▹ Real-time Costs: Accurate pricing for OpenAI, Anthropic, DeepSeek  
-      ▹ Time-windowed Limits: Per-minute, per-hour, per-day controls  
-      ▹ Automatic Enforcement: Rate limit checks before API calls  
-      ▹ Mix Tasks: `mix ragex.ai.usage.stats` for monitoring  
-      ▹ MCP Tools: `get_ai_usage`, `get_ai_cache_stats`
-
-    ▸ Metastatic Integration  
-      ▹ MetaAST Analyzer: Enhanced cross-language analysis via Metastatic library  
-      ▹ Supported Languages: Elixir, Erlang, Python, Ruby  
-      ▹ Fallback Strategy: Graceful degradation to native analyzers  
-      ▹ Feature Flags: Configurable `use_metastatic` option
-
-    ▸ RAG Pipeline  
-      ▹ Context Builder: Format retrieval results for AI consumption (8000 char max)  
-      ▹ Prompt Templates: Query, explain, and suggest operations  
-      ▹ Full Pipeline: Retrieval → Context → Prompting → Generation → Post-processing  
-      ▹ Hybrid Retrieval: Leverages semantic + graph-based search  
-      ▹ Cache Integration: Automatic caching of AI responses  
-      ▹ Usage Tracking: All requests tracked with cost estimation
-
-    ▸ Agent-Based RAG (chat & audit)  
-      ▹ The AI drives retrieval: agent calls Ragex MCP tools directly instead of receiving pre-fetched context  
-      ▹ `mix ragex.chat`: every question answered via ReAct loop with `hybrid_search`, `semantic_search`, `read_file`, `query_graph`, etc.  
-      ▹ `mix ragex.audit`: AI report enriched by read-only RAG tool calls for concrete evidence (`ToolSchema.rag_query_tools/1`)  
-      ▹ Evidence-based findings: AI can quote actual function bodies, confirm dependency paths, and check coupling metrics  
-      ▹ Safe scoping: heavy re-analysis tools excluded so the analysis pipeline is never re-triggered during report writing
-
-    ▸ MCP RAG Tools  
-      ▹ `rag_query`: Answer general codebase questions with AI  
-      ▹ `rag_explain`: Explain code with aspect focus (purpose, complexity, dependencies, all)  
-      ▹ `rag_suggest`: Suggest improvements (performance, readability, testing, security, all)  
-      ▹ `rag_query_stream`: Streaming version of rag_query (internally uses streaming)  
-      ▹ `rag_explain_stream`: Streaming version of rag_explain (internally uses streaming)  
-      ▹ `rag_suggest_stream`: Streaming version of rag_suggest (internally uses streaming)  
-      ▹ `get_ai_usage`: Query usage statistics and costs per provider  
-      ▹ `get_ai_cache_stats`: View cache performance metrics  
-      ▹ `clear_ai_cache`: Clear cache via MCP  
-      ▹ Provider Override: Select provider per-query (openai, anthropic, deepseek_r1, ollama)  
-
-    ▸ MetaAST-Enhanced Retrieval
-      ▹ Context-Aware Ranking: Query intent detection (explain, refactor, example, debug)  
-      ▹ Purity Analysis: Boost pure functions, penalize side effects  
-      ▹ Complexity Scoring: Favor simple code for explanations, complex code for refactoring  
-      ▹ Cross-Language Search: Find equivalent constructs across languages via MetaAST  
-      ▹ Query Expansion: Automatic synonym injection and cross-language terms  
-      ▹ Pattern Search: Find all implementations of MetaAST patterns (map, filter, lambda, etc.)  
-      ▹ Hybrid Integration: MetaAST ranking applied to all search strategies  
-      ▹ MCP Tools: `metaast_search`, `cross_language_alternatives`, `expand_query`, `find_metaast_pattern`  
+  <summary>RAG System (🔥)</summary>
+    ▸ AI Provider Abstraction<br/>
+      ▹ Provider Behaviour: Clean interface for multiple AI providers<br/>
+      ▹ DeepSeek R1: Full integration with deepseek-chat and deepseek-reasoner models<br/>
+      ▹ Streaming Support: All providers support streaming responses (SSE/NDJSON)<br/>
+      ▹ Real-time Responses: Progressive content delivery with token usage tracking<br/>
+      ▹ OpenAI: GPT-4, GPT-4-turbo, GPT-3.5-turbo support<br/>
+      ▹ Anthropic: Claude 3 Opus, Sonnet, and Haiku models<br/>
+      ▹ Ollama: Local LLM support (llama2, mistral, codellama, phi)<br/>
+      ▹ Configuration System: Multi-provider with fallback support<br/>
+      ▹ Provider Registry: GenServer for runtime provider management<br/><br/>
+    ▸ AI Response Caching<br/>
+      ▹ ETS-based Cache: SHA256 key generation with TTL expiration<br/>
+      ▹ LRU Eviction: Automatic eviction when max size reached<br/>
+      ▹ Operation-specific TTL: Configurable per operation type<br/>
+      ▹ Cache Statistics: Hit rate, misses, puts, evictions tracking<br/>
+      ▹ Mix Tasks: `mix ragex.ai.cache.stats` and `mix ragex.ai.cache.clear`<br/>
+      ▹ Performance: >50% cache hit rate for repeated queries<br/><br/>
+    ▸ Usage Tracking & Rate Limiting<br/>
+      ▹ Per-provider Tracking: Requests, tokens, and cost estimation<br/>
+      ▹ Real-time Costs: Accurate pricing for OpenAI, Anthropic, DeepSeek<br/>
+      ▹ Time-windowed Limits: Per-minute, per-hour, per-day controls<br/>
+      ▹ Automatic Enforcement: Rate limit checks before API calls<br/>
+      ▹ Mix Tasks: `mix ragex.ai.usage.stats` for monitoring<br/>
+      ▹ MCP Tools: `get_ai_usage`, `get_ai_cache_stats`<br/><br/>
+    ▸ Metastatic Integration<br/>
+      ▹ MetaAST Analyzer: Enhanced cross-language analysis via Metastatic library<br/>
+      ▹ Supported Languages: Elixir, Erlang, Python, Ruby, Haskell<br/>
+      ▹ Fallback Strategy: Graceful degradation to native analyzers<br/>
+      ▹ Feature Flags: Configurable `use_metastatic` option<br/><br/>
+    ▸ RAG Pipeline<br/>
+      ▹ Context Builder: Format retrieval results for AI consumption (8000 char max)<br/>
+      ▹ Prompt Templates: Query, explain, and suggest operations<br/>
+      ▹ Full Pipeline: Retrieval → Context → Prompting → Generation → Post-processing<br/>
+      ▹ Hybrid Retrieval: Leverages semantic + graph-based search<br/>
+      ▹ Cache Integration: Automatic caching of AI responses<br/>
+      ▹ Usage Tracking: All requests tracked with cost estimation<br/><br/>
+    ▸ Agent-Based RAG (chat & audit)<br/>
+      ▹ The AI drives retrieval: agent calls Ragex MCP tools directly instead of receiving pre-fetched context<br/>
+      ▹ `mix ragex.chat`: every question answered via ReAct loop with `hybrid_search`, `semantic_search`, `read_file`, `query_graph`, etc.<br/>
+      ▹ `mix ragex.audit`: AI report enriched by read-only RAG tool calls for concrete evidence (`ToolSchema.rag_query_tools/1`)<br/>
+      ▹ Evidence-based findings: AI can quote actual function bodies, confirm dependency paths, and check coupling metrics<br/>
+      ▹ Safe scoping: heavy re-analysis tools excluded so the analysis pipeline is never re-triggered during report writing<br/><br/>
+    ▸ MCP RAG Tools<br/>
+      ▹ `rag_query`: Answer general codebase questions with AI<br/>
+      ▹ `rag_explain`: Explain code with aspect focus (purpose, complexity, dependencies, all)<br/>
+      ▹ `rag_suggest`: Suggest improvements (performance, readability, testing, security, all)<br/>
+      ▹ `rag_query_stream`: Streaming version of rag_query (internally uses streaming)<br/>
+      ▹ `rag_explain_stream`: Streaming version of rag_explain (internally uses streaming)<br/>
+      ▹ `rag_suggest_stream`: Streaming version of rag_suggest (internally uses streaming)<br/>
+      ▹ `get_ai_usage`: Query usage statistics and costs per provider<br/>
+      ▹ `get_ai_cache_stats`: View cache performance metrics<br/>
+      ▹ `clear_ai_cache`: Clear cache via MCP<br/>
+      ▹ Provider Override: Select provider per-query (openai, anthropic, deepseek_r1, ollama)<br/><br/>
+    ▸ MetaAST-Enhanced Retrieval<br/>
+      ▹ Context-Aware Ranking: Query intent detection (explain, refactor, example, debug)<br/>
+      ▹ Purity Analysis: Boost pure functions, penalize side effects<br/>
+      ▹ Complexity Scoring: Favor simple code for explanations, complex code for refactoring<br/>
+      ▹ Cross-Language Search: Find equivalent constructs across languages via MetaAST<br/>
+      ▹ Query Expansion: Automatic synonym injection and cross-language terms<br/>
+      ▹ Pattern Search: Find all implementations of MetaAST patterns (map, filter, lambda, etc.)<br/>
+      ▹ Hybrid Integration: MetaAST ranking applied to all search strategies<br/>
+      ▹ MCP Tools: `metaast_search`, `cross_language_alternatives`, `expand_query`, `find_metaast_pattern`
 </details>
 <details>
-  <summary>AI Features (:fire:)</summary>
-
-    ▸ Foundation Layer  
-      ▹ Features.Config: Per-feature flags with master switch  
-      ▹ Features.Context: Rich context builders (6 context types)  
-      ▹ Features.Cache: Automatic caching with TTL policies (3-7 days)  
-      ▹ Graceful degradation when AI disabled
-
-    ▸ High-Priority Features  
-      ▹ ValidationAI: AI-enhanced validation error explanations  
-      ▹ AIPreview: Refactoring preview with risk assessment and recommendations
-
-    ▸ Analysis Features  
-      ▹ AIRefiner: Dead code false positive reduction (50%+ target)  
-      ▹ AIAnalyzer: Semantic Type IV clone detection (>70% accuracy target)  
-      ▹ AIInsights: Architectural insights for coupling and circular dependencies  
-      ▹ Context-aware recommendations with technical debt scoring
-
-    ▸ Configuration  
-      ▹ Opt-in via `:ai_features` config (dead_code_refinement, duplication_semantic_analysis, etc.)  
-      ▹ Master switch with per-feature overrides  
-      ▹ Integrates with existing analysis modules (DeadCode, Duplication, DependencyGraph)  
+  <summary>AI Features (🔥)</summary>
+    ▸ Foundation Layer<br/>
+      ▹ Features.Config: Per-feature flags with master switch<br/>
+      ▹ Features.Context: Rich context builders (6 context types)<br/>
+      ▹ Features.Cache: Automatic caching with TTL policies (3-7 days)<br/>
+      ▹ Graceful degradation when AI disabled<br/><br/>
+    ▸ High-Priority Features<br/>
+      ▹ ValidationAI: AI-enhanced validation error explanations<br/>
+      ▹ AIPreview: Refactoring preview with risk assessment and recommendations<br/><br/>
+    ▸ Analysis Features<br/>
+      ▹ AIRefiner: Dead code false positive reduction (50%+ target)<br/>
+      ▹ AIAnalyzer: Semantic Type IV clone detection (>70% accuracy target)<br/>
+      ▹ AIInsights: Architectural insights for coupling and circular dependencies<br/>
+      ▹ Context-aware recommendations with technical debt scoring<br/><br/>
+    ▸ Configuration<br/>
+      ▹ Opt-in via `:ai_features` config (dead_code_refinement, duplication_semantic_analysis, etc.)<br/>
+      ▹ Master switch with per-feature overrides<br/>
+      ▹ Integrates with existing analysis modules (DeadCode, Duplication, DependencyGraph)<br/>
       ▹ MCP tools: validate_with_ai, enhanced preview_refactor
 </details>
 <details>
   <summary>Code Analysis & Quality</summary>
-
-    ▸ Dead Code Detection  
-      ▹ Graph-Based Analysis: Find unused functions via call graph traversal  
-      ▹ Confidence Scoring: 0.0-1.0 score to distinguish callbacks from dead code  
-      ▹ Pattern Detection: AST-based unreachable code detection via Metastatic  
-      ▹ Intraprocedural Analysis: Constant conditionals, unreachable branches  
-      ▹ Interprocedural Analysis: Unused exports, private functions  
-      ▹ Callback Recognition: GenServer, Phoenix, and other framework callbacks  
-      ▹ MCP Tools: `find_dead_code`, `analyze_dead_code_patterns`
-
-    ▸ Dependency Analysis  
-      ▹ Coupling Metrics: Afferent (Ca) and Efferent (Ce) coupling  
-      ▹ Instability: I = Ce / (Ca + Ce) ranges from 0 (stable) to 1 (unstable)  
-      ▹ Circular Dependencies: Detect cycles at module and function levels  
-      ▹ Transitive Dependencies: Optional deep dependency traversal  
-      ▹ God Module Detection: Find modules with high coupling  
-      ▹ MCP Tools: `analyze_dependencies`, `find_circular_dependencies`, `coupling_report`
-
-    ▸ Code Duplication Detection  
-      ▹ AST-Based Clones: Type I-IV clone detection via Metastatic  
-      ▹ Type I: Exact clones (whitespace/comment differences only)  
-      ▹ Type II: Renamed clones (same structure, different identifiers)  
-      ▹ Type III: Near-miss clones (similar with modifications, configurable threshold)  
-      ▹ Type IV: Semantic clones (different syntax, same behavior)  
-      ▹ Embedding-Based Similarity: Semantic code similarity using ML embeddings  
-      ▹ Directory Scanning: Recursive multi-file analysis with exclusion patterns  
-      ▹ Reports: Summary, detailed, and JSON formats  
-      ▹ MCP Tools: `find_duplicates`, `find_similar_code`
-
-    ▸ Impact Analysis
-      ▹ Change Impact: Predict affected code via graph traversal  
-      ▹ Risk Scoring: Combine importance (PageRank) + coupling + complexity  
-      ▹ Test Discovery: Find affected tests automatically  
-      ▹ Effort Estimation: Estimate refactoring time/complexity for 6 operations  
-      ▹ Risk Levels: Low (<0.3), medium (0.3-0.6), high (0.6-0.8), critical (≥0.8)  
-      ▹ Complexity Levels: Low (<5 changes), medium (5-20), high (20-50), very high (50+)  
-      ▹ Support Operations: rename_function, rename_module, extract_function, inline_function, move_function, change_signature  
-      ▹ MCP Tools: `analyze_impact`, `estimate_refactoring_effort`, `risk_assessment`
-
-    ▸ Code Smells Detection (Metastatic Integration)  
-      ▹ Long Function: Functions with too many statements (default: >50)  
-      ▹ Deep Nesting: Excessive nesting depth (default: >4 levels)  
-      ▹ Magic Numbers: Unexplained numeric literals in expressions  
-      ▹ Complex Conditionals: Deeply nested boolean operations  
-      ▹ Long Parameter List: Too many parameters (default: >5)  
-      ▹ Configurable Thresholds: Custom limits per project  
-      ▹ Severity Levels: Critical, high, medium, low  
-      ▹ Actionable Suggestions: Refactoring recommendations for each smell  
-      ▹ Directory Scanning: Recursive analysis with parallel processing  
-      ▹ Filtering: By severity or smell type  
-      ▹ MCP Tool: `detect_smells`
-
-    ▸ Business Logic Analysis (20 Metastatic Analyzers)  
-      ▹ Control Flow Issues:  
-        • Callback Hell: Excessive nested callbacks (default: >3 levels)  
-        • Missing Error Handling: Functions without try/rescue or error tuples  
-        • Silent Error Case: Pattern matches that ignore error tuples  
-        • Swallowing Exception: Rescue clauses without re-raising or logging  
-      ▹ Data & Configuration:  
-        • Hardcoded Value: URLs, secrets, or config values in code  
-        • Direct Struct Update: Using `%{struct | ...}` instead of changesets/contexts  
-        • Missing Preload: Ecto queries without required preloads  
-      ▹ Performance & Scalability:  
-        • N+1 Query: Multiple database queries in iterations  
-        • Inefficient Filter: Filtering after fetching instead of in query  
-        • Unmanaged Task: `Task.start` without supervision  
-        • Blocking in Plug: Slow synchronous operations in plug pipeline  
-        • Sync Over Async: Using sync calls when async is available  
-      ▹ Observability:  
-        • Missing Telemetry for External HTTP: External API calls without telemetry  
-        • Missing Telemetry in Auth Plug: Auth operations without metrics  
-        • Missing Telemetry in LiveView Mount: LiveView lifecycle without tracking  
-        • Missing Telemetry in Oban Worker: Background jobs without observability  
-        • Telemetry in Recursive Function: Performance overhead from recursive telemetry  
-      ▹ Framework-Specific:  
-        • Missing Handle Async: LiveView async results without handlers  
-        • Inline JavaScript: JavaScript in Phoenix templates/LiveView  
-        • Missing Throttle: User-facing actions without rate limiting  
-      ▹ Tier Classification: 4 tiers from pure MetaAST to content analysis  
-      ▹ Actionable Recommendations: Specific fixes for each issue type  
-      ▹ Severity Levels: Critical, high, medium, low, info  
-      ▹ Directory Scanning: Recursive analysis with file type detection  
-      ▹ Filtering: By analyzer, minimum severity, or file patterns  
-      ▹ Reports: Summary with counts by analyzer and severity  
-      ▹ MCP Tool: `analyze_business_logic`  
-      ▹ Mix Task: `mix ragex.analyze --business-logic`
-
-    ▸ Quality Metrics (Metastatic Integration)
-      ▹ Complexity Metrics (Full Suite):  
-        • Cyclomatic Complexity: McCabe metric (decision points + 1)  
-        • Cognitive Complexity: Structural complexity with nesting penalties  
-        • Nesting Depth: Maximum nesting level tracking  
-      ▹ Halstead Metrics (Comprehensive):  
-        • Vocabulary: distinct_operators + distinct_operands  
-        • Length: total_operators + total_operands  
-        • Volume: length × log₂(vocabulary)  
-        • Difficulty: (distinct_operators / 2) × (total_operands / distinct_operands)  
-        • Effort: volume × difficulty  
-      ▹ Lines of Code (Detailed):  
-        • Physical Lines: Total lines including blank/comments  
-        • Logical Lines: Executable statements only  
-        • Comments: Comment lines count  
-        • Blank Lines: Whitespace-only lines  
-      ▹ Function Metrics:  
-        • Statement Count: Number of executable statements  
-        • Return Points: Multiple return analysis  
-        • Variable Count: Local variable tracking  
-        • Parameter Count: Function signature complexity  
-      ▹ Purity Analysis: Function purity and side-effect detection  
-      ▹ Per-Function Analysis: Individual function breakdown with all metrics  
-      ▹ Project-wide Reports: Aggregated statistics by language  
-      ▹ MCP Tools: `analyze_quality`, `quality_report`, `find_complex_code`
-
-    ▸ Documentation  
-      ▹ Comprehensive Guide: See [ANALYSIS](stuff/docs/ANALYSIS.md) for complete API documentation  
-      ▹ Analysis Approaches: AST-based vs embedding-based strategies  
-      ▹ Usage Examples: API and MCP tool examples with code snippets  
-      ▹ Best Practices: Threshold recommendations, workflow tips  
-      ▹ Troubleshooting: Common issues and solutions  
+    ▸ Dead Code Detection<br/>
+      ▹ Graph-Based Analysis: Find unused functions via call graph traversal<br/>
+      ▹ Confidence Scoring: 0.0-1.0 score to distinguish callbacks from dead code<br/>
+      ▹ Pattern Detection: AST-based unreachable code detection via Metastatic<br/>
+      ▹ Intraprocedural Analysis: Constant conditionals, unreachable branches<br/>
+      ▹ Interprocedural Analysis: Unused exports, private functions<br/>
+      ▹ Callback Recognition: GenServer, Phoenix, and other framework callbacks<br/>
+      ▹ MCP Tools: `find_dead_code`, `analyze_dead_code_patterns`<br/><br/>
+    ▸ Dependency Analysis<br/>
+      ▹ Coupling Metrics: Afferent (Ca) and Efferent (Ce) coupling<br/>
+      ▹ Instability: I = Ce / (Ca + Ce) ranges from 0 (stable) to 1 (unstable)<br/>
+      ▹ Circular Dependencies: Detect cycles at module and function levels<br/>
+      ▹ Transitive Dependencies: Optional deep dependency traversal<br/>
+      ▹ God Module Detection: Find modules with high coupling<br/>
+      ▹ MCP Tools: `analyze_dependencies`, `find_circular_dependencies`, `coupling_report`<br/><br/>
+    ▸ Code Duplication Detection<br/>
+      ▹ AST-Based Clones: Type I-IV clone detection via Metastatic<br/>
+      ▹ Type I: Exact clones (whitespace/comment differences only)<br/>
+      ▹ Type II: Renamed clones (same structure, different identifiers)<br/>
+      ▹ Type III: Near-miss clones (similar with modifications, configurable threshold)<br/>
+      ▹ Type IV: Semantic clones (different syntax, same behavior)<br/>
+      ▹ Embedding-Based Similarity: Semantic code similarity using ML embeddings<br/>
+      ▹ Directory Scanning: Recursive multi-file analysis with exclusion patterns<br/>
+      ▹ Reports: Summary, detailed, and JSON formats<br/>
+      ▹ MCP Tools: `find_duplicates`, `find_similar_code`<br/><br/>
+    ▸ Impact Analysis<br/>
+      ▹ Change Impact: Predict affected code via graph traversal<br/>
+      ▹ Risk Scoring: Combine importance (PageRank) + coupling + complexity<br/>
+      ▹ Test Discovery: Find affected tests automatically<br/>
+      ▹ Effort Estimation: Estimate refactoring time/complexity for 6 operations<br/>
+      ▹ Risk Levels: Low (<0.3), medium (0.3-0.6), high (0.6-0.8), critical (≥0.8)<br/>
+      ▹ Complexity Levels: Low (<5 changes), medium (5-20), high (20-50), very high (50+)<br/>
+      ▹ Support Operations: rename_function, rename_module, extract_function, inline_function, move_function, change_signature<br/>
+      ▹ MCP Tools: `analyze_impact`, `estimate_refactoring_effort`, `risk_assessment`<br/><br/>
+    ▸ Code Smells Detection (Metastatic Integration)<br/>
+      ▹ Long Function: Functions with too many statements (default: >50)<br/>
+      ▹ Deep Nesting: Excessive nesting depth (default: >4 levels)<br/>
+      ▹ Magic Numbers: Unexplained numeric literals in expressions<br/>
+      ▹ Complex Conditionals: Deeply nested boolean operations<br/>
+      ▹ Long Parameter List: Too many parameters (default: >5)<br/>
+      ▹ Configurable Thresholds: Custom limits per project<br/>
+      ▹ Severity Levels: Critical, high, medium, low<br/>
+      ▹ Actionable Suggestions: Refactoring recommendations for each smell<br/>
+      ▹ Directory Scanning: Recursive analysis with parallel processing<br/>
+      ▹ Filtering: By severity or smell type<br/>
+      ▹ MCP Tool: `detect_smells`<br/><br/>
+    ▸ Business Logic Analysis (20 Metastatic Analyzers)<br/>
+      ▹ Control Flow Issues:<br/>
+        • Callback Hell: Excessive nested callbacks (default: >3 levels)<br/>
+        • Missing Error Handling: Functions without try/rescue or error tuples<br/>
+        • Silent Error Case: Pattern matches that ignore error tuples<br/>
+        • Swallowing Exception: Rescue clauses without re-raising or logging<br/><br/>
+      ▹ Data & Configuration:<br/>
+        • Hardcoded Value: URLs, secrets, or config values in code<br/>
+        • Direct Struct Update: Using `%{struct | ...}` instead of changesets/contexts<br/>
+        • Missing Preload: Ecto queries without required preloads<br/><br/>
+      ▹ Performance & Scalability:<br/>
+        • N+1 Query: Multiple database queries in iterations<br/>
+        • Inefficient Filter: Filtering after fetching instead of in query<br/>
+        • Unmanaged Task: `Task.start` without supervision<br/>
+        • Blocking in Plug: Slow synchronous operations in plug pipeline<br/>
+        • Sync Over Async: Using sync calls when async is available<br/><br/>
+      ▹ Observability:<br/>
+        • Missing Telemetry for External HTTP: External API calls without telemetry<br/>
+        • Missing Telemetry in Auth Plug: Auth operations without metrics<br/>
+        • Missing Telemetry in LiveView Mount: LiveView lifecycle without tracking<br/>
+        • Missing Telemetry in Oban Worker: Background jobs without observability<br/>
+        • Telemetry in Recursive Function: Performance overhead from recursive telemetry<br/><br/>
+      ▹ Framework-Specific:<br/>
+        • Missing Handle Async: LiveView async results without handlers<br/>
+        • Inline JavaScript: JavaScript in Phoenix templates/LiveView<br/>
+        • Missing Throttle: User-facing actions without rate limiting<br/><br/>
+      ▹ Tier Classification: 4 tiers from pure MetaAST to content analysis<br/>
+      ▹ Actionable Recommendations: Specific fixes for each issue type<br/>
+      ▹ Severity Levels: Critical, high, medium, low, info<br/>
+      ▹ Directory Scanning: Recursive analysis with file type detection<br/>
+      ▹ Filtering: By analyzer, minimum severity, or file patterns<br/>
+      ▹ Reports: Summary with counts by analyzer and severity<br/>
+      ▹ MCP Tool: `analyze_business_logic`<br/>
+      ▹ Mix Task: `mix ragex.analyze --business-logic`<br/><br/>
+    ▸ Quality Metrics (Metastatic Integration)<br/>
+      ▹ Complexity Metrics (Full Suite):<br/>
+        • Cyclomatic Complexity: McCabe metric (decision points + 1)<br/>
+        • Cognitive Complexity: Structural complexity with nesting penalties<br/>
+        • Nesting Depth: Maximum nesting level tracking<br/><br/>
+      ▹ Halstead Metrics (Comprehensive):<br/>
+        • Vocabulary: distinct_operators + distinct_operands<br/>
+        • Length: total_operators + total_operands<br/>
+        • Volume: length × log₂(vocabulary)<br/>
+        • Difficulty: (distinct_operators / 2) × (total_operands / distinct_operands)<br/>
+        • Effort: volume × difficulty<br/><br/>
+      ▹ Lines of Code (Detailed):<br/>
+        • Physical Lines: Total lines including blank/comments<br/>
+        • Logical Lines: Executable statements only<br/>
+        • Comments: Comment lines count<br/>
+        • Blank Lines: Whitespace-only lines<br/><br/>
+      ▹ Function Metrics:<br/>
+        • Statement Count: Number of executable statements<br/>
+        • Return Points: Multiple return analysis<br/>
+        • Variable Count: Local variable tracking<br/>
+        • Parameter Count: Function signature complexity<br/>
+      ▹ Purity Analysis: Function purity and side-effect detection<br/>
+      ▹ Per-Function Analysis: Individual function breakdown with all metrics<br/>
+      ▹ Project-wide Reports: Aggregated statistics by language<br/>
+      ▹ MCP Tools: `analyze_quality`, `quality_report`, `find_complex_code`<br/><br/>
+    ▸ Documentation<br/>
+      ▹ Comprehensive Guide: See [ANALYSIS](stuff/docs/ANALYSIS.md) for complete API documentation<br/>
+      ▹ Analysis Approaches: AST-based vs embedding-based strategies<br/>
+      ▹ Usage Examples: API and MCP tool examples with code snippets<br/>
+      ▹ Best Practices: Threshold recommendations, workflow tips<br/>
+      ▹ Troubleshooting: Common issues and solutions<br/>
       ▹ CI/CD Integration: Pre-commit hooks, pipeline examples
 </details>
 <details>
   <summary>CLI Improvements</summary>
-
-    ▸ CLI Foundation
-      ▹ Colors: ANSI color helpers with NO_COLOR support
-      ▹ Output: Rich formatting (sections, lists, tables, key-value pairs, diffs)
-      ▹ Progress: Spinners and progress indicators
-      ▹ Prompt: Interactive prompts (confirm, select, input, number with validation)
-
-    ▸ Enhanced Mix Tasks (7 upgraded)
-      ▹ `mix ragex.cache.{stats,refresh,clear}` - Colored output, spinners, confirmations
-      ▹ `mix ragex.embeddings.migrate` - Sections, formatted output, interactive confirmations
-      ▹ `mix ragex.ai.{usage.stats,cache.stats,cache.clear}` - Rich formatting, color-coded metrics
-
-    ▸ Interactive Wizards
-      ▹ `mix ragex.chat` - AI-powered codebase Q&A via Ragex MCP tools:  
-        • Agent ReAct loop — AI calls `hybrid_search`, `semantic_search`, `read_file`, `query_graph`, etc.  
-        • Initial analysis + streaming audit report on first run  
-        • Multi-turn conversation with session memory  
-        • `--provider` / `--model` overrides; `--skip-analysis` to reuse existing graph  
-        • `--debug` to print tool-call traces to stderr  
-      ▹ `mix ragex.audit` - AI-powered code audit report:  
-        • Static analysis + AI report with optional RAG evidence retrieval  
-        • JSON (default) or Markdown output; `--output FILE` to save  
-        • `--format markdown` renders the report directly in the terminal  
-        • `--verbose` shows progress; `--dead-code` enables dead-code section  
-      ▹ `mix ragex.refactor` - Interactive refactoring wizard:
-        • 5 operations: rename_function, rename_module, change_signature, extract_function, inline_function
-        • Parameter gathering with validation
-        • Knowledge graph integration
-        • Preview and confirmation before applying
-        • Both interactive and direct CLI modes
-      ▹ `mix ragex.configure` - Configuration wizard:
-        • Smart project type detection
-        • Embedding model comparison and selection
-        • AI provider configuration with environment detection
-        • Analysis options and cache settings
-        • Generates complete `.ragex.exs` configuration file
-
-    ▸ Live Dashboard
-      ▹ `mix ragex.dashboard` - Real-time monitoring:
-        • 4 stat panels: Graph, Embeddings, Cache, AI Usage
-        • Live updating display (customizable refresh interval)
-        • Color-coded metrics with thresholds
-        • Activity log
-
-    ▸ Shell Completions
-      ▹ Bash, Zsh, Fish completion scripts
-      ▹ `mix ragex.completions` - Auto-detect and install completions
-      ▹ Task name completion with descriptions
-      ▹ Context-aware argument completion
-
-    ▸ Documentation
-      ▹ Man pages in groff format (ragex.1)
-      ▹ `mix ragex.install_man` - System-wide man page installation
-      ▹ Complete command reference (10 Mix tasks)
+    ▸ CLI Foundation<br/>
+      ▹ Colors: ANSI color helpers with NO_COLOR support<br/>
+      ▹ Output: Rich formatting (sections, lists, tables, key-value pairs, diffs)<br/>
+      ▹ Progress: Spinners and progress indicators<br/>
+      ▹ Prompt: Interactive prompts (confirm, select, input, number with validation)<br/><br/>
+    ▸ Enhanced Mix Tasks (7 upgraded)<br/>
+      ▹ `mix ragex.cache.{stats,refresh,clear}` - Colored output, spinners, confirmations<br/>
+      ▹ `mix ragex.embeddings.migrate` - Sections, formatted output, interactive confirmations<br/>
+      ▹ `mix ragex.ai.{usage.stats,cache.stats,cache.clear}` - Rich formatting, color-coded metrics<br/><br/>
+    ▸ Interactive Wizards<br/>
+      ▹ `mix ragex.chat` - AI-powered codebase Q&A via Ragex MCP tools:<br/>
+        • Agent ReAct loop — AI calls `hybrid_search`, `semantic_search`, `read_file`, `query_graph`, etc.<br/>
+        • Initial analysis + streaming audit report on first run<br/>
+        • Multi-turn conversation with session memory<br/>
+        • `--provider` / `--model` overrides; `--skip-analysis` to reuse existing graph<br/>
+        • `--debug` to print tool-call traces to stderr<br/><br/>
+      ▹ `mix ragex.audit` - AI-powered code audit report:<br/>
+        • Static analysis + AI report with optional RAG evidence retrieval<br/>
+        • JSON (default) or Markdown output; `--output FILE` to save<br/>
+        • `--format markdown` renders the report directly in the terminal<br/>
+        • `--verbose` shows progress; `--dead-code` enables dead-code section<br/><br/>
+      ▹ `mix ragex.refactor` - Interactive refactoring wizard:<br/>
+        • 5 operations: rename_function, rename_module, change_signature, extract_function, inline_function<br/>
+        • Parameter gathering with validation<br/>
+        • Knowledge graph integration<br/>
+        • Preview and confirmation before applying<br/>
+        • Both interactive and direct CLI modes<br/><br/>
+      ▹ `mix ragex.configure` - Configuration wizard:<br/>
+        • Smart project type detection<br/>
+        • Embedding model comparison and selection<br/>
+        • AI provider configuration with environment detection<br/>
+        • Analysis options and cache settings<br/>
+        • Generates complete `.ragex.exs` configuration file<br/><br/>
+    ▸ Live Dashboard<br/>
+      ▹ `mix ragex.dashboard` - Real-time monitoring:<br/>
+        • 4 stat panels: Graph, Embeddings, Cache, AI Usage<br/>
+        • Live updating display (customizable refresh interval)<br/>
+        • Color-coded metrics with thresholds<br/>
+        • Activity log<br/><br/>
+    ▸ Shell Completions<br/>
+      ▹ Bash, Zsh, Fish completion scripts<br/>
+      ▹ `mix ragex.completions` - Auto-detect and install completions<br/>
+      ▹ Task name completion with descriptions<br/>
+      ▹ Context-aware argument completion<br/><br/>
+    ▸ Documentation<br/>
+      ▹ Man pages in groff format (ragex.1)<br/>
+      ▹ `mix ragex.install_man` - System-wide man page installation<br/>
+      ▹ Complete command reference (10 Mix tasks)<br/>
       ▹ Configuration guide and usage examples
 </details>
 
@@ -494,6 +445,7 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 - [✓] Code quality analysis
 - [✓] Impact analysis and risk assessment
 - [✓] CLI improvements (interactive wizards, dashboard, completions, man pages)
+- [✗] CI tasks
 - [✗] Provider health checks and auto-failover
 - [✗] Production optimizations
 - [✗] Additional language support
