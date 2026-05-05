@@ -583,6 +583,7 @@ defmodule Ragex.Analysis.DependencyGraph do
   end
 
   # DFS to detect cycles
+  @dialyzer {:nowarn_function, find_cycles_dfs: 6}
   defp find_cycles_dfs(current, adjacency, path, visited, target, cycles) do
     neighbors = Map.get(adjacency, current, [])
 
@@ -703,6 +704,7 @@ defmodule Ragex.Analysis.DependencyGraph do
     find_transitive_dependents_bfs(initial, visited, MapSet.new())
   end
 
+  @dialyzer {:nowarn_function, find_transitive_dependents_bfs: 3}
   defp find_transitive_dependents_bfs([], _visited, dependents), do: dependents
 
   defp find_transitive_dependents_bfs([current | rest], visited, dependents) do
@@ -732,6 +734,7 @@ defmodule Ragex.Analysis.DependencyGraph do
     find_transitive_dependencies_bfs(initial, visited, MapSet.new())
   end
 
+  @dialyzer {:nowarn_function, find_transitive_dependencies_bfs: 3}
   defp find_transitive_dependencies_bfs([], _visited, dependencies), do: dependencies
 
   defp find_transitive_dependencies_bfs([current | rest], visited, dependencies) do

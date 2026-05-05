@@ -403,10 +403,23 @@ defmodule Ragex.Retrieval.MetaASTRanker do
         :module -> ["module"]
         :class -> ["class", "oop"]
         :namespace -> ["namespace"]
+        :actor -> ["actor", "genserver", "process"]
+        :supervisor -> ["supervisor", "otp", "fault_tolerance"]
+        :app -> ["application", "otp", "lifecycle"]
+        :fsm -> ["state_machine", "fsm", "transitions"]
+        :struct -> ["struct", "data"]
+        :enum -> ["enum", "enumeration"]
+        :proof -> ["proof", "formal_verification"]
         _ -> []
       end
 
     ["container", to_string(name)] ++ type_features
+  end
+
+  defp extract_features_from_ast({:child_spec, meta, _body}) when is_list(meta) do
+    mod = Keyword.get(meta, :module, "unknown")
+    kind = Keyword.get(meta, :kind, :worker)
+    ["child_spec", "supervision", "otp", to_string(kind), to_string(mod)]
   end
 
   defp extract_features_from_ast(_ast) do

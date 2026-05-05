@@ -357,7 +357,12 @@ defmodule Ragex.CLI.Output do
         format_duplicates_section(Map.get(report.results, :duplicates)),
         format_dead_code_section(Map.get(report.results, :dead_code)),
         format_dependencies_section(Map.get(report.results, :dependencies)),
-        format_quality_section(Map.get(report.results, :quality))
+        format_quality_section(Map.get(report.results, :quality)),
+        format_circulars_section(Map.get(report.results, :circulars)),
+        format_god_modules_section(Map.get(report.results, :god_modules)),
+        format_unstable_modules_section(Map.get(report.results, :unstable_modules)),
+        format_unused_modules_section(Map.get(report.results, :unused_modules)),
+        format_coupling_section(Map.get(report.results, :coupling))
       ]
       |> Enum.reject(&is_nil/1)
       |> Enum.join("\n\n")
@@ -919,6 +924,10 @@ defmodule Ragex.CLI.Output do
         "Code Smells:          #{count_smell_items(results)}",
         "Duplicate Blocks:     #{count_items(results, :duplicates, :duplicates)}",
         "Dead Functions:       #{count_items(results, :dead_code, :dead_functions)}",
+        "Circular Deps:        #{count_items(results, :circulars, :cycles)}",
+        "God Modules:          #{count_items(results, :god_modules, :modules)}",
+        "Unstable Modules:     #{count_items(results, :unstable_modules, :modules)}",
+        "Unused Modules:       #{count_items(results, :unused_modules, :modules)}",
         "Quality Score:        #{quality_score_display(results)}"
       ]
       |> Enum.join("\n")
@@ -965,6 +974,191 @@ defmodule Ragex.CLI.Output do
       metrics -> "#{metrics.overall_score || 0}/100"
     end
   end
+
+  # New dependency health sections
+
+  defp format_circulars_section(nil), do: nil
+
+  defp format_circulars_section(%{cycles: []}) do
+    success_box("Circular Dependencies", "No circular dependencies found")
+  end
+
+  defp format_circulars_section(%{cycles: cycles}) do
+    count = length(cycles)
+
+    header =
+      Owl.Data.tag("Circular Dependencies: #{count}", :red)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    rows =
+      cycles
+      |> Enum.take(15)
+      |> Enum.map(fn cycle ->
+        chain = Enum.map_join(cycle, " -> ", &format_entity_name/1)
+        %{"Cycle" => chain, "Modules" => to_string(length(cycle))}
+      end)
+
+    table_output =
+      Owl.Table.new(rows)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    [header, table_output, show_more_message(count, 15)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp format_god_modules_section(nil), do: nil
+
+  defp format_god_modules_section(%{modules: []}) do
+    success_box("God Modules", "No god modules found")
+  end
+
+  defp format_god_modules_section(%{modules: modules, threshold: threshold}) do
+    count = length(modules)
+
+    header =
+      Owl.Data.tag("God Modules: #{count} (threshold >= #{threshold})", :yellow)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    rows =
+      modules
+      |> Enum.take(15)
+      |> Enum.map(fn m ->
+        %{
+          "Module" => format_entity_name(m.module),
+          "Ca" => to_string(m.afferent),
+          "Ce" => to_string(m.efferent),
+          "Total" => to_string(m.total),
+          "I" => Float.round(m.instability, 2) |> to_string()
+        }
+      end)
+
+    table_output =
+      Owl.Table.new(rows)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    [header, table_output, show_more_message(count, 15)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp format_unstable_modules_section(nil), do: nil
+
+  defp format_unstable_modules_section(%{modules: []}) do
+    success_box("Unstable Modules", "No highly unstable modules found")
+  end
+
+  defp format_unstable_modules_section(%{modules: modules, threshold: threshold}) do
+    count = length(modules)
+
+    header =
+      Owl.Data.tag("Unstable Modules: #{count} (instability > #{threshold})", :yellow)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    rows =
+      modules
+      |> Enum.take(15)
+      |> Enum.map(fn m ->
+        %{
+          "Module" => format_entity_name(m.module),
+          "Instability" => Float.round(m.instability, 2) |> to_string(),
+          "Ca" => to_string(m.afferent),
+          "Ce" => to_string(m.efferent)
+        }
+      end)
+
+    table_output =
+      Owl.Table.new(rows)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    [header, table_output, show_more_message(count, 15)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp format_unused_modules_section(nil), do: nil
+
+  defp format_unused_modules_section(%{modules: []}) do
+    success_box("Unused Modules", "No unused modules found")
+  end
+
+  defp format_unused_modules_section(%{modules: modules}) do
+    count = length(modules)
+
+    header =
+      Owl.Data.tag("Unused Modules: #{count}", :cyan)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    rows =
+      modules
+      |> Enum.take(20)
+      |> Enum.map(fn mod -> %{"Module" => format_entity_name(mod)} end)
+
+    table_output =
+      Owl.Table.new(rows)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    [header, table_output, show_more_message(count, 20)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp format_coupling_section(nil), do: nil
+
+  defp format_coupling_section(%{metrics: []}) do
+    nil
+  end
+
+  defp format_coupling_section(%{metrics: metrics}) do
+    count = length(metrics)
+
+    header =
+      Owl.Data.tag("Coupling Metrics: #{count} modules", :cyan)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    rows =
+      metrics
+      |> Enum.take(20)
+      |> Enum.map(fn m ->
+        %{
+          "Module" => format_entity_name(m.module),
+          "Ca" => to_string(m.afferent),
+          "Ce" => to_string(m.efferent),
+          "Instability" => Float.round(m.instability, 2) |> to_string()
+        }
+      end)
+
+    table_output =
+      Owl.Table.new(rows)
+      |> Owl.Data.to_chardata()
+      |> IO.ANSI.format()
+      |> IO.iodata_to_binary()
+
+    [header, table_output, show_more_message(count, 20)]
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n")
+  end
+
+  defp format_entity_name(mod) when is_atom(mod), do: inspect(mod)
+  defp format_entity_name(other), do: to_string(other)
 
   defp severity_badge(:critical), do: Owl.Data.tag("CRITICAL", :red)
   defp severity_badge(:high), do: Owl.Data.tag("HIGH", :red)

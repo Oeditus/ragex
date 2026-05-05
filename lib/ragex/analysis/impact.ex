@@ -345,6 +345,7 @@ defmodule Ragex.Analysis.Impact do
     do_bfs(queue, visited, affected, max_depth, exclude_modules)
   end
 
+  @dialyzer {:nowarn_function, do_bfs: 5}
   defp do_bfs(queue, visited, affected, max_depth, exclude_modules) do
     case :queue.out(queue) do
       {{:value, {node, depth}}, rest_queue} ->

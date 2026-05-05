@@ -199,6 +199,28 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
     {{:import, meta, children}, acc}
   end
 
+  # Child spec nodes: extract supervisor child metadata
+  defp walk({:child_spec, meta, body}, ctx, acc) when is_list(meta) do
+    mod = Keyword.get(meta, :module, "unknown")
+    id = Keyword.get(meta, :id, "unknown")
+    kind = Keyword.get(meta, :kind, :worker)
+    line = Keyword.get(meta, :line, 0)
+
+    call_entry = %{
+      from_module: ctx.container || "top_level",
+      from_function: :child_spec,
+      from_arity: 0,
+      to_module: mod,
+      to_function: :start_link,
+      to_arity: 1,
+      line: line,
+      metadata: %{child_id: id, child_kind: kind}
+    }
+
+    acc = %{acc | calls: [call_entry | acc.calls]}
+    {{:child_spec, meta, body}, acc}
+  end
+
   # Generic 3-tuple node: recurse into list children
   defp walk({type, meta, children}, ctx, acc)
        when is_atom(type) and is_list(meta) and is_list(children) do

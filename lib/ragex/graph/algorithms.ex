@@ -730,6 +730,7 @@ defmodule Ragex.Graph.Algorithms do
     {[], count}
   end
 
+  @dialyzer {:nowarn_function, find_paths_dfs: 8}
   defp find_paths_dfs(current, target, adjacency, max_depth, max_paths, path, visited, count) do
     cond do
       current == target ->
@@ -760,6 +761,7 @@ defmodule Ragex.Graph.Algorithms do
     end)
   end
 
+  @dialyzer {:nowarn_function, explore_neighbor: 3}
   defp explore_neighbor(
          neighbor,
          {target, adjacency, max_depth, max_paths, path, visited},

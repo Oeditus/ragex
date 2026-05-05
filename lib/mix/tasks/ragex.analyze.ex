@@ -13,6 +13,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
   - Dead code analysis
   - Dependency analysis
   - Quality metrics
+  - Circular dependency detection
+  - God module detection (excessive coupling)
+  - Unstable module detection
+  - Unused module detection
+  - Coupling metrics report
 
   ## Usage
 
@@ -31,12 +36,21 @@ defmodule Mix.Tasks.Ragex.Analyze do
     * `--dead-code` - Include dead code analysis
     * `--dependencies` - Include dependency analysis
     * `--quality` - Include quality metrics
+    * `--circulars` - Detect circular dependency clusters
+    * `--god-modules` - Detect modules with excessive coupling
+    * `--unstable-modules` - Detect highly unstable modules
+    * `--unused-modules` - Detect unreferenced modules
+    * `--coupling` - Full coupling metrics report
     * `--all` - Include all analyses (default)
     * `--severity LEVEL` - Minimum severity for issues: low, medium, high, critical (default: medium)
     * `--threshold FLOAT` - Duplication threshold 0.0-1.0 (default: 0.85)
     * `--min-complexity INT` - Minimum complexity to report (default: 10)
+    * `--god-threshold INT` - Min total coupling for god module detection (default: 15)
+    * `--instability-threshold FLOAT` - Min instability to report (default: 0.8)
     * `--verbose` - Show detailed progress information
     * `--with-empty` / `--without-empty` - Include/exclude empty issue reports in output (default: without-empty)
+    * `--ci` - CI mode: plain text, no colors, non-zero exit on issues
+    * `--strict` - Exit with code 1 if any issues are found
 
   ## Examples
 
@@ -58,6 +72,15 @@ defmodule Mix.Tasks.Ragex.Analyze do
       # Analyze with custom thresholds
       mix ragex.analyze --threshold 0.9 --min-complexity 15
 
+      # CI pipeline: check for circular deps, fail if found
+      mix ragex.analyze --circulars --ci
+
+      # CI pipeline: full dependency health check
+      mix ragex.analyze --circulars --god-modules --unstable-modules --unused-modules --ci
+
+      # Strict mode with custom thresholds
+      mix ragex.analyze --coupling --god-threshold 20 --instability-threshold 0.9 --strict
+
   """
 
   use Mix.Task
@@ -77,7 +100,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
   @shortdoc "Performs comprehensive code analysis on a directory"
 
   # Check if CLI modules are available (not available when installed as archive)
-  @has_cli_modules not is_nil(Code.ensure_compiled!(Ragex.CLI.Colors))
+  @has_cli_modules match?({:ok, _}, Code.ensure_compiled(Ragex.CLI.Colors))
 
   @impl Mix.Task
   def run(args) do
@@ -96,12 +119,21 @@ defmodule Mix.Tasks.Ragex.Analyze do
           dead_code: :boolean,
           dependencies: :boolean,
           quality: :boolean,
+          circulars: :boolean,
+          god_modules: :boolean,
+          unstable_modules: :boolean,
+          unused_modules: :boolean,
+          coupling: :boolean,
           all: :boolean,
           severity: :string,
           threshold: :float,
           min_complexity: :integer,
+          god_threshold: :integer,
+          instability_threshold: :float,
           verbose: :boolean,
-          with_empty: :boolean
+          with_empty: :boolean,
+          ci: :boolean,
+          strict: :boolean
         ]
       )
 
@@ -109,18 +141,18 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     # Disable MCP server for non-interactive formats (prevents hanging)
     # The server is only needed for interactive MCP client connections
-    if config.format in ["json", "markdown"] do
+    if config.format in ["json", "markdown"] or config.ci do
       Application.put_env(:ragex, :start_server, false)
     end
 
     # Start required applications (with conditional MCP server based on config above)
     Mix.Task.run("app.start")
 
-    # Only show progress messages if not JSON format
-    show_progress = config.format != "json"
+    # Only show progress messages if not JSON format and not CI mode
+    show_progress = config.format != "json" and not config.ci
 
-    # Suppress all logger output when outputting JSON
-    if config.format == "json" do
+    # Suppress all logger output when outputting JSON or CI mode
+    if config.format == "json" or config.ci do
       Logger.configure(level: :emergency)
     end
 
@@ -153,25 +185,39 @@ defmodule Mix.Tasks.Ragex.Analyze do
     # Step 5: Summary
     print_summary(config, results)
 
+    # Step 6: Exit code for CI/strict mode
+    maybe_exit(config, results)
+
     :ok
   end
 
   # Build configuration from options
-  defp build_config(opts) do
+  @doc false
+  def build_config(opts) do
     path = Keyword.get(opts, :path, File.cwd!())
+    ci = Keyword.get(opts, :ci, false)
+    strict = Keyword.get(opts, :strict, false)
+
+    # All analysis flag keys (original + new)
+    all_analysis_keys = [
+      :security,
+      :business_logic,
+      :complexity,
+      :smells,
+      :duplicates,
+      :dead_code,
+      :dependencies,
+      :quality,
+      :circulars,
+      :god_modules,
+      :unstable_modules,
+      :unused_modules,
+      :coupling
+    ]
 
     # Check if user explicitly provided any positive flags
     positive_analyses =
-      Keyword.take(opts, [
-        :security,
-        :business_logic,
-        :complexity,
-        :smells,
-        :duplicates,
-        :dead_code,
-        :dependencies,
-        :quality
-      ])
+      Keyword.take(opts, all_analysis_keys)
       |> Enum.filter(fn {_key, value} -> value == true end)
 
     # If --all is explicitly set, use it; otherwise enable all only if no positive flags
@@ -189,56 +235,39 @@ defmodule Mix.Tasks.Ragex.Analyze do
         true -> false
       end
 
+    resolve = fn key ->
+      if enable_all,
+        do: Keyword.get(opts, key, true),
+        else: Keyword.get(opts, key, false)
+    end
+
     %{
       path: path,
       output: Keyword.get(opts, :output),
       format: Keyword.get(opts, :format, "text"),
       verbose: Keyword.get(opts, :verbose, false),
+      ci: ci,
+      strict: strict,
       severity: parse_severity(Keyword.get(opts, :severity, "medium")),
       threshold: Keyword.get(opts, :threshold, 0.85),
       min_complexity: Keyword.get(opts, :min_complexity, 10),
+      god_threshold: Keyword.get(opts, :god_threshold, 15),
+      instability_threshold: Keyword.get(opts, :instability_threshold, 0.8),
       with_empty: Keyword.get(opts, :with_empty, false),
       analyses: %{
-        security:
-          if(enable_all,
-            do: Keyword.get(opts, :security, true),
-            else: Keyword.get(opts, :security, false)
-          ),
-        business_logic:
-          if(enable_all,
-            do: Keyword.get(opts, :business_logic, true),
-            else: Keyword.get(opts, :business_logic, false)
-          ),
-        complexity:
-          if(enable_all,
-            do: Keyword.get(opts, :complexity, true),
-            else: Keyword.get(opts, :complexity, false)
-          ),
-        smells:
-          if(enable_all,
-            do: Keyword.get(opts, :smells, true),
-            else: Keyword.get(opts, :smells, false)
-          ),
-        duplicates:
-          if(enable_all,
-            do: Keyword.get(opts, :duplicates, true),
-            else: Keyword.get(opts, :duplicates, false)
-          ),
-        dead_code:
-          if(enable_all,
-            do: Keyword.get(opts, :dead_code, true),
-            else: Keyword.get(opts, :dead_code, false)
-          ),
-        dependencies:
-          if(enable_all,
-            do: Keyword.get(opts, :dependencies, true),
-            else: Keyword.get(opts, :dependencies, false)
-          ),
-        quality:
-          if(enable_all,
-            do: Keyword.get(opts, :quality, true),
-            else: Keyword.get(opts, :quality, false)
-          )
+        security: resolve.(:security),
+        business_logic: resolve.(:business_logic),
+        complexity: resolve.(:complexity),
+        smells: resolve.(:smells),
+        duplicates: resolve.(:duplicates),
+        dead_code: resolve.(:dead_code),
+        dependencies: resolve.(:dependencies),
+        quality: resolve.(:quality),
+        circulars: resolve.(:circulars),
+        god_modules: resolve.(:god_modules),
+        unstable_modules: resolve.(:unstable_modules),
+        unused_modules: resolve.(:unused_modules),
+        coupling: resolve.(:coupling)
       }
     }
   end
@@ -401,6 +430,76 @@ defmodule Mix.Tasks.Ragex.Analyze do
         results
       end
 
+    results =
+      if config.analyses.circulars do
+        if show_progress, do: header_msg("Step 2.9: Circular Dependency Detection...")
+        circulars_result = run_circulars_analysis(config)
+
+        if config.verbose and show_progress do
+          success_msg("  ✓ Found #{length(circulars_result.cycles)} circular dependency clusters")
+        end
+
+        Map.put(results, :circulars, circulars_result)
+      else
+        results
+      end
+
+    results =
+      if config.analyses.god_modules do
+        if show_progress, do: header_msg("Step 2.10: God Module Detection...")
+        god_result = run_god_modules_analysis(config)
+
+        if config.verbose and show_progress do
+          success_msg("  ✓ Found #{length(god_result.modules)} god modules")
+        end
+
+        Map.put(results, :god_modules, god_result)
+      else
+        results
+      end
+
+    results =
+      if config.analyses.unstable_modules do
+        if show_progress, do: header_msg("Step 2.11: Unstable Module Detection...")
+        unstable_result = run_unstable_modules_analysis(config)
+
+        if config.verbose and show_progress do
+          success_msg("  ✓ Found #{length(unstable_result.modules)} unstable modules")
+        end
+
+        Map.put(results, :unstable_modules, unstable_result)
+      else
+        results
+      end
+
+    results =
+      if config.analyses.unused_modules do
+        if show_progress, do: header_msg("Step 2.12: Unused Module Detection...")
+        unused_result = run_unused_modules_analysis(config)
+
+        if config.verbose and show_progress do
+          success_msg("  ✓ Found #{length(unused_result.modules)} unused modules")
+        end
+
+        Map.put(results, :unused_modules, unused_result)
+      else
+        results
+      end
+
+    results =
+      if config.analyses.coupling do
+        if show_progress, do: header_msg("Step 2.13: Coupling Metrics...")
+        coupling_result = run_coupling_analysis(config)
+
+        if config.verbose and show_progress do
+          success_msg("  ✓ Computed coupling for #{length(coupling_result.metrics)} modules")
+        end
+
+        Map.put(results, :coupling, coupling_result)
+      else
+        results
+      end
+
     results
   end
 
@@ -435,6 +534,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     end
   end
 
+  @dialyzer {:nowarn_function, run_smells_analysis: 1}
   defp run_smells_analysis(config) do
     case Smells.detect_smells(config.path) do
       {:ok, smells} -> %{smells: smells}
@@ -467,6 +567,86 @@ defmodule Mix.Tasks.Ragex.Analyze do
     case Quality.analyze_quality(config.path) do
       {:ok, metrics} -> metrics
       {:error, _} -> %{overall_score: 0}
+    end
+  end
+
+  defp run_circulars_analysis(_config) do
+    case DependencyGraph.find_cycles(scope: :module) do
+      {:ok, cycles} -> %{cycles: cycles}
+      {:error, _} -> %{cycles: []}
+    end
+  end
+
+  defp run_god_modules_analysis(config) do
+    case DependencyGraph.find_god_modules(config.god_threshold) do
+      {:ok, god_modules} ->
+        modules =
+          Enum.map(god_modules, fn {module, metrics} ->
+            %{
+              module: module,
+              afferent: metrics.afferent,
+              efferent: metrics.efferent,
+              total: metrics.afferent + metrics.efferent,
+              instability: metrics.instability
+            }
+          end)
+
+        %{modules: modules, threshold: config.god_threshold}
+
+      {:error, _} ->
+        %{modules: [], threshold: config.god_threshold}
+    end
+  end
+
+  defp run_unstable_modules_analysis(config) do
+    case DependencyGraph.all_coupling_metrics() do
+      {:ok, all_metrics} ->
+        unstable =
+          all_metrics
+          |> Enum.filter(fn {_mod, metrics} ->
+            metrics.instability > config.instability_threshold
+          end)
+          |> Enum.map(fn {module, metrics} ->
+            %{
+              module: module,
+              instability: metrics.instability,
+              afferent: metrics.afferent,
+              efferent: metrics.efferent
+            }
+          end)
+          |> Enum.sort_by(& &1.instability, :desc)
+
+        %{modules: unstable, threshold: config.instability_threshold}
+
+      {:error, _} ->
+        %{modules: [], threshold: config.instability_threshold}
+    end
+  end
+
+  defp run_unused_modules_analysis(_config) do
+    case DependencyGraph.find_unused() do
+      {:ok, unused} -> %{modules: unused}
+      {:error, _} -> %{modules: []}
+    end
+  end
+
+  defp run_coupling_analysis(_config) do
+    case DependencyGraph.all_coupling_metrics() do
+      {:ok, all_metrics} ->
+        metrics =
+          Enum.map(all_metrics, fn {module, m} ->
+            %{
+              module: module,
+              afferent: m.afferent,
+              efferent: m.efferent,
+              instability: m.instability
+            }
+          end)
+
+        %{metrics: metrics}
+
+      {:error, _} ->
+        %{metrics: []}
     end
   end
 
@@ -558,30 +738,139 @@ defmodule Mix.Tasks.Ragex.Analyze do
   defp result_is_empty?(:duplicates, %{duplicates: dups}), do: Enum.empty?(dups)
   defp result_is_empty?(:dead_code, %{dead_functions: funcs}), do: Enum.empty?(funcs)
   defp result_is_empty?(:dependencies, %{modules: modules}), do: map_size(modules) == 0
+  defp result_is_empty?(:circulars, %{cycles: cycles}), do: Enum.empty?(cycles)
+  defp result_is_empty?(:god_modules, %{modules: mods}), do: Enum.empty?(mods)
+  defp result_is_empty?(:unstable_modules, %{modules: mods}), do: Enum.empty?(mods)
+  defp result_is_empty?(:unused_modules, %{modules: mods}), do: Enum.empty?(mods)
+  defp result_is_empty?(:coupling, %{metrics: metrics}), do: Enum.empty?(metrics)
   # Quality always has a score, never considered "empty"
   defp result_is_empty?(:quality, _), do: false
   defp result_is_empty?(_, _), do: false
 
   # Output results
   defp output_results(config, report) do
-    content =
-      case config.format do
-        "json" -> format_json(report)
-        "markdown" -> format_markdown(report)
-        _ -> format_text(report)
+    if config.ci do
+      output_ci(report)
+    else
+      content =
+        case config.format do
+          "json" -> format_json(report)
+          "markdown" -> format_markdown(report)
+          _ -> format_text(report)
+        end
+
+      case config.output do
+        nil ->
+          # Only add blank line for non-JSON output
+          if config.format != "json", do: Mix.shell().info("")
+          Mix.shell().info(content)
+
+        file ->
+          File.write!(file, content)
+          if config.format != "json", do: success_msg("\n✓ Report written to #{file}")
       end
-
-    case config.output do
-      nil ->
-        # Only add blank line for non-JSON output
-        if config.format != "json", do: Mix.shell().info("")
-        Mix.shell().info(content)
-
-      file ->
-        File.write!(file, content)
-        if config.format != "json", do: success_msg("\n✓ Report written to #{file}")
     end
   end
+
+  # CI output: one-line-per-issue, no ANSI, machine-friendly
+  defp output_ci(report) do
+    lines =
+      report.results
+      |> Enum.flat_map(fn {type, data} -> ci_lines_for(type, data) end)
+
+    Enum.each(lines, fn line -> Mix.shell().info(line) end)
+
+    total = length(lines)
+    Mix.shell().info("ragex: #{total} issue(s) found")
+  end
+
+  defp ci_lines_for(:security, %{issues: issues}) do
+    issues
+    |> Enum.flat_map(fn result -> Map.get(result, :vulnerabilities, []) end)
+    |> Enum.map(fn vuln ->
+      "SECURITY: #{vuln.category} (#{vuln.severity}) #{vuln.file}:#{vuln.line} - #{vuln.description}"
+    end)
+  end
+
+  defp ci_lines_for(:business_logic, data) do
+    data
+    |> Map.get(:results, [])
+    |> Enum.flat_map(&Map.get(&1, :issues, []))
+    |> Enum.map(fn issue ->
+      "BUSINESS_LOGIC: #{issue[:analyzer] || "unknown"} (#{issue[:severity]}) #{issue[:file]}:#{issue[:line]} - #{issue[:description]}"
+    end)
+  end
+
+  defp ci_lines_for(:complexity, %{complex_functions: funcs}) do
+    Enum.map(funcs, fn f ->
+      "COMPLEXITY: #{f.module}.#{f.name}/#{f.arity} (cyclomatic=#{f.cyclomatic_complexity})"
+    end)
+  end
+
+  defp ci_lines_for(:smells, %{smells: smells}) do
+    all =
+      case smells do
+        %{results: results} when is_list(results) ->
+          Enum.flat_map(results, &Map.get(&1, :smells, []))
+
+        list when is_list(list) ->
+          list
+
+        _ ->
+          []
+      end
+
+    Enum.map(all, fn s -> "SMELL: #{s[:type]} (#{s[:severity]})" end)
+  end
+
+  defp ci_lines_for(:duplicates, %{duplicates: dups}) do
+    Enum.map(dups, fn d ->
+      sim = Float.round((d[:similarity] || 0.0) * 100, 1)
+      "DUPLICATE: #{sim}% similar (#{d[:lines] || 0} lines)"
+    end)
+  end
+
+  defp ci_lines_for(:dead_code, %{dead_functions: funcs}) do
+    Enum.map(funcs, fn f ->
+      "DEAD_CODE: #{f.module}.#{f.name}/#{f.arity} - #{f.reason}"
+    end)
+  end
+
+  defp ci_lines_for(:circulars, %{cycles: cycles}) do
+    Enum.map(cycles, fn cycle ->
+      chain = Enum.map_join(cycle, " -> ", &format_module_name/1)
+      "CIRCULAR: #{chain} (#{length(cycle)} modules)"
+    end)
+  end
+
+  defp ci_lines_for(:god_modules, %{modules: modules}) do
+    Enum.map(modules, fn m ->
+      "GOD_MODULE: #{format_module_name(m.module)} (afferent=#{m.afferent}, efferent=#{m.efferent}, total=#{m.total})"
+    end)
+  end
+
+  defp ci_lines_for(:unstable_modules, %{modules: modules}) do
+    Enum.map(modules, fn m ->
+      "UNSTABLE: #{format_module_name(m.module)} (instability=#{Float.round(m.instability, 2)})"
+    end)
+  end
+
+  defp ci_lines_for(:unused_modules, %{modules: modules}) do
+    Enum.map(modules, fn mod -> "UNUSED: #{format_module_name(mod)}" end)
+  end
+
+  defp ci_lines_for(:coupling, %{metrics: metrics}) do
+    Enum.map(metrics, fn m ->
+      "COUPLING: #{format_module_name(m.module)} afferent=#{m.afferent} efferent=#{m.efferent} instability=#{Float.round(m.instability, 2)}"
+    end)
+  end
+
+  defp ci_lines_for(:dependencies, _), do: []
+  defp ci_lines_for(:quality, _), do: []
+  defp ci_lines_for(_, _), do: []
+
+  defp format_module_name(mod) when is_atom(mod), do: inspect(mod)
+  defp format_module_name(other), do: to_string(other)
 
   # Format as JSON
   defp format_json(report) do
@@ -619,6 +908,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
         :dead_code -> format_markdown_dead_code(data)
         :dependencies -> format_markdown_dependencies(data)
         :quality -> format_markdown_quality(data)
+        :circulars -> format_markdown_circulars(data)
+        :god_modules -> format_markdown_god_modules(data)
+        :unstable_modules -> format_markdown_unstable_modules(data)
+        :unused_modules -> format_markdown_unused_modules(data)
+        :coupling -> format_markdown_coupling(data)
         _ -> ""
       end
     end)
@@ -824,6 +1118,69 @@ defmodule Mix.Tasks.Ragex.Analyze do
     """
   end
 
+  defp format_markdown_circulars(%{cycles: cycles}) do
+    formatted =
+      Enum.map(cycles, fn cycle ->
+        chain = Enum.map_join(cycle, " -> ", &format_module_name/1)
+        "- #{chain} (#{length(cycle)} modules)"
+      end)
+
+    """
+    ## Circular Dependencies (#{length(cycles)})
+
+    #{Enum.join(formatted, "\n")}
+    """
+  end
+
+  defp format_markdown_god_modules(%{modules: modules, threshold: threshold}) do
+    formatted =
+      Enum.map(modules, fn m ->
+        "- **#{format_module_name(m.module)}**: afferent=#{m.afferent}, efferent=#{m.efferent}, total=#{m.total}, instability=#{Float.round(m.instability, 2)}"
+      end)
+
+    """
+    ## God Modules (#{length(modules)}, threshold >= #{threshold})
+
+    #{Enum.join(formatted, "\n")}
+    """
+  end
+
+  defp format_markdown_unstable_modules(%{modules: modules, threshold: threshold}) do
+    formatted =
+      Enum.map(modules, fn m ->
+        "- **#{format_module_name(m.module)}**: instability=#{Float.round(m.instability, 2)} (Ca=#{m.afferent}, Ce=#{m.efferent})"
+      end)
+
+    """
+    ## Unstable Modules (#{length(modules)}, threshold > #{threshold})
+
+    #{Enum.join(formatted, "\n")}
+    """
+  end
+
+  defp format_markdown_unused_modules(%{modules: modules}) do
+    formatted = Enum.map(modules, fn mod -> "- #{format_module_name(mod)}" end)
+
+    """
+    ## Unused Modules (#{length(modules)})
+
+    #{Enum.join(formatted, "\n")}
+    """
+  end
+
+  defp format_markdown_coupling(%{metrics: metrics}) do
+    formatted =
+      Enum.map(metrics, fn m ->
+        "- **#{format_module_name(m.module)}**: Ca=#{m.afferent}, Ce=#{m.efferent}, I=#{Float.round(m.instability, 2)}"
+      end)
+
+    """
+    ## Coupling Metrics (#{length(metrics)} modules)
+
+    #{Enum.join(formatted, "\n")}
+    """
+  end
+
   # Helper to get severity order for sorting (higher = more severe)
   defp smell_severity_order(:critical), do: 4
   defp smell_severity_order(:high), do: 3
@@ -855,7 +1212,8 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Print summary
   defp print_summary(config, results) do
-    if config.verbose do
+    # Skip summary in CI mode (output_ci already prints summary)
+    if config.verbose and not config.ci do
       Mix.shell().info("")
       header_msg("Summary:")
 
@@ -905,12 +1263,79 @@ defmodule Mix.Tasks.Ragex.Analyze do
               true -> error_msg(msg)
             end
 
+          :circulars ->
+            count = length(data.cycles)
+            msg = "  Circular Dependencies: #{count}"
+            if count > 0, do: error_msg(msg), else: success_msg(msg)
+
+          :god_modules ->
+            count = length(data.modules)
+            msg = "  God Modules: #{count}"
+            if count > 0, do: warning_msg(msg), else: success_msg(msg)
+
+          :unstable_modules ->
+            count = length(data.modules)
+            msg = "  Unstable Modules: #{count}"
+            if count > 0, do: warning_msg(msg), else: success_msg(msg)
+
+          :unused_modules ->
+            count = length(data.modules)
+            msg = "  Unused Modules: #{count}"
+            if count > 0, do: info_msg(msg), else: success_msg(msg)
+
+          :coupling ->
+            count = length(data.metrics)
+            info_msg("  Coupling Metrics: #{count} modules")
+
           _ ->
             :ok
         end
       end)
 
       Mix.shell().info("")
+    end
+  end
+
+  # Exit code logic for CI/strict mode
+  @doc false
+  def count_ci_issues(results) do
+    Enum.reduce(results, 0, fn {type, data}, acc ->
+      acc + count_issues_for_type(type, data)
+    end)
+  end
+
+  defp count_issues_for_type(:security, %{issues: issues}) do
+    issues |> Enum.flat_map(&Map.get(&1, :vulnerabilities, [])) |> length()
+  end
+
+  defp count_issues_for_type(:business_logic, data), do: Map.get(data, :total_issues, 0)
+  defp count_issues_for_type(:complexity, %{complex_functions: f}), do: length(f)
+
+  defp count_issues_for_type(:smells, %{smells: smells}) do
+    case smells do
+      %{total_smells: n} -> n
+      %{results: r} when is_list(r) -> Enum.flat_map(r, &Map.get(&1, :smells, [])) |> length()
+      list when is_list(list) -> length(list)
+      _ -> 0
+    end
+  end
+
+  defp count_issues_for_type(:duplicates, %{duplicates: d}), do: length(d)
+  defp count_issues_for_type(:dead_code, %{dead_functions: f}), do: length(f)
+  defp count_issues_for_type(:circulars, %{cycles: c}), do: length(c)
+  defp count_issues_for_type(:god_modules, %{modules: m}), do: length(m)
+  defp count_issues_for_type(:unstable_modules, %{modules: m}), do: length(m)
+  defp count_issues_for_type(:unused_modules, %{modules: m}), do: length(m)
+  # Coupling and quality are informational, not "issues"
+  defp count_issues_for_type(_, _), do: 0
+
+  defp maybe_exit(config, results) do
+    if config.ci or config.strict do
+      total = count_ci_issues(results)
+
+      if total > 0 do
+        System.halt(1)
+      end
     end
   end
 
