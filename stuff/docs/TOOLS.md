@@ -622,7 +622,7 @@ Explain code using RAG with AI assistance.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `target` | string | yes | | File path or `Module.function/2` |
+| `target` | string | yes | — | File path or Module’s function |
 | `aspect` | string | no | all | `purpose`, `complexity`, `dependencies`, `all` |
 
 #### `rag_suggest`

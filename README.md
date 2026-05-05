@@ -1205,7 +1205,7 @@ export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxx"
 - [Configuration](stuff/docs/CONFIGURATION.md) - Embedding model configuration and migration
 - [Persistence](stuff/docs/PERSISTENCE.md) - Embedding cache management and performance
 - [Analysis](stuff/docs/ANALYSIS.md) - Code analysis features and tools
-- [Troubleshooting](TROUBLESHOOTING.md) - Common issues and error messages
+- [Troubleshooting](stuff/docs/TROUBLESHOOTING.md) - Common issues and error messages
 
 ### Cache Management
 
