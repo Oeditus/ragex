@@ -6,25 +6,55 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  MIX_ENV: test
+  ELIXIR_VERSION: '1.19'
+  OTP_VERSION: '28'
+
 jobs:
-  test:
-    name: Test (Elixir ${{ matrix.elixir }} / OTP ${{ matrix.otp }})
+  deps:
+    name: Dependencies
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        elixir: ['1.19']
-        otp: ['28']
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
     - name: Set up Elixir
       uses: erlef/setup-beam@v1
       with:
-        elixir-version: ${{ matrix.elixir }}
-        otp-version: ${{ matrix.otp }}
+        elixir-version: ${{ env.ELIXIR_VERSION }}
+        otp-version: ${{ env.OTP_VERSION }}
+
+    - name: Restore dependencies cache
+      id: cache-deps
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-
+
+    - name: Install dependencies
+      if: steps.cache-deps.outputs.cache-hit != 'true'
+      run: mix deps.get
+
+    - name: Compile dependencies
+      if: steps.cache-deps.outputs.cache-hit != 'true'
+      run: mix deps.compile
+
+  compile:
+    name: Compile
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ env.ELIXIR_VERSION }}
+        otp-version: ${{ env.OTP_VERSION }}
 
     - name: Restore dependencies cache
       uses: actions/cache@v4
@@ -32,20 +62,81 @@ jobs:
         path: |
           deps
           _build
-        key: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('**/mix.lock') }}
+        key: ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
         restore-keys: |
-          ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-
+          ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-
 
-    - name: Install dependencies
-      run: mix deps.get
-
-    - name: Compile (check for warnings)
+    - name: Compile (warnings as errors)
       run: mix compile --warnings-as-errors
+
+  credo:
+    name: Credo
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ env.ELIXIR_VERSION }}
+        otp-version: ${{ env.OTP_VERSION }}
+
+    - name: Restore dependencies cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-
 
     - name: Run Credo (strict mode)
       run: mix credo --strict
+
+  test:
+    name: Test
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ env.ELIXIR_VERSION }}
+        otp-version: ${{ env.OTP_VERSION }}
+
+    - name: Restore dependencies cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-
+
+    - name: Install Ruby parser gem
+      run: gem install parser
 
     - name: Run tests with coverage
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: mix coveralls.github
+
+  ci:
+    name: CI
+    needs: [compile, credo, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check job results
+      run: |
+        if [ "${{ needs.compile.result }}" != "success" ] || \
+           [ "${{ needs.credo.result }}" != "success" ] || \
+           [ "${{ needs.test.result }}" != "success" ]; then
+          echo "One or more jobs failed"
+          exit 1
+        fi
