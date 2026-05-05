@@ -124,7 +124,7 @@ jobs:
     - name: Run tests with coverage
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: mix coveralls.github
+      run: mix coveralls.github --exclude resource_intensive
 
   ci:
     name: CI

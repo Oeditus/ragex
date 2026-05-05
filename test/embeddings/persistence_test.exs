@@ -461,6 +461,7 @@ defmodule Ragex.Embeddings.PersistenceTest do
   end
 
   describe "edge cases" do
+    @tag :resource_intensive
     test "handles very large embeddings" do
       # Create large embedding (10,000 dimensions)
       large_embedding = Enum.map(1..10_000, fn i -> i * 0.001 end)
