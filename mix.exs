@@ -198,6 +198,7 @@ defmodule Ragex.MixProject do
         Ragex.Agent.Memory,
         Ragex.Agent.Memory.Session,
         Ragex.Agent.Report,
+        Ragex.Agent.StreamConsumer,
         Ragex.Agent.ToolSchema,
         Ragex.LanguageSupport,
         Ragex.Application,
