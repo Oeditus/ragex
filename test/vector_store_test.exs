@@ -223,6 +223,7 @@ defmodule Ragex.VectorStoreTest do
 
       Store.store_embedding(:function, {:A, :a, 0}, emb1, "text")
       Store.store_embedding(:module, :B, emb2, "text")
+      Store.sync()
 
       stats = VectorStore.stats()
       assert stats.total_embeddings == 2
