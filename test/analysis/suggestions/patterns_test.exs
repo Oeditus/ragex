@@ -15,7 +15,7 @@ defmodule Ragex.Analysis.Suggestions.PatternsTest do
       assert :reduce_coupling in patterns
       assert :simplify_complexity in patterns
       assert :extract_module in patterns
-      assert length(patterns) == 8
+      assert length(patterns) == 9
     end
   end
 

@@ -37,7 +37,7 @@ Target Code (file/module/directory)
          ↓
 [Analysis] → Duplication, Dead Code, Quality, Coupling, Impact
          ↓
-[Pattern Detection] → 8 refactoring patterns with confidence scores
+[Pattern Detection] → 9 refactoring patterns with confidence scores
          ↓
 [Priority Ranking] → Score and classify by priority (5 levels)
          ↓
@@ -55,7 +55,7 @@ Prioritized Suggestions with Action Plans
    - Main entry point: `analyze_target/2`
 
 2. **Pattern Detectors** (`Ragex.Analysis.Suggestions.Patterns`)
-   - Detects 8 refactoring patterns
+   - Detects 9 refactoring patterns
    - Returns raw suggestions with confidence scores
 
 3. **Priority Ranker** (`Ragex.Analysis.Suggestions.Ranker`)
@@ -228,6 +228,56 @@ end
 **Detects:** Related functions scattered across modules
 
 **Status:** Placeholder (requires semantic analysis)
+
+### 9. Introduce FSM
+
+**Detects:** Imperative status/state management patterns that should be modeled as a finite state machine.
+
+**Triggers:**
+- Business logic issues from `ImperativeStatusHandling` analyzer (Metastatic)
+- 3+ distinct status values detected (branching/assignment/schema)
+- OR 2+ status values with 2+ transition-verb functions (`activate`, `archive`, etc.)
+
+**Output includes:**
+- Detected states and transition functions
+- Generated Mermaid state diagram
+- Generated Finitomata module skeleton
+- Confidence score based on evidence tiers (branching, assignment, transition verbs)
+
+**Example:**
+```elixir
+# Before (imperative status management)
+defmodule MyApp.Order do
+  schema "orders" do
+    field :status, Ecto.Enum, values: [:draft, :pending, :paid, :shipped]
+  end
+
+  def submit(order), do: put_change(order, :status, :pending)
+  def pay(order), do: put_change(order, :status, :paid)
+  def ship(order), do: put_change(order, :status, :shipped)
+end
+
+# After (FSM - generated skeleton)
+defmodule MyApp.OrderFSM do
+  @fsm """
+  draft --> |submit| pending
+  pending --> |pay| paid
+  paid --> |ship| shipped
+  """
+
+  use Finitomata, fsm: @fsm, syntax: :flowchart
+
+  @impl Finitomata
+  def on_transition(:draft, :submit, _payload, state),
+    do: {:ok, :pending, state}
+
+  def on_transition(:pending, :pay, _payload, state),
+    do: {:ok, :paid, state}
+
+  def on_transition(:paid, :ship, _payload, state),
+    do: {:ok, :shipped, state}
+end
+```
 
 ## Priority Ranking
 

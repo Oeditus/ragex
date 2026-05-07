@@ -47,9 +47,9 @@ defmodule Ragex.Analysis.BusinessLogicSecurityTest do
       assert :toctou in analyzers
     end
 
-    test "has exactly 33 analyzers" do
+    test "has exactly 34 analyzers" do
       analyzers = BusinessLogic.available_analyzers()
-      assert length(analyzers) == 33
+      assert length(analyzers) == 34
     end
   end
 

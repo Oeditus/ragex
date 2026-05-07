@@ -2,7 +2,7 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
   @moduledoc """
   Pattern detection for common refactoring opportunities.
 
-  Detects 8 patterns:
+  Detects 9 patterns:
   1. **Extract Function** - Long functions, duplicate code blocks
   2. **Inline Function** - Single-use functions, trivial wrappers
   3. **Split Module** - God modules, low cohesion
@@ -11,6 +11,7 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
   6. **Reduce Coupling** - High-coupling modules, circular dependencies
   7. **Simplify Complexity** - High cyclomatic complexity, deep nesting
   8. **Extract Module** - Related functions in different modules
+  9. **Introduce FSM** - Imperative status management (suggests Finitomata/gen_statem)
 
   Each detector returns suggestions with:
   - Pattern type
@@ -42,7 +43,8 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
       :remove_dead_code,
       :reduce_coupling,
       :simplify_complexity,
-      :extract_module
+      :extract_module,
+      :introduce_fsm
     ]
   end
 
@@ -110,6 +112,11 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
 
   def detect(:extract_module, data, _opts) do
     suggestions = detect_related_scattered_functions(data)
+    {:ok, suggestions}
+  end
+
+  def detect(:introduce_fsm, data, _opts) do
+    suggestions = detect_imperative_status_handling(data)
     {:ok, suggestions}
   end
 
@@ -526,6 +533,190 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
     # Would require semantic analysis across modules
     # Placeholder for future implementation
     []
+  end
+
+  # Pattern 9: Introduce FSM - Imperative status management
+  defp detect_imperative_status_handling(data) do
+    # Collect imperative_status_handling issues from business logic analysis
+    bl_issues = get_business_logic_issues(data, :imperative_status_handling)
+
+    if bl_issues == [] do
+      []
+    else
+      # Group issues by file to build per-module suggestions
+      bl_issues
+      |> Enum.group_by(& &1[:file])
+      |> Enum.flat_map(fn {file, issues} ->
+        build_fsm_suggestions(file, issues, data)
+      end)
+    end
+  end
+
+  defp get_business_logic_issues(data, analyzer_name) do
+    case data do
+      %{quality: %{business_logic: %{issues: issues}}} when is_list(issues) ->
+        Enum.filter(issues, fn issue ->
+          issue[:analyzer] == Metastatic.Analysis.BusinessLogic.ImperativeStatusHandling or
+            issue[:analyzer] == analyzer_name
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp build_fsm_suggestions(file, issues, _data) do
+    # Collect all detected states from issue metadata
+    all_states =
+      issues
+      |> Enum.flat_map(fn issue ->
+        context = issue[:context] || %{}
+
+        cond do
+          is_list(context[:detected_states]) -> context[:detected_states]
+          context[:assigned_state] -> [context[:assigned_state]]
+          true -> []
+        end
+      end)
+      |> Enum.uniq()
+      |> Enum.sort()
+
+    # Collect transition-verb functions
+    verb_functions =
+      issues
+      |> Enum.filter(fn issue ->
+        context = issue[:context] || %{}
+        context[:tier] == :transition_verb
+      end)
+      |> Enum.map(fn issue ->
+        context = issue[:context] || %{}
+        context[:function_name] || context[:matched_verb]
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    # Only suggest if enough evidence
+    if length(all_states) >= 3 or (length(all_states) >= 2 and length(verb_functions) >= 2) do
+      mermaid = generate_mermaid_diagram(all_states, verb_functions)
+      skeleton = generate_finitomata_skeleton(all_states, verb_functions)
+
+      tiers_present =
+        issues
+        |> Enum.map(&get_in(&1, [:context, :tier]))
+        |> Enum.uniq()
+        |> Enum.reject(&is_nil/1)
+
+      confidence = calculate_fsm_confidence(all_states, verb_functions, tiers_present)
+
+      [
+        %{
+          id: generate_id(),
+          pattern: :introduce_fsm,
+          target: %{
+            type: :file,
+            file: file
+          },
+          reason:
+            "Module manages #{length(all_states)} status values (#{Enum.map_join(all_states, ", ", &inspect/1)}) " <>
+              "imperatively -- replace with FSM for explicit transitions and validation",
+          metrics: %{
+            state_count: length(all_states),
+            detected_states: all_states,
+            transition_functions: verb_functions,
+            evidence_tiers: tiers_present
+          },
+          confidence: confidence,
+          benefit_score: 0.85,
+          effort_score: 0.6,
+          impact: %{affected_files: 1, risk: :medium},
+          examples: [],
+          fsm_diagram: mermaid,
+          fsm_skeleton: skeleton
+        }
+      ]
+    else
+      []
+    end
+  end
+
+  defp generate_mermaid_diagram(states, verb_functions) do
+    lines = ["stateDiagram-v2"]
+
+    # Initial transition
+    first_state = List.first(states)
+    lines = lines ++ ["    [*] --> #{format_state_name(first_state)}"]
+
+    # Infer transitions from verb functions and state ordering
+    transition_lines =
+      case verb_functions do
+        [_ | _] ->
+          # Pair states with verbs where possible
+          states
+          |> Enum.chunk_every(2, 1, :discard)
+          |> Enum.zip(Stream.concat(verb_functions, Stream.repeatedly(fn -> "transition" end)))
+          |> Enum.map(fn {[from, to], verb} ->
+            "    #{format_state_name(from)} --> #{format_state_name(to)} : #{verb}"
+          end)
+
+        [] ->
+          # Just show state progression
+          states
+          |> Enum.chunk_every(2, 1, :discard)
+          |> Enum.map(fn [from, to] ->
+            "    #{format_state_name(from)} --> #{format_state_name(to)}"
+          end)
+      end
+
+    # Final transition
+    last_state = List.last(states)
+    final_line = "    #{format_state_name(last_state)} --> [*]"
+
+    Enum.join(lines ++ transition_lines ++ [final_line], "\n")
+  end
+
+  defp generate_finitomata_skeleton(states, verb_functions) do
+    # Build the FSM definition string
+    transitions =
+      states
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.zip(Stream.concat(verb_functions, Stream.repeatedly(fn -> "transition" end)))
+      |> Enum.map_join("\n    ", fn {[from, to], verb} ->
+        "#{format_state_name(from)} --> |#{verb}| #{format_state_name(to)}"
+      end)
+
+    # Build on_transition callback stubs
+    callbacks =
+      states
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.zip(Stream.concat(verb_functions, Stream.repeatedly(fn -> "transition" end)))
+      |> Enum.map_join("\n\n  ", fn {[from, to], verb} ->
+        "def on_transition(:#{format_state_name(from)}, :#{verb}, _event_payload, state_payload),\n" <>
+          "    do: {:ok, :#{format_state_name(to)}, state_payload}"
+      end)
+
+    """
+    defmodule MyApp.EntityFSM do
+      @fsm \"\"\"\n    #{transitions}
+      \"\"\"
+
+      use Finitomata, fsm: @fsm, syntax: :flowchart
+
+      @impl Finitomata
+      #{callbacks}
+    end
+    """
+    |> String.trim()
+  end
+
+  defp format_state_name(state) when is_atom(state), do: Atom.to_string(state)
+  defp format_state_name(state) when is_binary(state), do: state
+  defp format_state_name(state), do: inspect(state)
+
+  defp calculate_fsm_confidence(states, verb_functions, tiers) do
+    state_factor = min(length(states) / 5.0, 1.0) * 0.4
+    verb_factor = min(length(verb_functions) / 3.0, 1.0) * 0.3
+    tier_factor = min(length(tiers) / 3.0, 1.0) * 0.3
+    Float.round(state_factor + verb_factor + tier_factor, 2)
   end
 
   # Helper functions

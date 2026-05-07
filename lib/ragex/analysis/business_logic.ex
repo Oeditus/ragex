@@ -69,6 +69,9 @@ defmodule Ragex.Analysis.BusinessLogic do
   ### Tier 6: Race Conditions
   - **TOCTOU** - Time-of-check-time-of-use vulnerabilities (CWE-367)
 
+  ### Tier 7: Refactoring
+  - **ImperativeStatusHandling** - Imperative status/state management (suggests FSM)
+
   ## Usage
 
       alias Ragex.Analysis.BusinessLogic
@@ -182,7 +185,9 @@ defmodule Ragex.Analysis.BusinessLogic do
     :unrestricted_file_upload,
     :improper_input_validation,
     # Tier 6: Race Conditions
-    :toctou
+    :toctou,
+    # Tier 7: Refactoring
+    :imperative_status_handling
   ]
 
   # Map analyzer names to Metastatic modules
@@ -226,7 +231,9 @@ defmodule Ragex.Analysis.BusinessLogic do
     unrestricted_file_upload: Metastatic.Analysis.BusinessLogic.UnrestrictedFileUpload,
     improper_input_validation: Metastatic.Analysis.BusinessLogic.ImproperInputValidation,
     # Race condition analyzers
-    toctou: Metastatic.Analysis.BusinessLogic.TOCTOU
+    toctou: Metastatic.Analysis.BusinessLogic.TOCTOU,
+    # Refactoring analyzers
+    imperative_status_handling: Metastatic.Analysis.BusinessLogic.ImperativeStatusHandling
   }
 
   @doc """
@@ -297,7 +304,10 @@ defmodule Ragex.Analysis.BusinessLogic do
       "CWE-20: Implement strict input validation with allowlists; reject malformed input.",
     # Race condition analyzers
     toctou:
-      "CWE-367: Use atomic operations or proper locking; avoid time-of-check-time-of-use patterns."
+      "CWE-367: Use atomic operations or proper locking; avoid time-of-check-time-of-use patterns.",
+    # Refactoring analyzers
+    imperative_status_handling:
+      "Replace imperative status/state management with a proper FSM (Finitomata for Elixir, gen_statem for Erlang) for explicit transitions, validation, and observability."
   }
 
   @doc """
@@ -1035,6 +1045,10 @@ defmodule Ragex.Analysis.BusinessLogic do
 
   defp get_analyzer_recommendation(:toctou, count) do
     "MEDIUM: Found #{count} TOCTOU race condition(s) (CWE-367). Use atomic operations or proper locking."
+  end
+
+  defp get_analyzer_recommendation(:imperative_status_handling, count) do
+    "Found #{count} imperative status management pattern(s). Consider modeling entity lifecycle with an FSM (Finitomata, gen_statem) for explicit state transitions and validation."
   end
 
   defp get_analyzer_recommendation(analyzer, count) do

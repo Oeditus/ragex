@@ -48,7 +48,7 @@
   ~r/lib\/ragex\/mcp\/handlers\/tools\.ex.*guard_fail/,
 
   # --- Unreachable pattern matches in call chains ---
-  ~r/lib\/ragex\/analysis\/suggestions\.ex:255.*call/,
+  ~r/lib\/ragex\/analysis\/suggestions\.ex:256.*call/,
   ~r/lib\/ragex\/analysis\/suggestions\/patterns\.ex.*pattern_match/,
   ~r/lib\/ragex\/analysis\/suggestions\/rag_advisor\.ex/,
   ~r/lib\/ragex\/ai\/features\/context\.ex.*pattern_match/,

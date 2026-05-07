@@ -55,6 +55,7 @@ defmodule Ragex.Analysis.Suggestions do
           | :reduce_coupling
           | :simplify_complexity
           | :extract_module
+          | :introduce_fsm
 
   @type priority :: :critical | :high | :medium | :low | :info
 
