@@ -85,18 +85,8 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   use Mix.Task
 
-  alias Ragex.Analysis.{
-    BusinessLogic,
-    DeadCode,
-    DependencyGraph,
-    Duplication,
-    Quality,
-    Security,
-    Smells
-  }
-
-  alias Ragex.Analyzers.Directory
-  alias Ragex.MCP.Client
+  alias Ragex.Analysis.Runner
+  alias Ragex.MCP.{Client, Delegate}
 
   @shortdoc "Performs comprehensive code analysis on a directory"
 
@@ -140,26 +130,91 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     config = build_config(opts)
 
+    # If a Ragex server is already running, delegate all work to it
+    # via MCP socket -- avoids starting a second BEAM VM / Bumblebee.
+    if Client.server_running?() do
+      run_delegated(config)
+    else
+      run_local(config)
+    end
+  end
+
+  # Delegation path: all heavy work happens on the running server
+  defp run_delegated(config) do
+    show_progress = config.format != "json" and not config.ci
+
+    if config.format == "json" or config.ci do
+      Logger.configure(level: :emergency)
+    end
+
+    if show_progress do
+      info_msg("Ragex Comprehensive Analysis (delegated to running server)")
+      Mix.shell().info("")
+    end
+
+    # Build MCP tool arguments from config
+    analyses_arg =
+      Map.new(config.analyses, fn {k, v} -> {Atom.to_string(k), v} end)
+
+    severity_str =
+      case config.severity do
+        [:low, :medium, :high, :critical] -> "low"
+        [:medium, :high, :critical] -> "medium"
+        [:high, :critical] -> "high"
+        [:critical] -> "critical"
+        _ -> "medium"
+      end
+
+    tool_args = %{
+      "path" => config.path,
+      "analyses" => analyses_arg,
+      "severity" => severity_str,
+      "threshold" => config.threshold,
+      "min_complexity" => config.min_complexity,
+      "god_threshold" => config.god_threshold,
+      "instability_threshold" => config.instability_threshold
+    }
+
+    case Delegate.with_server(fn conn ->
+           Delegate.call!(conn, "comprehensive_analyze", tool_args)
+         end) do
+      {:ok, remote_result} ->
+        analyze_result =
+          Map.get(remote_result, :analyze_result, %{
+            files_analyzed: 0,
+            entities_found: 0,
+            errors: []
+          })
+
+        results = Map.get(remote_result, :results, %{})
+
+        # Feed into the existing report/output/summary pipeline
+        report = generate_report(config, analyze_result, results)
+        output_results(config, report)
+        print_summary(config, results)
+        maybe_exit(config, results)
+
+      {:error, reason} ->
+        error_msg("Delegation to running server failed: #{inspect(reason)}")
+        error_msg("Falling back to local execution...")
+        run_local(config)
+    end
+
+    :ok
+  end
+
+  # Local path: starts the full application (original behavior)
+  defp run_local(config) do
     # Disable MCP server for non-interactive formats (prevents hanging)
-    # The server is only needed for interactive MCP client connections
     if config.format in ["json", "markdown"] or config.ci do
       Application.put_env(:ragex, :start_server, false)
     end
 
-    # If a Ragex server is already running (GPU occupied), skip Bumblebee
-    # to avoid CUDA OOM.  Analysis still works -- just without embeddings.
-    if Client.server_running?() do
-      Application.put_env(:ragex, :skip_bumblebee, true)
-      Application.put_env(:ragex, :start_server, false)
-    end
-
-    # Start required applications (with conditional MCP server based on config above)
+    # Start required applications
     Mix.Task.run("app.start")
 
-    # Only show progress messages if not JSON format and not CI mode
     show_progress = config.format != "json" and not config.ci
 
-    # Suppress all logger output when outputting JSON or CI mode
     if config.format == "json" or config.ci do
       Logger.configure(level: :emergency)
     end
@@ -171,7 +226,16 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     # Step 1: Analyze directory and build knowledge graph
     if show_progress, do: header_msg("Step 1: Analyzing directory...")
-    analyze_result = analyze_directory(config)
+
+    analyze_result =
+      case Runner.analyze_directory(config.path) do
+        {:ok, result} ->
+          result
+
+        {:error, reason} ->
+          error_msg("Failed to analyze directory: #{inspect(reason)}")
+          System.halt(1)
+      end
 
     if config.verbose and show_progress do
       success_msg(
@@ -182,7 +246,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     end
 
     # Step 2: Run analyses
-    results = run_analyses(config, analyze_result)
+    results = run_analyses(config)
 
     # Step 3: Generate report
     report = generate_report(config, analyze_result, results)
@@ -290,379 +354,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
     end
   end
 
-  # Analyze directory
-  defp analyze_directory(config) do
-    # Suppress MCP notifications when outputting structured formats (JSON/Markdown)
-    opts = if config.format in ["json", "markdown"], do: [notify: false], else: []
-    result = Directory.analyze_directory(config.path, opts)
-
-    case result do
-      {:ok, stats} ->
-        entities_found =
-          if stats[:graph_stats] do
-            Map.get(stats.graph_stats, :nodes, 0)
-          else
-            0
-          end
-
-        %{
-          files_analyzed: stats.total,
-          entities_found: entities_found,
-          errors: stats[:error_details] || []
-        }
-
-      {:error, reason} ->
-        error_msg("Failed to analyze directory: #{inspect(reason)}")
-        System.halt(1)
-    end
-  end
-
-  # Run all enabled analyses
-  defp run_analyses(config, _analyze_result) do
-    results = %{}
-    show_progress = config.format != "json"
-
-    results =
-      if config.analyses.security do
-        if show_progress, do: header_msg("Step 2.1: Security Analysis...")
-
-        security_result = run_security_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Found #{length(security_result.issues)} security issues")
-        end
-
-        Map.put(results, :security, security_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.business_logic do
-        if show_progress, do: header_msg("Step 2.2: Business Logic Analysis...")
-
-        bl_result = run_business_logic_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Found #{bl_result.total_issues} business logic issues")
-        end
-
-        Map.put(results, :business_logic, bl_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.complexity do
-        if show_progress, do: header_msg("Step 2.3: Complexity Analysis...")
-        complexity_result = run_complexity_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg(
-            "  ✓ Found #{length(complexity_result.complex_functions)} complex functions"
-          )
-        end
-
-        Map.put(results, :complexity, complexity_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.smells do
-        if show_progress, do: header_msg("Step 2.4: Code Smell Detection...")
-        smells_result = run_smells_analysis(config)
-
-        if config.verbose and show_progress do
-          smell_count =
-            case smells_result.smells do
-              %{total_smells: n} -> n
-              list when is_list(list) -> length(list)
-              _ -> 0
-            end
-
-          success_msg("  ✓ Found #{smell_count} code smells")
-        end
-
-        Map.put(results, :smells, smells_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.duplicates do
-        if show_progress, do: header_msg("Step 2.5: Duplication Detection...")
-        duplicates_result = run_duplicates_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Found #{length(duplicates_result.duplicates)} duplicate blocks")
-        end
-
-        Map.put(results, :duplicates, duplicates_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.dead_code do
-        if show_progress, do: header_msg("Step 2.6: Dead Code Analysis...")
-        dead_code_result = run_dead_code_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Found #{length(dead_code_result.dead_functions)} dead functions")
-        end
-
-        Map.put(results, :dead_code, dead_code_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.dependencies do
-        if show_progress, do: header_msg("Step 2.7: Dependency Analysis...")
-        deps_result = run_dependencies_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Analyzed #{map_size(deps_result.modules)} modules")
-        end
-
-        Map.put(results, :dependencies, deps_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.quality do
-        if show_progress, do: header_msg("Step 2.8: Quality Metrics...")
-        quality_result = run_quality_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Overall quality score: #{quality_result.overall_score}/100")
-        end
-
-        Map.put(results, :quality, quality_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.circulars do
-        if show_progress, do: header_msg("Step 2.9: Circular Dependency Detection...")
-        circulars_result = run_circulars_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Found #{length(circulars_result.cycles)} circular dependency clusters")
-        end
-
-        Map.put(results, :circulars, circulars_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.god_modules do
-        if show_progress, do: header_msg("Step 2.10: God Module Detection...")
-        god_result = run_god_modules_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Found #{length(god_result.modules)} god modules")
-        end
-
-        Map.put(results, :god_modules, god_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.unstable_modules do
-        if show_progress, do: header_msg("Step 2.11: Unstable Module Detection...")
-        unstable_result = run_unstable_modules_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Found #{length(unstable_result.modules)} unstable modules")
-        end
-
-        Map.put(results, :unstable_modules, unstable_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.unused_modules do
-        if show_progress, do: header_msg("Step 2.12: Unused Module Detection...")
-        unused_result = run_unused_modules_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Found #{length(unused_result.modules)} unused modules")
-        end
-
-        Map.put(results, :unused_modules, unused_result)
-      else
-        results
-      end
-
-    results =
-      if config.analyses.coupling do
-        if show_progress, do: header_msg("Step 2.13: Coupling Metrics...")
-        coupling_result = run_coupling_analysis(config)
-
-        if config.verbose and show_progress do
-          success_msg("  ✓ Computed coupling for #{length(coupling_result.metrics)} modules")
-        end
-
-        Map.put(results, :coupling, coupling_result)
-      else
-        results
-      end
-
-    results
-  end
-
-  # Individual analysis runners
-  defp run_security_analysis(config) do
-    case Security.analyze_directory(config.path, severity: config.severity) do
-      {:ok, issues} -> %{issues: issues}
-      {:error, _} -> %{issues: []}
-    end
-  end
-
-  defp run_business_logic_analysis(config) do
-    severity_map = %{
-      [:low, :medium, :high, :critical] => :low,
-      [:medium, :high, :critical] => :medium,
-      [:high, :critical] => :high,
-      [:critical] => :critical
-    }
-
-    min_severity = Map.get(severity_map, config.severity, :medium)
-
-    case BusinessLogic.analyze_directory(config.path, min_severity: min_severity) do
-      {:ok, result} -> result
-      {:error, _} -> %{total_files: 0, files_with_issues: 0, total_issues: 0, results: []}
-    end
-  end
-
-  defp run_complexity_analysis(config) do
-    case Quality.find_complex_code(config.path, min_complexity: config.min_complexity) do
-      {:ok, functions} -> %{complex_functions: functions}
-      {:error, _} -> %{complex_functions: []}
-    end
-  end
-
-  @dialyzer {:nowarn_function, run_smells_analysis: 1}
-  defp run_smells_analysis(config) do
-    case Smells.detect_smells(config.path) do
-      {:ok, smells} -> %{smells: smells}
-      {:error, _} -> %{smells: []}
-    end
-  end
-
-  defp run_duplicates_analysis(config) do
-    case Duplication.find_duplicates(config.path, threshold: config.threshold) do
-      {:ok, duplicates} -> %{duplicates: duplicates}
-      {:error, _} -> %{duplicates: []}
-    end
-  end
-
-  defp run_dead_code_analysis(_config) do
-    case DeadCode.find_dead_code() do
-      {:ok, dead_functions} -> %{dead_functions: dead_functions}
-      {:error, _} -> %{dead_functions: []}
-    end
-  end
-
-  defp run_dependencies_analysis(_config) do
-    case DependencyGraph.analyze_all_dependencies() do
-      # {:error, _} -> %{modules: %{}}
-      {:ok, analysis} -> analysis
-    end
-  end
-
-  defp run_quality_analysis(config) do
-    case Quality.analyze_quality(config.path) do
-      {:ok, metrics} -> metrics
-      {:error, _} -> %{overall_score: 0}
-    end
-  end
-
-  defp run_circulars_analysis(_config) do
-    case DependencyGraph.find_cycles(scope: :module) do
-      {:ok, cycles} -> %{cycles: cycles}
-      {:error, _} -> %{cycles: []}
-    end
-  end
-
-  defp run_god_modules_analysis(config) do
-    case DependencyGraph.find_god_modules(config.god_threshold) do
-      {:ok, god_modules} ->
-        modules =
-          Enum.map(god_modules, fn {module, metrics} ->
-            %{
-              module: module,
-              afferent: metrics.afferent,
-              efferent: metrics.efferent,
-              total: metrics.afferent + metrics.efferent,
-              instability: metrics.instability
-            }
-          end)
-
-        %{modules: modules, threshold: config.god_threshold}
-
-      {:error, _} ->
-        %{modules: [], threshold: config.god_threshold}
-    end
-  end
-
-  defp run_unstable_modules_analysis(config) do
-    case DependencyGraph.all_coupling_metrics() do
-      {:ok, all_metrics} ->
-        unstable =
-          all_metrics
-          |> Enum.filter(fn {_mod, metrics} ->
-            metrics.instability > config.instability_threshold
-          end)
-          |> Enum.map(fn {module, metrics} ->
-            %{
-              module: module,
-              instability: metrics.instability,
-              afferent: metrics.afferent,
-              efferent: metrics.efferent
-            }
-          end)
-          |> Enum.sort_by(& &1.instability, :desc)
-
-        %{modules: unstable, threshold: config.instability_threshold}
-
-      {:error, _} ->
-        %{modules: [], threshold: config.instability_threshold}
-    end
-  end
-
-  defp run_unused_modules_analysis(_config) do
-    case DependencyGraph.find_unused() do
-      {:ok, unused} -> %{modules: unused}
-      {:error, _} -> %{modules: []}
-    end
-  end
-
-  defp run_coupling_analysis(_config) do
-    case DependencyGraph.all_coupling_metrics() do
-      {:ok, all_metrics} ->
-        metrics =
-          Enum.map(all_metrics, fn {module, m} ->
-            %{
-              module: module,
-              afferent: m.afferent,
-              efferent: m.efferent,
-              instability: m.instability
-            }
-          end)
-
-        %{metrics: metrics}
-
-      {:error, _} ->
-        %{metrics: []}
-    end
+  # Run all enabled analyses using shared Runner
+  defp run_analyses(config) do
+    Runner.run_all(config)
   end
 
   # Generate report

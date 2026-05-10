@@ -109,8 +109,7 @@ defmodule Mix.Tasks.Ragex.Audit do
     # Disable MCP server for non-interactive JSON output
     Application.put_env(:ragex, :start_server, false)
 
-    # If a Ragex server is already running (GPU occupied), skip Bumblebee
-    # to avoid CUDA OOM.  Analysis still works -- just without embeddings.
+    # If a Ragex server is already running, skip Bumblebee to avoid CUDA OOM.
     if Client.server_running?() do
       Application.put_env(:ragex, :skip_bumblebee, true)
     end

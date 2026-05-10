@@ -54,6 +54,7 @@ defmodule Mix.Tasks.Ragex.Cache.Refresh do
   alias Ragex.CLI.{Colors, Output, Progress}
   alias Ragex.Embeddings.{FileTracker, Persistence}
   alias Ragex.Graph.Store
+  alias Ragex.MCP.Client
 
   @shortdoc "Refresh embeddings cache (incremental or full)"
 
@@ -63,6 +64,12 @@ defmodule Mix.Tasks.Ragex.Cache.Refresh do
       OptionParser.parse!(args,
         strict: [full: :boolean, incremental: :boolean, path: :string, stats: :boolean]
       )
+
+    # If a Ragex server is already running, skip Bumblebee to avoid CUDA OOM
+    if Client.server_running?() do
+      Application.put_env(:ragex, :skip_bumblebee, true)
+      Application.put_env(:ragex, :start_server, false)
+    end
 
     # Start the application
     Mix.Task.run("app.start")

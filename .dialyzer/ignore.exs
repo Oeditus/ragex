@@ -64,11 +64,11 @@
 
   # --- MCP handlers: unreachable code from call chain inference ---
   ~r/lib\/ragex\/mcp\/handlers\/resources\.ex/,
-  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:3667.*call/,
-  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:3702.*call/,
-  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:3770.*pattern_match/,
-  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:8197.*pattern_match/,
-  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:8332.*pattern_match/,
+  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:3721.*call/,
+  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:3756.*call/,
+  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:3824.*pattern_match/,
+  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:8251.*pattern_match/,
+  ~r/lib\/ragex\/mcp\/handlers\/tools\.ex:8386.*pattern_match/,
 
   # --- Interactive CLI wizards (Prompt.select signature mismatch) ---
   ~r/lib\/mix\/tasks\/ragex\.configure\.ex/,

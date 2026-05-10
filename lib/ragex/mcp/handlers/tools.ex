@@ -39,6 +39,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     Impact,
     MetastaticBridge,
     QualityStore,
+    Runner,
     Security,
     Semantic,
     Smells,
@@ -2204,6 +2205,56 @@ defmodule Ragex.MCP.Handlers.Tools do
             },
             required: ["session_id"]
           }
+        },
+        %{
+          name: "comprehensive_analyze",
+          description:
+            "Run all analysis passes on a directory and return unified results. Used by mix ragex.analyze to delegate to the running server.",
+          inputSchema: %{
+            type: "object",
+            properties: %{
+              path: %{
+                type: "string",
+                description: "Directory to analyze"
+              },
+              analyses: %{
+                type: "object",
+                description:
+                  "Which analyses to enable (keys: security, business_logic, complexity, smells, duplicates, dead_code, dependencies, quality, circulars, god_modules, unstable_modules, unused_modules, coupling). All default to true."
+              },
+              severity: %{
+                type: "string",
+                description: "Minimum severity level",
+                default: "medium"
+              },
+              threshold: %{
+                type: "number",
+                description: "Duplication threshold 0.0-1.0",
+                default: 0.85
+              },
+              min_complexity: %{
+                type: "integer",
+                description: "Minimum complexity to report",
+                default: 10
+              },
+              god_threshold: %{
+                type: "integer",
+                description: "Min total coupling for god module detection",
+                default: 15
+              },
+              instability_threshold: %{
+                type: "number",
+                description: "Min instability to report",
+                default: 0.8
+              },
+              format: %{
+                type: "string",
+                description: "Output format: text, json, markdown",
+                default: "json"
+              }
+            },
+            required: ["path"]
+          }
         }
       ]
     }
@@ -2431,6 +2482,9 @@ defmodule Ragex.MCP.Handlers.Tools do
 
       "agent_clear_session" ->
         agent_clear_session_tool(arguments)
+
+      "comprehensive_analyze" ->
+        comprehensive_analyze_tool(arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
@@ -8335,4 +8389,69 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp agent_clear_session_tool(_), do: {:error, "Missing required 'session_id' parameter"}
+
+  # Comprehensive analysis tool - used by mix ragex.analyze delegation
+
+  defp comprehensive_analyze_tool(%{"path" => path} = params) do
+    analyses_raw = Map.get(params, "analyses", %{})
+
+    # Build analyses map: default all to true, override with provided values
+    all_keys = [
+      :security,
+      :business_logic,
+      :complexity,
+      :smells,
+      :duplicates,
+      :dead_code,
+      :dependencies,
+      :quality,
+      :circulars,
+      :god_modules,
+      :unstable_modules,
+      :unused_modules,
+      :coupling
+    ]
+
+    analyses =
+      Map.new(all_keys, fn key ->
+        str_key = Atom.to_string(key)
+        {key, Map.get(analyses_raw, str_key, true)}
+      end)
+
+    severity = parse_comprehensive_severity(Map.get(params, "severity", "medium"))
+
+    config = %{
+      path: path,
+      severity: severity,
+      threshold: Map.get(params, "threshold", 0.85),
+      min_complexity: Map.get(params, "min_complexity", 10),
+      god_threshold: Map.get(params, "god_threshold", 15),
+      instability_threshold: Map.get(params, "instability_threshold", 0.8),
+      analyses: analyses
+    }
+
+    # Step 1: Analyze directory (populate graph)
+    analyze_result =
+      case Runner.analyze_directory(path) do
+        {:ok, result} -> result
+        {:error, reason} -> %{files_analyzed: 0, entities_found: 0, errors: [inspect(reason)]}
+      end
+
+    # Step 2: Run all enabled analyses using shared Runner
+    results = Runner.run_all(config)
+
+    {:ok, %{analyze_result: analyze_result, results: results}}
+  end
+
+  defp comprehensive_analyze_tool(_), do: {:error, "Missing required 'path' parameter"}
+
+  defp parse_comprehensive_severity(severity) when is_binary(severity) do
+    case String.downcase(severity) do
+      "low" -> [:low, :medium, :high, :critical]
+      "medium" -> [:medium, :high, :critical]
+      "high" -> [:high, :critical]
+      "critical" -> [:critical]
+      _ -> [:medium, :high, :critical]
+    end
+  end
 end

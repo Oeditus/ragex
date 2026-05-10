@@ -29,12 +29,16 @@ defmodule Mix.Tasks.Ragex.Dashboard do
   alias Ragex.CLI.Colors
   alias Ragex.Embeddings.Persistence
   alias Ragex.Graph.Store
+  alias Ragex.MCP.Client
 
   @refresh_interval 1000
 
   @impl Mix.Task
   def run(args) do
-    {:ok, _} = Application.ensure_all_started(:ragex)
+    # Only start full app if no server is running
+    unless Client.server_running?() do
+      {:ok, _} = Application.ensure_all_started(:ragex)
+    end
 
     {opts, _, _} =
       OptionParser.parse(args,
