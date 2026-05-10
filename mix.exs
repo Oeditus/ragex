@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.14.0"
+  @version "0.14.1"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -24,7 +24,7 @@ defmodule Ragex.MixProject do
         plt_add_deps: :app_tree,
         plt_add_apps: [:mix],
         plt_core_path: ".dialyzer",
-        list_unused_filters: false,
+        list_unused_filters: true,
         ignore_warnings: ".dialyzer/ignore.exs"
       ],
       name: "Ragex",
