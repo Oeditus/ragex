@@ -1,4 +1,6 @@
 {
+  "_comment": "Ragex MCP server configuration for multiple editors",
+
   "mcpServers": {
     "ragex": {
       "command": "mix",
@@ -6,6 +8,17 @@
       "cwd": "/home/am/Proyectos/Oeditus/ragex",
       "env": {
         "MIX_ENV": "prod"
+      }
+    }
+  },
+
+  "context_servers": {
+    "_comment": "Zed editor format -- copy this block into ~/.config/zed/settings.json",
+    "ragex": {
+      "command": {
+        "path": "/home/am/Proyectos/Oeditus/ragex/bin/ragex-mcp",
+        "args": [],
+        "env": {}
       }
     }
   }

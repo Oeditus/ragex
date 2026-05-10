@@ -1,0 +1,35 @@
+[
+  // Ragex project keybindings
+  //
+  // These bindings launch Zed tasks defined in .zed/tasks.json.
+  // They are project-scoped and only active when the Ragex workspace is open.
+  {
+    "context": "Editor",
+    "bindings": {
+      // Testing
+      "ctrl-shift-t": ["task::Spawn", { "task_name": "mix test (current file)" }],
+      "ctrl-shift-l": ["task::Spawn", { "task_name": "mix test (current line)" }],
+
+      // Code quality
+      "ctrl-shift-q": ["task::Spawn", { "task_name": "mix quality (format + credo)" }],
+      "ctrl-shift-f": ["task::Spawn", { "task_name": "mix format" }],
+
+      // Ragex analysis
+      "ctrl-shift-a": ["task::Spawn", { "task_name": "ragex: analyze current file" }],
+
+      // Ragex interactive
+      "ctrl-shift-r": ["task::Spawn", { "task_name": "ragex: refactor" }],
+      "ctrl-shift-d": ["task::Spawn", { "task_name": "ragex: dashboard" }]
+    }
+  },
+  {
+    "context": "Workspace",
+    "bindings": {
+      // Project-wide tasks (don't require an active editor)
+      "ctrl-alt-t": ["task::Spawn", { "task_name": "mix test" }],
+      "ctrl-alt-a": ["task::Spawn", { "task_name": "ragex: analyze project" }],
+      "ctrl-alt-c": ["task::Spawn", { "task_name": "ragex: chat" }],
+      "ctrl-alt-s": ["task::Spawn", { "task_name": "ragex: cache stats" }]
+    }
+  }
+]

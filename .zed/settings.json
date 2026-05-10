@@ -1,0 +1,127 @@
+{
+  // Ragex -- Zed project settings
+  //
+  // This configures Ragex as an MCP context server so Zed's Agent Panel
+  // can call any of the ~50 Ragex tools (analysis, RAG, refactoring, etc.).
+
+  // ── MCP Context Servers ─────────────────────────────────────────────
+  "context_servers": {
+    "ragex": {
+      "command": {
+        "path": "bin/ragex-mcp",
+        "args": ["--project", "."],
+        "env": {
+          "MIX_ENV": "prod"
+        }
+      }
+    }
+  },
+
+  // ── Elixir Language Support ─────────────────────────────────────────
+  "languages": {
+    "Elixir": {
+      "language_servers": ["elixir-ls", "!next-ls", "!lexical", "..."],
+      "format_on_save": "on",
+      "tab_size": 2,
+      "soft_wrap": "editor_width"
+    },
+    "EEx": {
+      "language_servers": ["elixir-ls", "!next-ls", "!lexical", "..."],
+      "format_on_save": "on"
+    },
+    "HEEx": {
+      "language_servers": ["elixir-ls", "!next-ls", "!lexical", "..."],
+      "format_on_save": "on"
+    },
+    "Erlang": {
+      "tab_size": 4
+    }
+  },
+
+  // ── LSP Settings ────────────────────────────────────────────────────
+  "lsp": {
+    "elixir-ls": {
+      "settings": {
+        "dialyzerEnabled": true,
+        "fetchDeps": false,
+        "suggestSpecs": true
+      }
+    }
+  },
+
+  // ── Agent Configuration ─────────────────────────────────────────────
+  "agent": {
+    "profiles": {
+      "ragex": {
+        "name": "Ragex RAG",
+        "tools": {
+          "read_file": true,
+          "find_path": true,
+          "list_directory": true,
+          "grep": true,
+          "diagnostics": true,
+          "thinking": true,
+          "terminal": true,
+          "fetch": false
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {
+          "ragex": {
+            "tools": {
+              "analyze_file": true,
+              "analyze_directory": true,
+              "query_graph": true,
+              "list_nodes": true,
+              "semantic_search": true,
+              "hybrid_search": true,
+              "rag_query": true,
+              "rag_explain": true,
+              "rag_suggest": true,
+              "find_paths": true,
+              "find_callers": true,
+              "graph_stats": true,
+              "find_dead_code": true,
+              "find_duplicates": true,
+              "find_similar_code": true,
+              "analyze_dependencies": true,
+              "find_circular_dependencies": true,
+              "coupling_report": true,
+              "analyze_impact": true,
+              "suggest_refactorings": true,
+              "explain_suggestion": true,
+              "analyze_quality": true,
+              "quality_report": true,
+              "find_complex_code": true,
+              "detect_communities": true,
+              "betweenness_centrality": true,
+              "semantic_operations": true,
+              "analyze_security_issues": true,
+              "semantic_analysis": true,
+              "agent_analyze": true,
+              "agent_chat": true,
+              "read_file": true,
+              "edit_file": true,
+              "validate_edit": true,
+              "rollback_edit": true,
+              "preview_refactor": true,
+              "refactor_code": true,
+              "advanced_refactor": true
+            }
+          }
+        }
+      }
+    }
+  },
+
+  // ── File scanning ───────────────────────────────────────────────────
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.elixir_ls",
+    "**/_build",
+    "**/deps",
+    "**/node_modules",
+    "**/.ragex",
+    "**/cover",
+    "**/.dialyzer"
+  ]
+}

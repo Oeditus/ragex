@@ -1,0 +1,268 @@
+[
+  // ═══════════════════════════════════════════════════════════════════
+  //  Testing
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "mix test",
+    "command": "mix test",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "mix test (current file)",
+    "command": "mix test \"$ZED_RELATIVE_FILE\"",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "current"
+  },
+  {
+    "label": "mix test (current line)",
+    "command": "mix test \"$ZED_RELATIVE_FILE:$ZED_ROW\"",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "current"
+  },
+  {
+    "label": "mix test --cover",
+    "command": "mix test --cover",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "mix test --failed",
+    "command": "mix test --failed",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Code Quality
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "mix format",
+    "command": "mix format",
+    "reveal": "no_focus",
+    "hide": "on_success",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "mix format (check)",
+    "command": "mix format --check-formatted",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "mix credo --strict",
+    "command": "mix credo --strict",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "mix quality (format + credo)",
+    "command": "mix quality",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "mix dialyzer",
+    "command": "mix dialyzer",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Ragex -- Analysis
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "ragex: analyze current file",
+    "command": "mix ragex.analyze \"$ZED_FILE\"",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "current"
+  },
+  {
+    "label": "ragex: analyze project",
+    "command": "mix ragex.analyze .",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "ragex: audit",
+    "command": "mix ragex.audit",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "ragex: audit (current file)",
+    "command": "mix ragex.audit \"$ZED_FILE\"",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "current"
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Ragex -- Cache Management
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "ragex: cache stats",
+    "command": "mix ragex.cache.stats",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: cache refresh",
+    "command": "mix ragex.cache.refresh",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: cache refresh (full)",
+    "command": "mix ragex.cache.refresh --full",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: cache clear",
+    "command": "mix ragex.cache.clear",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Ragex -- ML Models
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "ragex: download models",
+    "command": "mix ragex.models.download",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: migrate embeddings",
+    "command": "mix ragex.embeddings.migrate",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Ragex -- Interactive
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "ragex: chat",
+    "command": "mix ragex.chat",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: refactor",
+    "command": "mix ragex.refactor",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: configure",
+    "command": "mix ragex.configure",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Ragex -- Dashboard & Monitoring
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "ragex: dashboard",
+    "command": "mix ragex.dashboard",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Ragex -- Setup & Maintenance
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "ragex: install completions",
+    "command": "mix ragex.completions",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: install man pages",
+    "command": "mix ragex.install_man",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Build & Dependencies
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "mix deps.get",
+    "command": "mix deps.get",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "mix compile",
+    "command": "mix compile",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "mix clean",
+    "command": "mix clean",
+    "reveal": "no_focus",
+    "hide": "on_success",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  //  Documentation
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    "label": "mix docs",
+    "command": "mix docs",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  }
+]

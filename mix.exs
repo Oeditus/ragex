@@ -127,6 +127,8 @@ defmodule Ragex.MixProject do
         stuff/docs/TOOLS.md
         stuff/docs/TROUBLESHOOTING.md
         stuff/docs/USAGE.md
+        stuff/docs/ZED.md
+        bin/ragex-mcp
         examples/product_cart/README.md
         examples/product_cart/DEMO.md
       ),
@@ -188,6 +190,7 @@ defmodule Ragex.MixProject do
       "stuff/docs/STREAMING.md": [title: "Streaming Notifications"],
       "stuff/docs/TOOLS.md": [title: "MCP Tools Reference"],
       "stuff/docs/TROUBLESHOOTING.md": [title: "Troubleshooting"],
+      "stuff/docs/ZED.md": [title: "Zed Editor Integration"],
       "examples/product_cart/DEMO.md": [title: "Cart demo: README"]
     ]
   end

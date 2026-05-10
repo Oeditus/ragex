@@ -1,17 +1,85 @@
 #!/usr/bin/env bash
-# Wrapper script for Ragex MCP server
-# Ensures compilation output doesn't leak to stdio
+#
+# ragex-mcp -- Start Ragex as an MCP server in stdio mode.
+#
+# Designed for editors that communicate with MCP servers over stdin/stdout
+# (Zed, Cursor, Claude Desktop, etc.).
+#
+# Usage:
+#   bin/ragex-mcp                          # basic startup
+#   bin/ragex-mcp --project /path/to/code  # auto-analyze a project on startup
+#   bin/ragex-mcp --log-level debug        # override log level
+#
+# Environment variables (all optional):
+#   RAGEX_PROJECT          -- same as --project
+#   RAGEX_LOG_LEVEL        -- same as --log-level (default: info)
+#   RAGEX_EMBEDDING_MODEL  -- embedding model to use
 
-set -e
+set -euo pipefail
 
-# Get the script's directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-# Compile silently (send all output to stderr to not pollute stdio)
+# -- Defaults ---------------------------------------------------------------
+PROJECT="${RAGEX_PROJECT:-}"
+LOG_LEVEL="${RAGEX_LOG_LEVEL:-info}"
+
+# -- Parse arguments --------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project)
+      PROJECT="$2"
+      shift 2
+      ;;
+    --project=*)
+      PROJECT="${1#*=}"
+      shift
+      ;;
+    --log-level)
+      LOG_LEVEL="$2"
+      shift 2
+      ;;
+    --log-level=*)
+      LOG_LEVEL="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      cat <<'EOF'
+Usage: ragex-mcp [--project PATH] [--log-level LEVEL]
+
+Start Ragex as an MCP server communicating over stdio.
+
+Options:
+  --project PATH    Auto-analyze a project directory on startup
+  --log-level LEVEL Set log level (debug|info|warning|error)
+
+Environment:
+  RAGEX_PROJECT          Same as --project
+  RAGEX_LOG_LEVEL        Same as --log-level (default: info)
+  RAGEX_EMBEDDING_MODEL  Embedding model to use
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# -- Environment for MCP stdio mode -----------------------------------------
+export MIX_ENV=prod
+export RAGEX_STDIO=1
+export LOG_LEVEL="$LOG_LEVEL"
+
+if [[ -n "$PROJECT" ]]; then
+  export RAGEX_AUTO_ANALYZE="$PROJECT"
+fi
+
+# Compile silently (all output to stderr so it never pollutes stdio JSON-RPC)
 mix compile >&2 2>&1
 
-# Run the server (now only JSON-RPC goes to stdout)
+# Run the server (only JSON-RPC goes to stdout)
 exec mix run --no-halt --no-compile
