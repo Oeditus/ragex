@@ -48,11 +48,9 @@ defmodule Ragex.MCP.Client do
   """
   @spec connect() :: {:ok, t()} | {:error, term()}
   def connect do
-    opts = [
-      :binary,
-      {:active, false},
-      {:ip, {:local, @socket_path}}
-    ]
+    # NOTE: {:ip, {:local, path}} is for listen (server), NOT connect (client).
+    # The destination is passed as the first arg to :gen_tcp.connect.
+    opts = [:binary, {:active, false}]
 
     case :gen_tcp.connect({:local, @socket_path}, 0, opts, @connect_timeout) do
       {:ok, socket} ->

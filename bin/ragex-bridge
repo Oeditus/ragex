@@ -26,13 +26,8 @@ defmodule RagexBridge do
   # Private
 
   defp connect do
-    opts = [
-      :binary,
-      {:active, false},
-      {:ip, {:local, @socket_path}}
-    ]
-
-    :gen_tcp.connect({:local, @socket_path}, 0, opts, 5_000)
+    # {:ip, {:local, path}} is for listen (server), not connect (client)
+    :gen_tcp.connect({:local, @socket_path}, 0, [:binary, {:active, false}], 5_000)
   end
 
   # Forward every line from stdin to the socket.

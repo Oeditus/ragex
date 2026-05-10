@@ -374,7 +374,14 @@ defmodule Mix.Tasks.Ragex.Analyze do
         smells_result = run_smells_analysis(config)
 
         if config.verbose and show_progress do
-          success_msg("  ✓ Found #{length(smells_result.smells)} code smells")
+          smell_count =
+            case smells_result.smells do
+              %{total_smells: n} -> n
+              list when is_list(list) -> length(list)
+              _ -> 0
+            end
+
+          success_msg("  ✓ Found #{smell_count} code smells")
         end
 
         Map.put(results, :smells, smells_result)
@@ -1243,7 +1250,13 @@ defmodule Mix.Tasks.Ragex.Analyze do
             if count > 0, do: warning_msg(msg), else: success_msg(msg)
 
           :smells ->
-            count = length(data.smells)
+            count =
+              case data.smells do
+                %{total_smells: n} -> n
+                list when is_list(list) -> length(list)
+                _ -> 0
+              end
+
             msg = "  Code Smells: #{count}"
             if count > 0, do: warning_msg(msg), else: success_msg(msg)
 
