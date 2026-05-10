@@ -1,0 +1,82 @@
+#!/usr/bin/env elixir
+#
+# ragex-bridge -- Lightweight stdio-to-Unix-socket bridge.
+#
+# Bridges MCP JSON-RPC between stdin/stdout and a running Ragex server
+# on /tmp/ragex_mcp.sock.  No Mix, no application startup, no GPU
+# allocation.  Used by bin/ragex-mcp when a server is already running.
+
+defmodule RagexBridge do
+  @socket_path ~c"/tmp/ragex_mcp.sock"
+
+  def run do
+    case connect() do
+      {:ok, socket} ->
+        # Spawn a reader that forwards socket -> stdout
+        reader_pid = spawn_link(fn -> socket_to_stdout(socket) end)
+        # Main loop: stdin -> socket
+        stdin_to_socket(socket, reader_pid)
+
+      {:error, reason} ->
+        IO.puts(:stderr, "ragex-bridge: cannot connect to #{@socket_path}: #{inspect(reason)}")
+        System.halt(1)
+    end
+  end
+
+  # Private
+
+  defp connect do
+    opts = [
+      :binary,
+      {:active, false},
+      {:ip, {:local, @socket_path}}
+    ]
+
+    :gen_tcp.connect({:local, @socket_path}, 0, opts, 5_000)
+  end
+
+  # Forward every line from stdin to the socket.
+  defp stdin_to_socket(socket, reader_pid) do
+    case IO.read(:stdio, :line) do
+      :eof ->
+        Process.exit(reader_pid, :shutdown)
+        :gen_tcp.close(socket)
+        System.halt(0)
+
+      {:error, _reason} ->
+        Process.exit(reader_pid, :shutdown)
+        :gen_tcp.close(socket)
+        System.halt(0)
+
+      line when is_binary(line) ->
+        # Line already includes the trailing newline from IO.read(:line)
+        data = if String.ends_with?(line, "\n"), do: line, else: line <> "\n"
+
+        case :gen_tcp.send(socket, data) do
+          :ok ->
+            stdin_to_socket(socket, reader_pid)
+
+          {:error, _reason} ->
+            System.halt(1)
+        end
+    end
+  end
+
+  # Forward every chunk from the socket to stdout.
+  # Runs in a spawned process.
+  defp socket_to_stdout(socket) do
+    case :gen_tcp.recv(socket, 0) do
+      {:ok, data} ->
+        IO.write(:stdio, data)
+        socket_to_stdout(socket)
+
+      {:error, :closed} ->
+        System.halt(0)
+
+      {:error, _reason} ->
+        System.halt(1)
+    end
+  end
+end
+
+RagexBridge.run()

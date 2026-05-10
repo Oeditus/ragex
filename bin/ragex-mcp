@@ -78,6 +78,26 @@ if [[ -n "$PROJECT" ]]; then
   export RAGEX_AUTO_ANALYZE="$PROJECT"
 fi
 
+# -- Detect running instance ------------------------------------------------
+# If a Ragex server is already listening on the Unix socket, bridge to it
+# instead of starting a second BEAM VM (which would OOM on GPU allocation).
+SOCKET_PATH="/tmp/ragex_mcp.sock"
+
+if [[ -S "$SOCKET_PATH" ]]; then
+  # Try a lightweight ping via the socket to confirm it's alive.
+  # Send MCP ping, read one response line, check for "result".
+  PING='{"jsonrpc":"2.0","id":0,"method":"ping","params":{}}'
+  # timeout 2s: if no response, server is stale
+  PONG=$(echo "$PING" | timeout 2 socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null | head -1)
+
+  if echo "$PONG" | grep -q '"result"'; then
+    echo "[ragex-mcp] Reusing running server via $SOCKET_PATH" >&2
+    exec "$SCRIPT_DIR/ragex-bridge"
+  fi
+fi
+
+# -- No running instance, start full server ---------------------------------
+
 # Compile silently (all output to stderr so it never pollutes stdio JSON-RPC)
 mix compile >&2 2>&1
 

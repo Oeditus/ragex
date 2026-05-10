@@ -68,6 +68,7 @@ defmodule Mix.Tasks.Ragex.Audit do
   alias Ragex.Analysis.{BusinessLogic, DependencyGraph, Quality}
   alias Ragex.CLI.Progress
   alias Ragex.Graph.Store
+  alias Ragex.MCP.Client
 
   @impl Mix.Task
   def run(args) do
@@ -107,6 +108,12 @@ defmodule Mix.Tasks.Ragex.Audit do
 
     # Disable MCP server for non-interactive JSON output
     Application.put_env(:ragex, :start_server, false)
+
+    # If a Ragex server is already running (GPU occupied), skip Bumblebee
+    # to avoid CUDA OOM.  Analysis still works -- just without embeddings.
+    if Client.server_running?() do
+      Application.put_env(:ragex, :skip_bumblebee, true)
+    end
 
     # Suppress logger for clean output unless verbose
     unless verbose, do: Logger.configure(level: :emergency)

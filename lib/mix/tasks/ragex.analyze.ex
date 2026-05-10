@@ -96,6 +96,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
   }
 
   alias Ragex.Analyzers.Directory
+  alias Ragex.MCP.Client
 
   @shortdoc "Performs comprehensive code analysis on a directory"
 
@@ -142,6 +143,13 @@ defmodule Mix.Tasks.Ragex.Analyze do
     # Disable MCP server for non-interactive formats (prevents hanging)
     # The server is only needed for interactive MCP client connections
     if config.format in ["json", "markdown"] or config.ci do
+      Application.put_env(:ragex, :start_server, false)
+    end
+
+    # If a Ragex server is already running (GPU occupied), skip Bumblebee
+    # to avoid CUDA OOM.  Analysis still works -- just without embeddings.
+    if Client.server_running?() do
+      Application.put_env(:ragex, :skip_bumblebee, true)
       Application.put_env(:ragex, :start_server, false)
     end
 

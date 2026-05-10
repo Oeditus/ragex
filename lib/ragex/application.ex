@@ -23,25 +23,32 @@ defmodule Ragex.Application do
       end
     end
 
+    # When :skip_bumblebee is set (e.g. mix tasks while a server is already
+    # running on the GPU), skip the heavyweight ML children to avoid
+    # allocating GPU memory a second time.
+    skip_bumblebee = Application.get_env(:ragex, :skip_bumblebee, false)
+
     # Base children that always start
-    base_children = [
-      # Graph store must start before MCP server
-      Ragex.Graph.Store,
-      # Embedding model for semantic search
-      Ragex.Embeddings.Bumblebee,
-      # Vector similarity search
-      Ragex.VectorStore,
-      # File system watcher for auto-reindex
-      Ragex.Watcher,
-      # AI Provider Registry
-      Ragex.AI.Provider.Registry,
-      # AI response caching
-      Ragex.AI.Cache,
-      # AI usage tracking and rate limiting
-      Ragex.AI.Usage,
-      # Agent conversation memory
-      Ragex.Agent.Memory
-    ]
+    base_children =
+      [
+        # Graph store must start before MCP server
+        Ragex.Graph.Store,
+        # Embedding model for semantic search (heavy -- needs GPU)
+        if(!skip_bumblebee, do: Ragex.Embeddings.Bumblebee),
+        # Vector similarity search (depends on embeddings)
+        if(!skip_bumblebee, do: Ragex.VectorStore),
+        # File system watcher for auto-reindex
+        Ragex.Watcher,
+        # AI Provider Registry
+        Ragex.AI.Provider.Registry,
+        # AI response caching
+        Ragex.AI.Cache,
+        # AI Usage tracking and rate limiting
+        Ragex.AI.Usage,
+        # Agent conversation memory
+        Ragex.Agent.Memory
+      ]
+      |> Enum.reject(&is_nil/1)
 
     # MCP socket server starts unless :start_server is false
     socket_children =
