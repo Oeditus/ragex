@@ -92,7 +92,7 @@
   // ═══════════════════════════════════════════════════════════════════
   {
     "label": "ragex: analyze current file",
-    "command": "mix ragex.analyze \"$ZED_FILE\"",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.analyze \"$ZED_FILE\"",
     "reveal": "always",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -100,7 +100,7 @@
   },
   {
     "label": "ragex: analyze project",
-    "command": "mix ragex.analyze .",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.analyze \"$ZED_WORKTREE_ROOT\"",
     "reveal": "always",
     "use_new_terminal": true,
     "allow_concurrent_runs": false,
@@ -108,7 +108,7 @@
   },
   {
     "label": "ragex: audit",
-    "command": "mix ragex.audit",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.audit --path \"$ZED_WORKTREE_ROOT\"",
     "reveal": "always",
     "use_new_terminal": true,
     "allow_concurrent_runs": false,
@@ -116,7 +116,7 @@
   },
   {
     "label": "ragex: audit (current file)",
-    "command": "mix ragex.audit \"$ZED_FILE\"",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.audit --path \"$ZED_FILE\"",
     "reveal": "always",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -128,28 +128,28 @@
   // ═══════════════════════════════════════════════════════════════════
   {
     "label": "ragex: cache stats",
-    "command": "mix ragex.cache.stats",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.cache.stats",
     "reveal": "always",
     "use_new_terminal": false,
     "allow_concurrent_runs": false
   },
   {
     "label": "ragex: cache refresh",
-    "command": "mix ragex.cache.refresh",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.cache.refresh --path \"$ZED_WORKTREE_ROOT\"",
     "reveal": "always",
     "use_new_terminal": false,
     "allow_concurrent_runs": false
   },
   {
     "label": "ragex: cache refresh (full)",
-    "command": "mix ragex.cache.refresh --full",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.cache.refresh --path \"$ZED_WORKTREE_ROOT\" --full",
     "reveal": "always",
     "use_new_terminal": false,
     "allow_concurrent_runs": false
   },
   {
     "label": "ragex: cache clear",
-    "command": "mix ragex.cache.clear",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.cache.clear",
     "reveal": "always",
     "use_new_terminal": false,
     "allow_concurrent_runs": false
@@ -160,14 +160,14 @@
   // ═══════════════════════════════════════════════════════════════════
   {
     "label": "ragex: download models",
-    "command": "mix ragex.models.download",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.models.download",
     "reveal": "always",
     "use_new_terminal": true,
     "allow_concurrent_runs": false
   },
   {
     "label": "ragex: migrate embeddings",
-    "command": "mix ragex.embeddings.migrate",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.embeddings.migrate",
     "reveal": "always",
     "use_new_terminal": true,
     "allow_concurrent_runs": false
@@ -178,21 +178,21 @@
   // ═══════════════════════════════════════════════════════════════════
   {
     "label": "ragex: chat",
-    "command": "mix ragex.chat",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.chat --path \"$ZED_WORKTREE_ROOT\"",
     "reveal": "always",
     "use_new_terminal": true,
     "allow_concurrent_runs": false
   },
   {
     "label": "ragex: refactor",
-    "command": "mix ragex.refactor",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.refactor --path \"$ZED_WORKTREE_ROOT\"",
     "reveal": "always",
     "use_new_terminal": true,
     "allow_concurrent_runs": false
   },
   {
     "label": "ragex: configure",
-    "command": "mix ragex.configure",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.configure",
     "reveal": "always",
     "use_new_terminal": true,
     "allow_concurrent_runs": false
@@ -203,7 +203,7 @@
   // ═══════════════════════════════════════════════════════════════════
   {
     "label": "ragex: dashboard",
-    "command": "mix ragex.dashboard",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.dashboard",
     "reveal": "always",
     "use_new_terminal": true,
     "allow_concurrent_runs": false
@@ -214,14 +214,14 @@
   // ═══════════════════════════════════════════════════════════════════
   {
     "label": "ragex: install completions",
-    "command": "mix ragex.completions",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.completions",
     "reveal": "always",
     "use_new_terminal": false,
     "allow_concurrent_runs": false
   },
   {
     "label": "ragex: install man pages",
-    "command": "mix ragex.install_man",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.install_man",
     "reveal": "always",
     "use_new_terminal": false,
     "allow_concurrent_runs": false
