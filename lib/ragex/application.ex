@@ -6,6 +6,7 @@ defmodule Ragex.Application do
   use Application
   alias Ragex.AI.Config, as: AIConfig
   alias Ragex.Analyzers.Directory
+  alias Ragex.Git.Backend, as: GitBackend
 
   require Logger
 
@@ -46,7 +47,11 @@ defmodule Ragex.Application do
         # AI Usage tracking and rate limiting
         Ragex.AI.Usage,
         # Agent conversation memory
-        Ragex.Agent.Memory
+        Ragex.Agent.Memory,
+        # Git Enricher (background git metadata enrichment)
+        Ragex.Git.Enricher,
+        # Git RepoServer (NIF isolation for egit, only when egit is available)
+        if(GitBackend.egit_available?(), do: Ragex.Git.RepoServer)
       ]
       |> Enum.reject(&is_nil/1)
 
