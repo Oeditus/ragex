@@ -8,6 +8,7 @@ defmodule Ragex.MCP.Server do
   use GenServer
   require Logger
 
+  alias Ragex.MCP.Formatter
   alias Ragex.MCP.Handlers.{Prompts, Resources, Tools}
   alias Ragex.MCP.Protocol
 
@@ -183,11 +184,14 @@ defmodule Ragex.MCP.Server do
   defp handle_tools_call(params, id) do
     tool_name = Map.get(params, "name")
     arguments = Map.get(params, "arguments", %{})
+    format_opts = Formatter.extract_opts(arguments)
 
     case Tools.call_tool(tool_name, arguments) do
       {:ok, result} ->
+        # Apply context compaction (compact by default, verbose on request)
+        formatted = Formatter.format(result, tool_name, format_opts)
         # Convert result to JSON-safe format (handling tuples, etc.)
-        json_safe_result = result_to_json(result)
+        json_safe_result = result_to_json(formatted)
         text = :json.encode(json_safe_result) |> IO.iodata_to_binary()
         Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
 

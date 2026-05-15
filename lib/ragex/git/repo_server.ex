@@ -64,7 +64,7 @@ defmodule Ragex.Git.RepoServer do
   end
 
   @impl true
-  def handle_call({:egit_call, function, args}, _from, %State{repo_ref: nil} = state) do
+  def handle_call({:egit_call, _function, _args}, _from, %State{repo_ref: nil} = state) do
     {:reply, {:error, :no_repo_open}, state}
   end
 

@@ -28,7 +28,7 @@ defmodule Ragex.Git.Enricher do
   use GenServer
   require Logger
 
-  alias Ragex.Git.{Backend, Blame, CoChange, PR, Repo}
+  alias Ragex.Git.{Backend, CoChange, Repo}
   alias Ragex.Graph.Store
 
   @concurrency 4

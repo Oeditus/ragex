@@ -1,11 +1,13 @@
 # Ragex vs Cicada -- Comparison Analysis
 
+> Last updated: 2026-05-15 (after Phase E: Git Archaeology and Phase F: Context Compaction)
+
 ## Philosophical Difference
 
 The two projects solve overlapping but fundamentally different problems. **Cicada** is a *read-only context compaction layer* -- it builds a pre-indexed map of your codebase so AI assistants stop wasting tokens on blind greps. It answers "what's here and why." **Ragex** is a *read+write hybrid RAG system* -- it builds a knowledge graph, performs deep analysis, and can also edit, refactor, and transform your code. It answers "what's here, what's wrong with it, and how to fix it."
 
 Cicada: 8 MCP tools, laser-focused on search and attribution.
-Ragex: ~74 MCP tools spanning analysis, editing, refactoring, security, RAG, and AI features.
+Ragex: ~79 MCP tools spanning analysis, editing, refactoring, security, RAG, git archaeology, and AI features.
 
 ---
 
@@ -22,29 +24,37 @@ Ragex: ~74 MCP tools spanning analysis, editing, refactoring, security, RAG, and
 - **Elixir as a primary citizen** -- both have first-class Elixir support (Cicada started Elixir-only; Ragex is written in Elixir)
 - **Embeddings** -- both support vector similarity search (Ragex via Bumblebee; Cicada via Ollama)
 - **Hybrid retrieval** -- both combine symbolic and semantic search strategies
+- **Git blame + history** -- both provide line-level authorship and file history (Cicada via `git_history` unified tool; Ragex via `git_blame`, `git_history`, `co_change_analysis`)
+- **PR attribution** -- both can surface PR context (Cicada via PR index; Ragex via `git_pr_info` with `gh`/`glab` CLI)
+- **Co-change analysis** -- both track files that change together (Cicada via co-occurrence in commits; Ragex via `Ragex.Git.CoChange` with ETS-backed matrix)
+- **Context compaction** -- both optimize token usage (Cicada by design; Ragex via `Ragex.MCP.Formatter` with compact/verbose modes and token budgeting)
 
 ---
 
 ## What Ragex Lacks (Should Adopt from Cicada)
 
-### 1. Git + PR Attribution (High Priority)
-Cicada's strongest differentiator. Its `git_history` tool provides:
-- **Line-level blame** with automatic PR discovery
-- **Function evolution tracking** via `git log -L`
-- **PR review comments** surfaced inline ("what did reviewers say about this code?")
-- **Author filtering** and **time filtering** (recent vs. historical)
-- **Co-change analysis** -- files and functions that frequently change together
+### 1. Git + PR Attribution -- CLOSED (Phase E)
+Cicada's `git_history` tool was their strongest differentiator. Ragex now matches and exceeds it:
+- `git_blame` -- line-level blame with optional PR enrichment
+- `git_history` -- file history + function evolution via `git log -L`
+- `git_pr_info` -- PR details and review comments via `gh`/`glab` CLI
+- `co_change_analysis` -- ETS-backed co-occurrence matrix from commit history
+- `git_enrich` -- background enrichment of knowledge graph with git metadata
+- Dual-backend architecture (egit NIF + CLI fallback) for performance
+- Knowledge graph integration: `:authored_by`, `:co_changes_with` edge types
 
-Ragex has *zero* git integration. This is a significant gap. Knowing *why* code exists (not just what it does) is essential for safe refactoring -- something Ragex is otherwise excellent at.
+Ragex goes beyond Cicada here by connecting git data to the knowledge graph,
+enabling queries like "find dead code that hasn't been touched in 2 years"
+and enriching impact analysis with co-change data.
 
-**Recommendation:** Add a `git_history` tool and PR indexing. Leverage `gh` CLI for GitHub data. This complements Ragex's existing `analyze_impact` and `suggest_refactorings` tools perfectly.
-
-### 2. Context Compaction / Token Efficiency (High Priority)
-Cicada's entire design is optimized to return minimal, structured responses (only signatures + call sites, not full file contents). They benchmark at **44% less tokens** and **40% faster** wall time.
-
-Ragex returns detailed, comprehensive results which is powerful but potentially wasteful for AI context windows.
-
-**Recommendation:** Add compact/verbose output modes across all tools. Default to compact (signature + location + call count), let AI request `verbose=true` when deeper detail is needed.
+### 2. Context Compaction / Token Efficiency -- CLOSED (Phase F)
+Cicada's design was optimized for minimal responses. Ragex now has equivalent
+capability via `Ragex.MCP.Formatter`:
+- All ~79 tools get automatic compaction (compact by default, `verbose=true` to bypass)
+- Token budget enforcement via `max_tokens` parameter
+- Smart next-step suggestions (`_suggestions` key) -- tool-aware hints
+- Protocol-based (`Ragex.MCP.Formattable`) so custom structs can override
+- Truncation metadata tells the AI exactly how many results were omitted
 
 ### 3. Broader Language Support via SCIP (Medium Priority)
 Cicada supports 17+ languages by leveraging SCIP (Source Code Intelligence Protocol) -- a standardized index format from Sourcegraph. This gives them Go, Rust, Java, Kotlin, Scala, C/C++, Ruby, C#, Dart, PHP with minimal per-language effort.
@@ -136,12 +146,28 @@ MetaAST search, cross-language alternatives ("show me the Python equivalent of t
 
 ## Strategic Summary
 
-**Ragex is much deeper; Cicada is much wider and polished for the read-only use case.** If the tools were people, Ragex is the senior engineer who can analyze, refactor, and fix your codebase; Cicada is the highly efficient librarian who can instantly find anything and tell you who wrote it and why.
+**Ragex is much deeper; Cicada is wider in language support.** With Phases E and F implemented, Ragex now matches Cicada on git attribution and context compaction -- the two areas where Cicada previously had clear advantages.
 
-The biggest gaps to close on Ragex's side are:
-1. **Git/PR attribution** -- directly complements existing impact analysis
-2. **Context compaction** -- compact output modes to reduce token waste
-3. **SCIP-based multi-language support** -- fast path to 17+ languages
-4. **Editor integration CLI** -- reduce setup friction
+### Gap Status
 
-These four items would make Ragex strictly dominant for any use case where the user needs more than read-only search.
+| Gap | Priority | Status |
+|-----|----------|--------|
+| Git/PR attribution | High | CLOSED (Phase E) |
+| Context compaction | High | CLOSED (Phase F) |
+| SCIP multi-language | Medium | Planned (Phase G) |
+| Editor integration CLI | Medium | Planned (Phase H) |
+| String/comment indexing | Low-Medium | Planned (Phase I) |
+| REST API server | Medium | Planned (Phase K) |
+| Token/usage statistics | Low | Planned (Phase J) |
+| jq-like raw querying | Low | Not planned (query_graph suffices) |
+
+### Where Ragex now leads across the board
+
+With the two high-priority gaps closed, Ragex is strictly dominant for any
+use case where the user needs more than read-only search. Cicada retains an
+advantage only in:
+- **Language breadth** (17 via SCIP vs. Ragex's 6)
+- **Zero-friction editor setup** (one-command install)
+- **Published benchmarks** (Cicada has public token/time comparisons)
+
+These are addressable via Phases G, H, and future benchmarking work.

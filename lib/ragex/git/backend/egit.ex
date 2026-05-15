@@ -79,7 +79,7 @@ defmodule Ragex.Git.Backend.Egit do
       {:error, _} = err ->
         err
 
-      other ->
+      _other ->
         # Fallback to CLI if egit diff format is unexpected
         CLIBackend.diff(repo_root, rev_a, rev_b)
     end

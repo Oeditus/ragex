@@ -14,8 +14,6 @@ defmodule Ragex.Git.Backend.CLI do
 
   alias Ragex.Git.{BlameEntry, Commit}
 
-  @git_timeout 30_000
-
   # ── repo_root ────────────────────────────────────────────────────────
 
   @impl true
