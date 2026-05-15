@@ -445,18 +445,18 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 - [✓] Code quality analysis
 - [✓] Impact analysis and risk assessment
 - [✓] CLI improvements (interactive wizards, dashboard, completions, man pages)
-- [✗] CI tasks
+- [±] CI tasks
 - [✗] Provider health checks and auto-failover
 - [✗] Production optimizations
-- [✗] Additional language support
-- [✗] Cross-language refactoring via Metastatic
-- [✗] Enhanced editor integrations
+- [±] Additional language support
+- [±] Cross-language refactoring via Metastatic
+- [✓] Enhanced editor integrations (Zed, Claude Desktop, Cursor, LunarVim)
 
 ## Architecture
 
 ```mermaid
 graph TD
-    MCP["MCP Server (stdio)<br/>28 Tools + 6 Resources + 6 Prompts"]
+    MCP["MCP Server (stdio)<br/>~50 Tools + 6 Resources + 6 Prompts"]
     
     MCP --> Tools["Tools Handler"]
     MCP --> Resources["Resources Handler"]
@@ -496,167 +496,12 @@ graph TD
     style Usage fill:#fff8e1,color:#f57c00,stroke:#f57c00,stroke-width:2px
 ```
 
-## Use as MCP Server
-
-The only MCP client currently supported is `LunarVim` (technically, any `NeoVim`,
-but I never tested it.)
-
-To enable `Ragex` support in `LunarVim`, copy files from `lvim.cfg/lua/user/` to
-where your `LunarVim` configs are (typically, it’s `~/.config/lvim/lua/user/`) and
-amend your `config.lua` as shown below.
-
-```lua
--- Ragex integration
-local ragex = require("user.ragex")
-local ragex_telescope = require("user.ragex_telescope")
-
--- Setup Ragex with configuration
-ragex.setup({
-  ragex_path = vim.fn.expand("~/Proyectos/Ammotion/ragex"),
-  enabled = true,
-  debug = false,
-})
-
--- Ragex keybindings (using "r" prefix for Ragex)
-lvim.builtin.which_key.mappings["r"] = {
-  name = "Ragex",
-  s = { function() ragex_telescope.ragex_search() end, "Semantic Search" },
-  w = { function() ragex_telescope.ragex_search_word() end, "Search Word" },
-  f = { function() ragex_telescope.ragex_functions() end, "Find Functions" },
-  m = { function() ragex_telescope.ragex_modules() end, "Find Modules" },
-  a = { function() ragex.analyze_current_file() end, "Analyze File" },
-  d = { function() ragex.analyze_directory(vim.fn.getcwd()) end, "Analyze Directory" },
-  c = { function() ragex.show_callers() end, "Find Callers" },
-  r = {
-    function()
-      vim.ui.input({ prompt = "New name: " }, function(name)
-        if name then
-          ragex.rename_function(name)
-        end
-      end)
-    end,
-    "Rename Function",
-  },
-  R = {
-    function()
-      vim.ui.input({ prompt = "Old module: " }, function(old_name)
-        if old_name then
-          vim.ui.input({ prompt = "New module: " }, function(new_name)
-            if new_name then
-              ragex.rename_module(old_name, new_name)
-            end
-          end)
-        end
-      end)
-    end,
-    "Rename Module",
-  },
-  g = { 
-    function()
-      local result = ragex.graph_stats()
-      if result and result.result then
-        -- Unwrap MCP response
-        local stats = result.result
-        if stats.content and stats.content[1] and stats.content[1].text then
-          local ok, parsed = pcall(vim.fn.json_decode, stats.content[1].text)
-          if ok then
-            stats = parsed
-          end
-        end
-        
-        -- Format stats for display
-        local lines = {
-          "# Graph Statistics",
-          "",
-          string.format("**Nodes**: %d", stats.node_count or 0),
-          string.format("**Edges**: %d", stats.edge_count or 0),
-          string.format("**Average Degree**: %.2f", stats.average_degree or 0),
-          string.format("**Density**: %.4f", stats.density or 0),
-          "",
-          "## Node Types",
-        }
-        
-        if stats.node_counts_by_type then
-          for node_type, count in pairs(stats.node_counts_by_type) do
-            table.insert(lines, string.format("- %s: %d", node_type, count))
-          end
-        end
-        
-        if stats.top_by_degree and #stats.top_by_degree > 0 then
-          table.insert(lines, "")
-          table.insert(lines, "## Top by Degree")
-          for i, node in ipairs(stats.top_by_degree) do
-            if i > 10 then break end
-            table.insert(lines, string.format("- %s (in:%d, out:%d, total:%d)",
-              node.node_id or "unknown",
-              node.in_degree or 0,
-              node.out_degree or 0,
-              node.total_degree or 0))
-          end
-        end
-        
-        ragex.show_in_float("Ragex Graph Statistics", lines)
-      else
-        vim.notify("No graph statistics available", vim.log.levels.WARN)
-      end
-    end,
-    "Graph Stats"
-  },
-  W = { function() ragex.watch_directory(vim.fn.getcwd()) end, "Watch Directory" },
-  t = { function() ragex.toggle_auto_analyze() end, "Toggle Auto-Analysis" },
-  -- Advanced Graph Algorithms
-  b = { function() ragex.show_betweenness_centrality() end, "Betweenness Centrality" },
-  o = { function() ragex.show_closeness_centrality() end, "Closeness Centrality" },
-  n = { function() ragex.show_communities("louvain") end, "Detect Communities (Louvain)" },
-  l = { function() ragex.show_communities("label_propagation") end, "Detect Communities (Label Prop)" },
-  e = { 
-    function()
-      vim.ui.select({ "graphviz", "d3" }, {
-        prompt = "Export format:",
-      }, function(format)
-        if format then
-          local ext = format == "graphviz" and "dot" or "json"
-          vim.ui.input({
-            prompt = "Save as: ",
-            default = vim.fn.getcwd() .. "/graph." .. ext,
-          }, function(filepath)
-            if filepath then
-              ragex.export_graph_to_file(format, filepath)
-            end
-          end)
-        end
-      end)
-    end,
-    "Export Graph"
-  },
-}
-
--- Register Telescope commands for Ragex
-vim.api.nvim_create_user_command("RagexSearch", ragex_telescope.ragex_search, {})
-vim.api.nvim_create_user_command("RagexFunctions", ragex_telescope.ragex_functions, {})
-vim.api.nvim_create_user_command("RagexModules", ragex_telescope.ragex_modules, {})
-vim.api.nvim_create_user_command("RagexSearchWord", ragex_telescope.ragex_search_word, {})
-vim.api.nvim_create_user_command("RagexToggleAuto", function() ragex.toggle_auto_analyze() end, {})
-
--- Add Ragex status to lualine
-local function ragex_status()
-  if ragex.config.enabled then
-    return "  Ragex"
-  end
-  return ""
-end
-```
-
-This should result in the following `<leader>r` update:
-
-<img width="1411" height="388" alt="Captura de pantalla_20260102_100918" src="https://github.com/user-attachments/assets/af24d31f-c835-4dc5-a04b-2e43e63dbc11" />
-
 ## Installation
 
 ### Prerequisites
 
-- Elixir 1.19 or later
-- Erlang/OTP 28 or later
+- Elixir 1.18 or later
+- Erlang/OTP 27 or later
 - Python 3.x (optional, for Python code analysis)
 - Node.JS (optional, for Javascript code analysis)
 - ~500MB RAM for embedding model (first run downloads ~90MB)
@@ -705,13 +550,25 @@ See [Produce Cart’s README](examples/product_cart/README.md) for full details 
 
 ### As an MCP Server
 
-Run the server (it will listen on both stdin and socket):
+The recommended entry point is `bin/ragex-mcp`, a self-contained launcher that handles compilation, detects a running instance and bridges to it instead of starting a second VM, and sets the correct environment for stdio MCP communication:
+
+```bash
+bin/ragex-mcp
+
+# Auto-analyze a project on startup
+bin/ragex-mcp --project /path/to/your/project
+
+# Override log verbosity
+bin/ragex-mcp --log-level debug
+```
+
+Alternatively, a bare server start (without the bridge logic) is available:
 
 ```bash
 ./start_mcp.sh
 ```
 
-**Note**: The stdio server is validated and production-ready.
+For detailed installation instructions and client-specific configuration (Claude Desktop, Cursor, Zed, LunarVim, generic stdio), see [Using Ragex as MCP Server](stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md).
 
 ### Auto-Analyze Directories on Startup
 
@@ -1152,11 +1009,18 @@ export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxx"
 
 ## Documentation
 
-- [Algorithms](stuff/docs/ALGORITHMS.md) - Algorithms used
-- [Usage](stuff/docs/USAGE.md) - Tips on how to use `Ragex`
+- [Using Ragex as MCP Server](stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md) - Installation, client setup, RAG queries, configuration
+- [Usage Guide](stuff/docs/USAGE.md) - Editor-specific integration (VIM, LunarVim)
+- [Zed Editor Integration](stuff/docs/ZED.md) - First-class Zed support with tasks and keybindings
 - [Configuration](stuff/docs/CONFIGURATION.md) - Embedding model configuration and migration
-- [Persistence](stuff/docs/PERSISTENCE.md) - Embedding cache management and performance
+- [MCP Tools Reference](stuff/docs/TOOLS.md) - Complete tool parameter reference
+- [Algorithms](stuff/docs/ALGORITHMS.md) - Graph algorithms and complexity
 - [Analysis](stuff/docs/ANALYSIS.md) - Code analysis features and tools
+- [Refactoring Suggestions](stuff/docs/SUGGESTIONS.md) - Automated refactoring suggestion engine
+- [Persistence](stuff/docs/PERSISTENCE.md) - Embedding cache management and performance
+- [MCP Prompts](stuff/docs/PROMPTS.md) - Pre-built high-level workflows
+- [MCP Resources](stuff/docs/RESOURCES.md) - Read-only state access
+- [Streaming Notifications](stuff/docs/STREAMING.md) - Real-time progress events
 - [Troubleshooting](stuff/docs/TROUBLESHOOTING.md) - Common issues and error messages
 
 ### Cache Management
