@@ -209,19 +209,23 @@ defmodule Ragex.Analysis.Suggestions.RAGAdvisor do
     max_tokens = Keyword.get(opts, :max_tokens, 500)
 
     case Config.get_default_provider() do
-      {:ok, provider_name} ->
-        provider = Registry.get_provider(provider_name)
-
-        case provider.generate(prompt,
-               temperature: temperature,
-               max_tokens: max_tokens
-             ) do
-          {:ok, response} -> {:ok, response.content}
-          error -> error
-        end
-
-      {:error, _reason} ->
+      nil ->
         {:error, :no_provider_configured}
+
+      provider_name when is_atom(provider_name) ->
+        case Registry.get_provider(provider_name) do
+          {:ok, provider} ->
+            case provider.generate(prompt,
+                   temperature: temperature,
+                   max_tokens: max_tokens
+                 ) do
+              {:ok, response} -> {:ok, response.content}
+              error -> error
+            end
+
+          {:error, :not_found} ->
+            {:error, :no_provider_configured}
+        end
     end
   end
 
@@ -307,8 +311,8 @@ defmodule Ragex.Analysis.Suggestions.RAGAdvisor do
   """
   def available? do
     case Config.get_default_provider() do
-      {:ok, _} -> true
-      _ -> false
+      nil -> false
+      provider_name when is_atom(provider_name) -> true
     end
   end
 end

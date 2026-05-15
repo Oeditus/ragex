@@ -237,9 +237,6 @@ defmodule Ragex.Analyzers.Elixir do
           case full_name do
             atom when is_atom(atom) ->
               atom |> Atom.to_string() |> String.split(".") |> List.last() |> String.to_atom()
-
-            _ ->
-              :unknown
           end
       end
 
@@ -555,7 +552,7 @@ defmodule Ragex.Analyzers.Elixir do
     updated_modules =
       Enum.map(context.modules, fn mod ->
         if is_nil(mod.doc) || mod.doc == "" do
-          comment = find_nearby_comment(mod.line, context.comments, :before)
+          comment = find_nearby_comment(mod.line, context.comments)
           if comment, do: %{mod | doc: comment}, else: mod
         else
           mod
@@ -566,7 +563,7 @@ defmodule Ragex.Analyzers.Elixir do
     updated_functions =
       Enum.map(context.functions, fn func ->
         if is_nil(func.doc) || func.doc == "" do
-          comment = find_nearby_comment(func.line, context.comments, :before)
+          comment = find_nearby_comment(func.line, context.comments)
           if comment, do: %{func | doc: comment}, else: func
         else
           func
@@ -577,7 +574,7 @@ defmodule Ragex.Analyzers.Elixir do
     updated_types =
       Enum.map(context.types, fn type ->
         if is_nil(type.doc) || type.doc == "" do
-          comment = find_nearby_comment(type.line, context.comments, :before)
+          comment = find_nearby_comment(type.line, context.comments)
           if comment, do: %{type | doc: comment}, else: type
         else
           type
@@ -592,32 +589,35 @@ defmodule Ragex.Analyzers.Elixir do
     }
   end
 
-  # Find comment near a specific line
-  defp find_nearby_comment(target_line, comments, direction) do
-    case direction do
-      :before ->
-        # Look for comments 1-3 lines before
-        comments
-        |> Enum.filter(fn {line, _text} ->
-          line < target_line && target_line - line <= 3
-        end)
-        |> Enum.sort_by(fn {line, _text} -> -line end)
-        |> case do
-          [{_line, text} | _] -> text
-          [] -> nil
-        end
+  defp find_nearby_comment(target_line, comments) do
+    with nil <- find_nearby_comment(target_line, comments, :before),
+         do: find_nearby_comment(target_line, comments, :after)
+  end
 
-      :after ->
-        # Look for comments 0-2 lines after
-        comments
-        |> Enum.filter(fn {line, _text} ->
-          line >= target_line && line - target_line <= 2
-        end)
-        |> Enum.sort_by(fn {line, _text} -> line end)
-        |> case do
-          [{_line, text} | _] -> text
-          [] -> nil
-        end
+  # Find comment near a specific line
+  defp find_nearby_comment(target_line, comments, :before) do
+    # Look for comments 1-3 lines before
+    comments
+    |> Enum.filter(fn {line, _text} ->
+      line < target_line && target_line - line <= 3
+    end)
+    |> Enum.sort_by(fn {line, _text} -> -line end)
+    |> case do
+      [{_line, text} | _] -> text
+      [] -> nil
+    end
+  end
+
+  defp find_nearby_comment(target_line, comments, :after) do
+    # Look for comments 0-2 lines after
+    comments
+    |> Enum.filter(fn {line, _text} ->
+      line >= target_line && line - target_line <= 2
+    end)
+    |> Enum.sort_by(fn {line, _text} -> line end)
+    |> case do
+      [{_line, text} | _] -> text
+      [] -> nil
     end
   end
 

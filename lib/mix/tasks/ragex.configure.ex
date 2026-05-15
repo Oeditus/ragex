@@ -144,8 +144,10 @@ defmodule Mix.Tasks.Ragex.Configure do
       "polyglot - Multiple languages"
     ]
 
-    IO.puts("Select primary project type:")
-    index = Prompt.select(language_options, default: default_language_index(detected))
+    index =
+      Prompt.select("Select primary project type:", language_options,
+        default: default_language_index(detected)
+      )
 
     primary_type =
       case index do
@@ -243,8 +245,8 @@ defmodule Mix.Tasks.Ragex.Configure do
     IO.puts("")
 
     model_names = Enum.map(models, &to_string(&1.id))
-    index = Prompt.select(model_names, default: 0)
-    selected_model = Enum.at(models, index)
+    selected_name = Prompt.select("Select embedding model:", model_names, default: 0)
+    selected_model = Enum.find(models, hd(models), fn m -> to_string(m.id) == selected_name end)
 
     IO.puts("")
     IO.puts(Colors.success("Selected: #{selected_model.id}"))

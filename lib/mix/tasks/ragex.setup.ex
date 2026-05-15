@@ -112,7 +112,7 @@ defmodule Mix.Tasks.Ragex.Setup do
     if detected != [] do
       Mix.shell().info("Detected editor configs:")
 
-      Enum.each(detected, fn {key, info} ->
+      Enum.each(detected, fn {_key, info} ->
         Mix.shell().info("  - #{info.name} (#{info.config_path})")
       end)
 

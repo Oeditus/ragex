@@ -28,8 +28,6 @@ defmodule Ragex.Analyzers.DeeperIndexing do
       #      comments: %{{mod, func, arity} => ["TODO: refactor", ...]}}
   """
 
-  require Logger
-
   @type func_key :: {atom(), atom(), non_neg_integer()} | :module_level
   @type enrichment :: %{
           strings: %{func_key() => [String.t()]},
@@ -149,37 +147,6 @@ defmodule Ragex.Analyzers.DeeperIndexing do
   end
 
   def extract_strings(_source, _language), do: []
-
-  # Walk Elixir AST for binary strings
-  defp extract_elixir_strings(ast, acc) do
-    {_ast, strings} =
-      Macro.prewalk(ast, acc, fn
-        # String literal with line metadata
-        str, acc when is_binary(str) ->
-          {str, acc}
-
-        {:__block__, meta, [str]} = node, acc when is_binary(str) ->
-          line = Keyword.get(meta, :line, 0)
-
-          if String.length(str) >= 3 do
-            {node, [{line, str} | acc]}
-          else
-            {node, acc}
-          end
-
-        # Heredoc / sigil strings captured as binary in the AST
-        {sigil, meta, _} = node, acc when sigil in [:sigil_s, :sigil_S] ->
-          line = Keyword.get(meta, :line, 0)
-          {node, [{line, "(sigil string)"} | acc]}
-
-        node, acc ->
-          {node, acc}
-      end)
-
-    # Also do a simple regex pass to catch strings the AST walk misses
-    # (e.g. interpolated strings that appear as complex AST nodes)
-    strings
-  end
 
   defp extract_strings_regex(source, regex, _group) do
     source

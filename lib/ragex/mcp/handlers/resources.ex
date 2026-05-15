@@ -409,7 +409,7 @@ defmodule Ragex.MCP.Handlers.Resources do
         end),
       bottlenecks: betweenness,
       communities: community_summary,
-      community_count: length(communities)
+      community_count: map_size(communities)
     }
 
     {:ok, result}

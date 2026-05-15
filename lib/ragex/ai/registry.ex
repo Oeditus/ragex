@@ -60,9 +60,6 @@ defmodule Ragex.AI.Registry do
           {:ok, module} -> {:ok, module}
           {:error, :not_found} -> :error
         end
-
-      _ ->
-        :error
     end
   end
 

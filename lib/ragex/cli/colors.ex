@@ -215,7 +215,7 @@ defmodule Ragex.CLI.Colors do
 
   defp io_tty? do
     case :io.getopts(:standard_io) do
-      {:ok, opts} -> Keyword.get(opts, :tty, false)
+      opts when is_list(opts) -> Keyword.get(opts, :tty, false)
       _ -> false
     end
   end

@@ -253,7 +253,8 @@ defmodule Ragex.Analysis.Suggestions do
           %{dead_functions: [], count: 0}
         else
           case DeadCode.analyze_file(path) do
-            {:ok, dead} -> %{dead_functions: dead, count: length(dead)}
+            {:ok, dead} when is_list(dead) -> %{dead_functions: dead, count: length(dead)}
+            {:ok, dead} -> %{dead_functions: dead, count: dead.total_dead_statements}
             _ -> %{dead_functions: [], count: 0}
           end
         end

@@ -518,13 +518,8 @@ defmodule Ragex.AI.Features.Context do
 
   defp get_importance(function_ref) do
     # Try to get PageRank score
-    case Algorithms.pagerank() do
-      {:ok, scores} ->
-        Map.get(scores, function_ref, 0.0)
-
-      _ ->
-        0.0
-    end
+    scores = Algorithms.pagerank()
+    Map.get(scores, function_ref, 0.0)
   rescue
     _ -> 0.0
   end

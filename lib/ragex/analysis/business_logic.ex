@@ -673,8 +673,6 @@ defmodule Ragex.Analysis.BusinessLogic do
     end
   end
 
-  defp extract_meta_location(_), do: nil
-
   defp format_location(nil), do: nil
 
   defp format_location(loc) do

@@ -139,8 +139,6 @@ defmodule Ragex.Embeddings.TextGenerator do
     end
   end
 
-  defp strings_hint(_), do: nil
-
   # Build a hint from extracted keywords.
   defp keywords_hint(meta) when is_map(meta) do
     case Map.get(meta, :keywords) do
@@ -157,8 +155,6 @@ defmodule Ragex.Embeddings.TextGenerator do
         nil
     end
   end
-
-  defp keywords_hint(_), do: nil
 
   @doc """
   Generates text description for a function with its body/implementation.

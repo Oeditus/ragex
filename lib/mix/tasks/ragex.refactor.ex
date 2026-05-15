@@ -121,7 +121,8 @@ defmodule Mix.Tasks.Ragex.Refactor do
         "#{Colors.info(Atom.to_string(op))} - #{desc}"
       end)
 
-    selected_index = Prompt.select(operation_labels, default: 0)
+    selected = Prompt.select("Select refactoring operation:", operation_labels, default: 0)
+    selected_index = Enum.find_index(operation_labels, &(&1 == selected)) || 0
     {operation, _desc} = Enum.at(@operations, selected_index)
 
     IO.puts("")
@@ -180,8 +181,8 @@ defmodule Mix.Tasks.Ragex.Refactor do
       "project - Rename across entire project"
     ]
 
-    scope_index = Prompt.select(scope_options, default: 1)
-    scope = if scope_index == 0, do: :module, else: :project
+    scope_selected = Prompt.select("Refactoring scope:", scope_options, default: 1)
+    scope = if scope_selected == List.first(scope_options), do: :module, else: :project
 
     IO.puts("")
 

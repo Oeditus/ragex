@@ -92,7 +92,7 @@ defmodule Ragex.Git.Backend.Egit do
     ensure_open!(repo_root)
     max_count = Keyword.get(opts, :max_count, 500)
 
-    case RepoServer.call(:rev_list, [rev, [max_count: max_count]]) do
+    case RepoServer.call(:rev_list, [rev, [limit: max_count]]) do
       shas when is_list(shas) ->
         {:ok, Enum.map(shas, &to_string/1)}
 

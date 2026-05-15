@@ -390,7 +390,6 @@ defmodule Ragex.RAG.Pipeline do
           Ragex.AI.Provider.Anthropic -> "claude-3-sonnet-20240229"
           Ragex.AI.Provider.Ollama -> "codellama"
           Ragex.AI.Provider.DeepSeekR1 -> "deepseek-chat"
-          _ -> "unknown"
         end
 
       model when is_binary(model) ->

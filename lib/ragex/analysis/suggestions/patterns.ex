@@ -177,13 +177,7 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
     arity = func[:arity] || 0
 
     reason =
-      case reason_type do
-        :long_function ->
-          "Function is too long (#{loc} lines) with high complexity (#{complexity})"
-
-        :duplicate ->
-          "Function contains duplicate code that should be extracted"
-      end
+      "Function is too long (#{loc} lines) with high complexity (#{complexity}), type: #{inspect(reason_type)}"
 
     %{
       id: generate_id(),

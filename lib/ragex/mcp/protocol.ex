@@ -38,6 +38,9 @@ defmodule Ragex.MCP.Protocol do
           params: params()
         }
 
+  # Dialyzer cannot infer types through rescue blocks for :json.decode/1 on OTP 29.
+  @dialyzer {:no_match, decode: 1}
+
   # JSON-RPC error codes
   @parse_error -32_700
   @invalid_request -32_600
@@ -50,15 +53,15 @@ defmodule Ragex.MCP.Protocol do
   """
   @spec decode(String.t()) :: {:ok, request() | notification()} | {:error, term()}
   def decode(json_string) do
-    message = :json.decode(json_string)
-
-    case message do
-      %{"jsonrpc" => "2.0"} ->
-        {:ok, message}
-
-      _ ->
-        {:error, :invalid_jsonrpc_version}
+    case safe_json_decode(json_string) do
+      {:ok, %{"jsonrpc" => "2.0"} = message} -> {:ok, message}
+      {:ok, _} -> {:error, :invalid_jsonrpc_version}
+      {:error, _} = error -> error
     end
+  end
+
+  defp safe_json_decode(json_string) do
+    {:ok, :json.decode(json_string)}
   rescue
     e -> {:error, {:parse_error, e}}
   end

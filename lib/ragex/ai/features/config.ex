@@ -264,7 +264,6 @@ defmodule Ragex.AI.Features.Config do
   defp get_timeout(:dependency_insights), do: 8_000
   defp get_timeout(:test_suggestions), do: 15_000
   defp get_timeout(:complexity_explanation), do: 8_000
-  defp get_timeout(_), do: 10_000
 
   # Feature-specific cache TTL (seconds)
   defp get_cache_ttl(:validation_error_explanation), do: 604_800
@@ -275,7 +274,6 @@ defmodule Ragex.AI.Features.Config do
   defp get_cache_ttl(:dependency_insights), do: 86_400
   defp get_cache_ttl(:test_suggestions), do: 604_800
   defp get_cache_ttl(:complexity_explanation), do: 86_400
-  defp get_cache_ttl(_), do: 86_400
 
   # Feature-specific temperature
   defp get_temperature(:validation_error_explanation), do: 0.3
@@ -286,7 +284,6 @@ defmodule Ragex.AI.Features.Config do
   defp get_temperature(:dependency_insights), do: 0.6
   defp get_temperature(:test_suggestions), do: 0.7
   defp get_temperature(:complexity_explanation), do: 0.6
-  defp get_temperature(_), do: 0.7
 
   # Feature-specific max tokens
   defp get_max_tokens(:validation_error_explanation), do: 300
@@ -297,5 +294,4 @@ defmodule Ragex.AI.Features.Config do
   defp get_max_tokens(:dependency_insights), do: 500
   defp get_max_tokens(:test_suggestions), do: 800
   defp get_max_tokens(:complexity_explanation), do: 500
-  defp get_max_tokens(_), do: 500
 end

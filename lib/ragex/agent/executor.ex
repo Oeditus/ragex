@@ -231,7 +231,7 @@ defmodule Ragex.Agent.Executor do
            StreamConsumer.consume(stream, on_chunk: on_chunk, on_phase: on_phase) do
       updated_state = update_usage(state, response.usage)
 
-      if response.content && response.content != "" do
+      if is_binary(response.content) and response.content != "" do
         # Stream produced content -> final text response (streamed in real-time)
         Memory.add_message(state.session_id, :assistant, response.content)
         {:done, response.content, updated_state}

@@ -534,7 +534,7 @@ defmodule Ragex.CLI.Chat do
     IO.puts(Colors.muted("[#{role}] ") <> (content || ""))
   end
 
-  defp render_sources([]) do
+  defp render_sources(sources) when sources == [] do
     IO.puts(Colors.muted("No sources from last response."))
   end
 

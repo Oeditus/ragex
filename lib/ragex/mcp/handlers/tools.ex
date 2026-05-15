@@ -3827,7 +3827,17 @@ defmodule Ragex.MCP.Handlers.Tools do
       # Parse attribute changes
       case parse_attribute_changes(changes) do
         {:ok, parsed_changes} ->
-          case Refactor.modify_attributes(module_atom, parsed_changes, opts) do
+          case Refactor.modify_attributes(
+                 module_atom,
+                 %{add: [], remove: [], update: []}
+                 |> Map.merge(
+                   Enum.group_by(parsed_changes, &elem(&1, 0), fn change ->
+                     Tuple.delete_at(change, 0) |> Tuple.to_list()
+                   end)
+                   |> Map.new(fn {k, v} -> {k, Enum.map(v, &List.to_tuple/1)} end)
+                 ),
+                 opts
+               ) do
             {:ok, result} ->
               format_refactor_success(
                 "modify_attributes",
@@ -6715,6 +6725,7 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp format_duplicate_result(file1, file2, result, "detailed") do
     locations_text = format_locations_text(result.locations)
+    summary = result.summary || ""
 
     content = """
     Duplicate Detection Result
@@ -6725,7 +6736,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     Duplicate: #{if result.duplicate?, do: "YES", else: "NO"}
     #{if result.duplicate? do
       locations_part = if locations_text != "", do: "\n\nLocations:\n#{locations_text}", else: ""
-      "Clone Type: #{format_clone_type(result.clone_type)}\nSimilarity: #{Float.round(result.similarity_score, 3)}#{locations_part}\n\nSummary:\n#{result.summary || ""}"
+      "Clone Type: #{format_clone_type(result.clone_type)}\nSimilarity: #{Float.round(result.similarity_score, 3)}#{locations_part}\n\nSummary:\n#{summary}"
     else
       "These files are not duplicates."
     end}
@@ -8488,13 +8499,8 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp agent_clear_session_tool(%{"session_id" => session_id}) do
     alias Ragex.Agent.Memory
 
-    case Memory.clear_session(session_id) do
-      :ok ->
-        {:ok, %{status: "success", message: "Session cleared: #{session_id}"}}
-
-      {:error, :not_found} ->
-        {:error, "Session not found: #{session_id}"}
-    end
+    Memory.clear_session(session_id)
+    {:ok, %{status: "success", message: "Session cleared: #{session_id}"}}
   end
 
   defp agent_clear_session_tool(_), do: {:error, "Missing required 'session_id' parameter"}

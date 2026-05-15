@@ -265,7 +265,6 @@ defmodule Ragex.Analysis.MetastaticBridge do
     case Adapter.abstract(adapter, content, language) do
       {:ok, %Document{} = doc} -> {:ok, doc}
       {:error, _} = error -> error
-      other -> {:error, {:unexpected_parse_result, other}}
     end
   end
 

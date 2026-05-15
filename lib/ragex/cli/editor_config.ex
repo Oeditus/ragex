@@ -243,7 +243,7 @@ defmodule Ragex.CLI.EditorConfig do
         Logger.info("Merged ragex into #{config_path}")
         {:ok, config_path}
 
-      {:error, reason} ->
+      {:error, _reason} ->
         # File exists but can't be read; write fresh
         write_fresh_config(config_path, info, ragex_bin, project_dir)
     end

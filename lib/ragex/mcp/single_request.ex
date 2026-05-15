@@ -20,7 +20,7 @@ defmodule Ragex.MCP.SingleRequest do
     {:ok, _} = Application.ensure_all_started(:ragex)
 
     # Read the entire stdin
-    request = IO.read(:stdio, :all)
+    request = IO.read(:stdio, :eof)
 
     case Protocol.decode(request) do
       {:ok, message} ->

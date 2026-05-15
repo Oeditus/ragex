@@ -17,12 +17,9 @@ defmodule Ragex.Editor.Validators.Ruby do
          :ok <- File.rm(temp_path) do
       result
     else
-      {:error, reason} when is_binary(reason) ->
-        error = Types.validation_error(reason, severity: :error)
-        {:error, [error]}
-
       {:error, reason} ->
-        error = Types.validation_error("Failed to validate: #{inspect(reason)}", severity: :error)
+        message = if is_binary(reason), do: reason, else: "Failed to validate: #{inspect(reason)}"
+        error = Types.validation_error(message, severity: :error)
         {:error, [error]}
     end
   end

@@ -385,7 +385,7 @@ defmodule Ragex.Analysis.Quality do
       stats.avg_cyclomatic     # => 3.5
       stats.max_cognitive      # => 25
   """
-  @spec statistics() :: quality_report()
+  @spec statistics() :: map()
   def statistics do
     QualityStore.project_stats()
   end

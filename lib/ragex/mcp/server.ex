@@ -50,7 +50,11 @@ defmodule Ragex.MCP.Server do
       initialized: false,
       server_info: %{
         name: "ragex",
-        version: Application.spec(:ragex, :vsn) |> to_string() |> then(&(&1 || "0.10.0"))
+        version:
+          case Application.spec(:ragex, :vsn) do
+            nil -> "0.10.0"
+            vsn -> to_string(vsn)
+          end
       }
     }
 

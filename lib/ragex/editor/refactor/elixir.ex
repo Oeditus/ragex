@@ -98,7 +98,7 @@ defmodule Ragex.Editor.Refactor.Elixir do
       {:error, {_meta, message, _token}} when is_binary(message) ->
         {:error, "Parse error: #{message}"}
 
-      {:error, {_meta, {_line, _col, message}, _token}} ->
+      {:error, {_meta, {message, _hint}, _token}} when is_binary(message) ->
         {:error, "Parse error: #{message}"}
 
       {:error, reason} ->
@@ -391,7 +391,6 @@ defmodule Ragex.Editor.Refactor.Elixir do
 
     case result do
       {_ast, found} -> found
-      _ -> nil
     end
   end
 
