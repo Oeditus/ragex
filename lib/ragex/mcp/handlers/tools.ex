@@ -51,6 +51,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     Suggestions
   }
 
+  alias Ragex.Analyzers.DeeperIndexing
   alias Ragex.Analyzers.Directory
   alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
@@ -77,6 +78,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   alias Ragex.MCP.Server, as: MCPServer
   alias Ragex.RAG.Pipeline
   alias Ragex.Retrieval.{CrossLanguage, Hybrid, QueryExpansion}
+  alias Ragex.Search.Keywords
   alias Ragex.VectorStore
   alias Ragex.Watcher
 
@@ -238,6 +240,13 @@ defmodule Ragex.MCP.Handlers.Tools do
                   type: "boolean",
                   description: "Include related entities (callers, callees, etc.)",
                   default: true
+                },
+                match_source: %{
+                  type: "string",
+                  description:
+                    "Filter results by match source: all (default), docs, strings, comments, names",
+                  enum: ["all", "docs", "strings", "comments", "names"],
+                  default: "all"
                 }
               },
               required: ["query"]
@@ -2275,6 +2284,26 @@ defmodule Ragex.MCP.Handlers.Tools do
           SCIPTools.tool_definitions() ++
           [
             %{
+              name: "search_strings",
+              description:
+                "Search for string literals (SQL queries, error messages, domain terms) across the indexed codebase",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  query: %{
+                    type: "string",
+                    description: "Substring to search for in indexed string literals"
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of results",
+                    default: 20
+                  }
+                },
+                required: ["query"]
+              }
+            },
+            %{
               name: "mcp_stats",
               description:
                 "Show MCP tool usage statistics -- invocation counts, latencies, error rates per tool",
@@ -2534,6 +2563,10 @@ defmodule Ragex.MCP.Handlers.Tools do
       scip_tool when scip_tool in ~w[scip_status scip_index] ->
         SCIPTools.call_tool(scip_tool, arguments)
 
+      # Deeper indexing: string literal search
+      "search_strings" ->
+        search_strings_tool(arguments)
+
       # Telemetry tools
       "mcp_stats" ->
         stats =
@@ -2569,6 +2602,23 @@ defmodule Ragex.MCP.Handlers.Tools do
           {:ok, analysis} ->
             # Store the analysis results in the graph
             store_analysis(analysis)
+
+            # Deeper indexing: extract strings, comments, keywords
+            enrichment = DeeperIndexing.extract(content, path, analysis)
+            enriched_analysis = DeeperIndexing.merge_into_analysis(enrichment, analysis)
+
+            # Store keywords in graph node metadata
+            Enum.each(enriched_analysis.functions, fn func ->
+              kw = Keywords.extract(func)
+
+              meta = %{
+                strings: func.metadata[:strings] || [],
+                comments: func.metadata[:comments] || [],
+                keywords: kw
+              }
+
+              Store.update_node_metadata(:function, {func.module, func.name, func.arity}, meta)
+            end)
 
             # Optionally generate embeddings
             embeddings_result =
@@ -8513,4 +8563,37 @@ defmodule Ragex.MCP.Handlers.Tools do
       _ -> [:medium, :high, :critical]
     end
   end
+
+  # Deeper indexing: search string literals across the indexed codebase
+
+  defp search_strings_tool(%{"query" => query} = params) do
+    limit = Map.get(params, "limit", 20)
+    query_lower = String.downcase(query)
+
+    # Scan all function nodes for strings metadata matching the query
+    results =
+      Store.list_nodes(:function, :infinity)
+      |> Enum.flat_map(fn %{id: func_id, data: data} ->
+        strings = get_in(data, [:metadata, :strings]) || []
+
+        matches =
+          strings
+          |> Enum.filter(fn str -> String.contains?(String.downcase(str), query_lower) end)
+          |> Enum.map(fn str ->
+            %{
+              function: format_node_id(func_id),
+              file: data[:file],
+              line: data[:line],
+              string: str
+            }
+          end)
+
+        matches
+      end)
+      |> Enum.take(limit)
+
+    {:ok, %{query: query, results: results, count: length(results)}}
+  end
+
+  defp search_strings_tool(_), do: {:error, "Missing 'query' parameter"}
 end

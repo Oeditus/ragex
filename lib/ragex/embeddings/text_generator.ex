@@ -47,13 +47,19 @@ defmodule Ragex.Embeddings.TextGenerator do
     meta = Map.get(function_data, :metadata, %{})
     metastatic = Map.get(meta, :metastatic, %{})
 
+    # Deeper indexing enrichment: strings and keywords from metadata
+    strings_hint = strings_hint(meta)
+    keywords_hint = keywords_hint(meta)
+
     parts = [
       "Function: #{signature}",
       "Module: #{module_name_to_string(function_data.module)}",
       if(function_data[:doc], do: "Documentation: #{function_data.doc}", else: nil),
       "Visibility: #{function_data.visibility}",
       "File: #{function_data.file}:#{function_data.line}",
-      metastatic_hint(metastatic)
+      metastatic_hint(metastatic),
+      strings_hint,
+      keywords_hint
     ]
 
     parts
@@ -115,6 +121,45 @@ defmodule Ragex.Embeddings.TextGenerator do
   end
 
   defp metastatic_hint(_), do: nil
+
+  # Build a hint from string literals found in the function body.
+  defp strings_hint(meta) when is_map(meta) do
+    case Map.get(meta, :strings) do
+      strings when is_list(strings) and strings != [] ->
+        # Take up to 5 strings, truncate each to 80 chars
+        samples =
+          strings
+          |> Enum.take(5)
+          |> Enum.map(&String.slice(&1, 0, 80))
+          |> Enum.join("; ")
+
+        "Strings: #{samples}"
+
+      _ ->
+        nil
+    end
+  end
+
+  defp strings_hint(_), do: nil
+
+  # Build a hint from extracted keywords.
+  defp keywords_hint(meta) when is_map(meta) do
+    case Map.get(meta, :keywords) do
+      kw when is_map(kw) and map_size(kw) > 0 ->
+        top =
+          kw
+          |> Enum.sort_by(fn {_k, v} -> -v end)
+          |> Enum.take(10)
+          |> Enum.map_join(", ", &elem(&1, 0))
+
+        "Keywords: #{top}"
+
+      _ ->
+        nil
+    end
+  end
+
+  defp keywords_hint(_), do: nil
 
   @doc """
   Generates text description for a function with its body/implementation.

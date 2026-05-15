@@ -86,7 +86,15 @@ defmodule Ragex.Application do
 
     mcp_children = socket_children ++ stdio_children
 
-    children = base_children ++ mcp_children
+    # REST API server (started when :start_api is true)
+    api_children =
+      if Application.get_env(:ragex, :start_api, false) do
+        [Ragex.API.Server]
+      else
+        []
+      end
+
+    children = base_children ++ mcp_children ++ api_children
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options

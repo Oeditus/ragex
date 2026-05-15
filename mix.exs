@@ -75,6 +75,9 @@ defmodule Ragex.MixProject do
       {:makeup_elixir, "~> 1.0", optional: true},
       # Git integration (optional NIF for libgit2 -- falls back to CLI)
       {:egit, "~> 0.2", optional: true},
+      # REST API bridge (Phase K)
+      {:bandit, "~> 1.0"},
+      {:plug, "~> 1.16"},
       # Metastatic MetaAST
       case System.get_env("LOCAL_METASTATIC") do
         nil -> {:metastatic, "~> 0.5"}

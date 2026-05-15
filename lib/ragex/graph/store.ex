@@ -334,6 +334,34 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Merges additional metadata into an existing node.
+
+  If the node exists, its metadata map is deep-merged with `new_metadata`.
+  If the node does not exist, this is a no-op.
+
+  ## Parameters
+
+  - `node_type` -- `:module`, `:function`, etc.
+  - `node_id` -- the node identifier
+  - `new_metadata` -- map of metadata to merge
+  """
+  def update_node_metadata(node_type, node_id, new_metadata) when is_map(new_metadata) do
+    key = {node_type, node_id}
+
+    case :ets.lookup(@nodes_table, key) do
+      [{^key, data}] when is_map(data) ->
+        existing_meta = Map.get(data, :metadata, %{})
+        merged_meta = Map.merge(existing_meta, new_metadata)
+        updated_data = Map.put(data, :metadata, merged_meta)
+        :ets.insert(@nodes_table, {key, updated_data})
+        :ok
+
+      _ ->
+        :ok
+    end
+  end
+
+  @doc """
   Clears all data from the graph.
   """
   def clear do
