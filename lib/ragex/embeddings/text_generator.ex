@@ -130,8 +130,7 @@ defmodule Ragex.Embeddings.TextGenerator do
         samples =
           strings
           |> Enum.take(5)
-          |> Enum.map(&String.slice(&1, 0, 80))
-          |> Enum.join("; ")
+          |> Enum.map_join("; ", &String.slice(&1, 0, 80))
 
         "Strings: #{samples}"
 

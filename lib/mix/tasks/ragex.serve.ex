@@ -37,7 +37,8 @@ defmodule Mix.Tasks.Ragex.Serve do
     Mix.shell().info("OpenAPI spec: http://localhost:#{port}/api/openapi.json")
     Mix.shell().info("Press Ctrl+C to stop\n")
 
-    {:ok, _pid} = Ragex.API.Server.start_link(port: port)
+    alias Ragex.API.Server, as: APIServer
+    {:ok, _pid} = APIServer.start_link(port: port)
 
     # Keep the task running
     Process.sleep(:infinity)

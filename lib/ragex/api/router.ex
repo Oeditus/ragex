@@ -26,6 +26,8 @@ defmodule Ragex.API.Router do
 
   use Plug.Router
 
+  alias Ragex.API.OpenAPI
+  alias Ragex.Graph.Store
   alias Ragex.MCP.Handlers.Tools
   alias Ragex.MCP.Telemetry, as: MCPTelemetry
 
@@ -36,7 +38,7 @@ defmodule Ragex.API.Router do
 
   # Health check
   get "/api/health" do
-    stats = Ragex.Graph.Store.stats()
+    stats = Store.stats()
 
     body =
       :json.encode(%{
@@ -62,7 +64,7 @@ defmodule Ragex.API.Router do
 
   # OpenAPI specification
   get "/api/openapi.json" do
-    spec = Ragex.API.OpenAPI.generate()
+    spec = OpenAPI.generate()
     body = Jason.encode!(spec)
 
     conn

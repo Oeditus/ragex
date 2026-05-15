@@ -2,6 +2,7 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
   use ExUnit.Case, async: true
 
   alias Ragex.Analyzers.DeeperIndexing
+  alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
 
   @elixir_source """
   defmodule MyApp.Accounts do
@@ -65,7 +66,7 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
 
   describe "extract/3 with Elixir" do
     test "extracts string literals from Elixir source" do
-      {:ok, analysis} = Ragex.Analyzers.Elixir.analyze(@elixir_source, "lib/accounts.ex")
+      {:ok, analysis} = ElixirAnalyzer.analyze(@elixir_source, "lib/accounts.ex")
       enrichment = DeeperIndexing.extract(@elixir_source, "lib/accounts.ex", analysis)
 
       # Should have strings associated with functions
@@ -74,7 +75,7 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
     end
 
     test "extracts comments from Elixir source" do
-      {:ok, analysis} = Ragex.Analyzers.Elixir.analyze(@elixir_source, "lib/accounts.ex")
+      {:ok, analysis} = ElixirAnalyzer.analyze(@elixir_source, "lib/accounts.ex")
       enrichment = DeeperIndexing.extract(@elixir_source, "lib/accounts.ex", analysis)
 
       all_comments = enrichment.comments |> Map.values() |> List.flatten()
@@ -82,7 +83,7 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
     end
 
     test "associates items with nearest function" do
-      {:ok, analysis} = Ragex.Analyzers.Elixir.analyze(@elixir_source, "lib/accounts.ex")
+      {:ok, analysis} = ElixirAnalyzer.analyze(@elixir_source, "lib/accounts.ex")
       enrichment = DeeperIndexing.extract(@elixir_source, "lib/accounts.ex", analysis)
 
       # The "TODO: add caching" comment should be near get_user, not create_user
