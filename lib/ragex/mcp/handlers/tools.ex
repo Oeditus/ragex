@@ -33,6 +33,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   """
   alias Ragex.AI.{Cache, Usage}
   alias Ragex.MCP.Handlers.GitTools
+  alias Ragex.MCP.Handlers.SCIPTools
 
   alias Ragex.Analysis.{
     BusinessLogic,
@@ -2268,7 +2269,7 @@ defmodule Ragex.MCP.Handlers.Tools do
               required: ["path"]
             }
           }
-        ] ++ GitTools.tool_definitions()
+        ] ++ GitTools.tool_definitions() ++ SCIPTools.tool_definitions()
     }
   end
 
@@ -2502,6 +2503,10 @@ defmodule Ragex.MCP.Handlers.Tools do
       git_tool
       when git_tool in ~w[git_blame git_history git_pr_info co_change_analysis git_enrich] ->
         GitTools.call_tool(git_tool, arguments)
+
+      # SCIP bridge tools (delegated to SCIPTools handler)
+      scip_tool when scip_tool in ~w[scip_status scip_index] ->
+        SCIPTools.call_tool(scip_tool, arguments)
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}
