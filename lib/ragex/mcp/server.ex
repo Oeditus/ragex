@@ -11,6 +11,7 @@ defmodule Ragex.MCP.Server do
   alias Ragex.MCP.Formatter
   alias Ragex.MCP.Handlers.{Prompts, Resources, Tools}
   alias Ragex.MCP.Protocol
+  alias Ragex.MCP.Telemetry, as: MCPTelemetry
 
   defmodule State do
     @moduledoc false
@@ -186,7 +187,7 @@ defmodule Ragex.MCP.Server do
     arguments = Map.get(params, "arguments", %{})
     format_opts = Formatter.extract_opts(arguments)
 
-    case Tools.call_tool(tool_name, arguments) do
+    case MCPTelemetry.execute(tool_name, fn -> Tools.call_tool(tool_name, arguments) end) do
       {:ok, result} ->
         # Apply context compaction (compact by default, verbose on request)
         formatted = Formatter.format(result, tool_name, format_opts)

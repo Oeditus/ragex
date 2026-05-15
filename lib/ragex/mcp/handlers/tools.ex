@@ -34,6 +34,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   alias Ragex.AI.{Cache, Usage}
   alias Ragex.MCP.Handlers.GitTools
   alias Ragex.MCP.Handlers.SCIPTools
+  alias Ragex.MCP.Telemetry, as: MCPTelemetry
 
   alias Ragex.Analysis.{
     BusinessLogic,
@@ -2269,7 +2270,32 @@ defmodule Ragex.MCP.Handlers.Tools do
               required: ["path"]
             }
           }
-        ] ++ GitTools.tool_definitions() ++ SCIPTools.tool_definitions()
+        ] ++
+          GitTools.tool_definitions() ++
+          SCIPTools.tool_definitions() ++
+          [
+            %{
+              name: "mcp_stats",
+              description:
+                "Show MCP tool usage statistics -- invocation counts, latencies, error rates per tool",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  sort_by: %{
+                    type: "string",
+                    description: "Sort by metric",
+                    enum: ["count", "avg_time", "total_time"],
+                    default: "count"
+                  }
+                }
+              }
+            },
+            %{
+              name: "mcp_stats_reset",
+              description: "Clear all MCP tool usage telemetry data",
+              inputSchema: %{type: "object", properties: %{}}
+            }
+          ]
     }
   end
 
@@ -2507,6 +2533,17 @@ defmodule Ragex.MCP.Handlers.Tools do
       # SCIP bridge tools (delegated to SCIPTools handler)
       scip_tool when scip_tool in ~w[scip_status scip_index] ->
         SCIPTools.call_tool(scip_tool, arguments)
+
+      # Telemetry tools
+      "mcp_stats" ->
+        stats =
+          MCPTelemetry.get_stats(sort_by: String.to_atom(Map.get(arguments, "sort_by", "count")))
+
+        {:ok, %{tools: stats, total_invocations: MCPTelemetry.total_invocations()}}
+
+      "mcp_stats_reset" ->
+        MCPTelemetry.reset()
+        {:ok, %{status: "reset", message: "Telemetry data cleared"}}
 
       _ ->
         {:error, "Unknown tool: #{tool_name}"}

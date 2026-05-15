@@ -48,6 +48,8 @@ defmodule Ragex.Application do
         Ragex.AI.Usage,
         # Agent conversation memory
         Ragex.Agent.Memory,
+        # MCP tool telemetry tracking
+        Ragex.MCP.Telemetry,
         # Git Enricher (background git metadata enrichment)
         Ragex.Git.Enricher,
         # Git RepoServer (NIF isolation for egit, only when egit is available)
