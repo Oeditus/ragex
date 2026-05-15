@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.14.1"
+  @version "0.15.0"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -133,6 +133,7 @@ defmodule Ragex.MixProject do
         stuff/docs/TROUBLESHOOTING.md
         stuff/docs/USAGE.md
         stuff/docs/ZED.md
+        stuff/docs/RAGEX-VS-CICADA.md
         bin/ragex-mcp
         examples/product_cart/README.md
         examples/product_cart/DEMO.md
@@ -196,6 +197,7 @@ defmodule Ragex.MixProject do
       "stuff/docs/TOOLS.md": [title: "MCP Tools Reference"],
       "stuff/docs/TROUBLESHOOTING.md": [title: "Troubleshooting"],
       "stuff/docs/ZED.md": [title: "Zed Editor Integration"],
+      "stuff/docs/RAGEX-VS-CICADA.md": [title: "Ragex vs Cicada"],
       "examples/product_cart/DEMO.md": [title: "Cart demo: README"]
     ]
   end
