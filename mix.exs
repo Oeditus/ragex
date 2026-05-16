@@ -162,6 +162,7 @@ defmodule Ragex.MixProject do
       nest_modules_by_prefix: [
         Ragex.AI,
         Ragex.AI.Features,
+        Ragex.API,
         Ragex.Agent,
         Ragex.Analysis,
         Ragex.Analysis.Suggestions,
@@ -169,6 +170,7 @@ defmodule Ragex.MixProject do
         Ragex.CLI,
         Ragex.Editor,
         Ragex.Embeddings,
+        Ragex.Git,
         Ragex.Graph,
         Ragex.MCP,
         Ragex.MCP.Handlers,
@@ -208,6 +210,29 @@ defmodule Ragex.MixProject do
     [
       "Core Components": [
         Ragex,
+        Ragex.LanguageSupport,
+        Ragex.Application,
+        Ragex.LanguageSupport
+      ],
+      "MCP Server": [
+        Ragex.MCP.Client,
+        Ragex.MCP.Debug,
+        Ragex.MCP.Delegate,
+        Ragex.MCP.Formattable,
+        Ragex.MCP.Formatter,
+        Ragex.MCP.SingleRequest,
+        Ragex.MCP.SocketServer,
+        Ragex.MCP.Server,
+        Ragex.MCP.Protocol,
+        Ragex.MCP.Telemetry,
+        Ragex.MCP.Handlers.GitTools,
+        Ragex.MCP.Handlers.Initialization,
+        Ragex.MCP.Handlers.Tools,
+        Ragex.MCP.Handlers.Prompts,
+        Ragex.MCP.Handlers.Resources,
+        Ragex.MCP.Handlers.SCIPTools
+      ],
+      RAG: [
         Ragex.Agent.Core,
         Ragex.Agent.Executor,
         Ragex.Agent.Memory,
@@ -215,20 +240,36 @@ defmodule Ragex.MixProject do
         Ragex.Agent.Report,
         Ragex.Agent.StreamConsumer,
         Ragex.Agent.ToolSchema,
-        Ragex.LanguageSupport,
-        Ragex.Application,
-        Ragex.LanguageSupport
+        Ragex.RAG.ContextBuilder,
+        Ragex.RAG.Pipeline,
+        Ragex.RAG.PromptTemplate,
+        Ragex.Retrieval.Hybrid,
+        Ragex.Retrieval.Strategies,
+        Ragex.Retrieval.CrossLanguage,
+        Ragex.Retrieval.MetaASTRanker,
+        Ragex.Retrieval.QueryExpansion,
+        Ragex.Search.Keywords
       ],
-      "MCP Server": [
-        Ragex.MCP.Debug,
-        Ragex.MCP.SingleRequest,
-        Ragex.MCP.SocketServer,
-        Ragex.MCP.Server,
-        Ragex.MCP.Protocol,
-        Ragex.MCP.Handlers.Initialization,
-        Ragex.MCP.Handlers.Tools,
-        Ragex.MCP.Handlers.Resources,
-        Ragex.MCP.Handlers.Prompts
+      API: [
+        Ragex.API.Auth,
+        Ragex.API.OpenAPI,
+        Ragex.API.Router,
+        Ragex.API.Server
+      ],
+      Git: [
+        Ragex.Git.Backend,
+        Ragex.Git.Backend.CLI,
+        Ragex.Git.Backend.Egit,
+        Ragex.Git.Blame,
+        Ragex.Git.BlameEntry,
+        Ragex.Git.CoChange,
+        Ragex.Git.Commit,
+        Ragex.Git.Enricher,
+        Ragex.Git.Log,
+        Ragex.Git.PR,
+        Ragex.Git.PR.PRInfo,
+        Ragex.Git.Repo,
+        Ragex.Git.RepoServer
       ],
       "Code Analysis": [
         Ragex.Analyzers.Elixir,
@@ -236,8 +277,13 @@ defmodule Ragex.MixProject do
         Ragex.Analyzers.Python,
         Ragex.Analyzers.JavaScript,
         Ragex.Analyzers.Ruby,
+        Ragex.Analyzers.DeeperIndexing,
         Ragex.Analyzers.Detector,
-        Ragex.Analyzers.MetaASTExtractor
+        Ragex.Analyzers.MetaASTExtractor,
+        Ragex.Analyzers.SCIP.Adapter,
+        Ragex.Analyzers.SCIP.Indexer,
+        Ragex.Analyzers.SCIP.Parser,
+        Ragex.Analyzers.SCIP.Registry
       ],
       "Knowledge Graph": [
         Ragex.Graph.Algorithms,
@@ -255,16 +301,6 @@ defmodule Ragex.MixProject do
         Ragex.Embeddings.Persistence,
         Ragex.Embeddings.Registry,
         Ragex.Embeddings.TextGenerator
-      ],
-      RAG: [
-        Ragex.RAG.ContextBuilder,
-        Ragex.RAG.Pipeline,
-        Ragex.RAG.PromptTemplate,
-        Ragex.Retrieval.Hybrid,
-        Ragex.Retrieval.Strategies,
-        Ragex.Retrieval.CrossLanguage,
-        Ragex.Retrieval.MetaASTRanker,
-        Ragex.Retrieval.QueryExpansion
       ],
       "Code Editing": [
         Ragex.Editor.Core,
@@ -304,6 +340,7 @@ defmodule Ragex.MixProject do
         Ragex.Analysis.Impact,
         Ragex.Analysis.LocationEnricher,
         Ragex.Analysis.LocationPreservation,
+        Ragex.Analysis.Runner,
         Ragex.Analysis.Semantic,
         Ragex.Analysis.Suggestions,
         Ragex.Analysis.Suggestions.Patterns,
@@ -342,6 +379,7 @@ defmodule Ragex.MixProject do
       CLI: [
         Ragex.CLI.Colors,
         Ragex.CLI.Chat,
+        Ragex.CLI.EditorConfig,
         Ragex.CLI.Output,
         Ragex.CLI.Progress,
         Ragex.CLI.Prompt
