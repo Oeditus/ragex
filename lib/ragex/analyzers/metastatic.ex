@@ -3,7 +3,7 @@ defmodule Ragex.Analyzers.Metastatic do
   Language-agnostic analyzer using Metastatic MetaAST.
 
   Primary entity extraction via `Ragex.Analyzers.MetaASTExtractor`, enriched
-  with per-function complexity metrics from `Metastatic.Analysis.Complexity`.
+  with per-function complexity metrics from `MetaCredo.Analysis.Complexity`.
   Falls back to native language analyzers when Metastatic parsing fails and
   the `:fallback_to_native_analyzers` feature flag is enabled.
 
@@ -26,7 +26,8 @@ defmodule Ragex.Analyzers.Metastatic do
   @behaviour Ragex.Analyzers.Behaviour
 
   require Logger
-  alias Metastatic.{Analysis.Complexity, Builder, Document}
+  alias MetaCredo.Analysis.Complexity
+  alias Metastatic.{Builder, Document}
   alias Ragex.Analyzers.MetaASTExtractor
 
   alias Ragex.Analyzers.Elixir, as: ExAnalyzer

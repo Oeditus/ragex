@@ -51,6 +51,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
     * `--with-empty` / `--without-empty` - Include/exclude empty issue reports in output (default: without-empty)
     * `--ci` - CI mode: plain text, no colors, non-zero exit on issues
     * `--strict` - Exit with code 1 if any issues are found
+    * `--diff` - Diff mode: analyze only files changed between --base and --head (implies --ci)
+    * `--base REF` - Base git ref for diff mode (default: origin/main)
+    * `--head REF` - Head git ref for diff mode (default: HEAD)
 
   ## Examples
 
@@ -81,11 +84,18 @@ defmodule Mix.Tasks.Ragex.Analyze do
       # Strict mode with custom thresholds
       mix ragex.analyze --coupling --god-threshold 20 --instability-threshold 0.9 --strict
 
+      # Diff mode: only check changed files in a PR
+      mix ragex.analyze --diff
+
+      # Diff mode with custom base ref and GitHub Actions annotations
+      mix ragex.analyze --diff --base origin/develop --format github
+
   """
 
   use Mix.Task
 
   alias Ragex.Analysis.Runner
+  alias Ragex.Git.Diff
   alias Ragex.MCP.{Client, Delegate}
 
   @shortdoc "Performs comprehensive code analysis on a directory"
@@ -124,7 +134,10 @@ defmodule Mix.Tasks.Ragex.Analyze do
           verbose: :boolean,
           with_empty: :boolean,
           ci: :boolean,
-          strict: :boolean
+          strict: :boolean,
+          diff: :boolean,
+          base: :string,
+          head: :string
         ]
       )
 
@@ -206,16 +219,16 @@ defmodule Mix.Tasks.Ragex.Analyze do
   # Local path: starts the full application (original behavior)
   defp run_local(config) do
     # Disable MCP server for non-interactive formats (prevents hanging)
-    if config.format in ["json", "markdown"] or config.ci do
+    if config.format in ["json", "markdown", "github"] or config.ci do
       Application.put_env(:ragex, :start_server, false)
     end
 
     # Start required applications
     Mix.Task.run("app.start")
 
-    show_progress = config.format != "json" and not config.ci
+    show_progress = config.format not in ["json", "github"] and not config.ci
 
-    if config.format == "json" or config.ci do
+    if config.format in ["json", "github"] or config.ci do
       Logger.configure(level: :emergency)
     end
 
@@ -224,22 +237,29 @@ defmodule Mix.Tasks.Ragex.Analyze do
       Mix.shell().info("")
     end
 
-    # Step 1: Analyze directory and build knowledge graph
-    if show_progress, do: header_msg("Step 1: Analyzing directory...")
+    # Step 1: Analyze files and build knowledge graph
+    if show_progress,
+      do: header_msg("Step 1: Analyzing#{if config.diff, do: " changed", else: ""} files...")
 
     analyze_result =
-      case Runner.analyze_directory(config.path) do
-        {:ok, result} ->
-          result
+      if config.diff do
+        # Diff mode: only analyze changed files
+        {:ok, result} = Runner.analyze_files(config.changed_files_absolute)
+        result
+      else
+        case Runner.analyze_directory(config.path) do
+          {:ok, result} ->
+            result
 
-        {:error, reason} ->
-          error_msg("Failed to analyze directory: #{inspect(reason)}")
-          System.halt(1)
+          {:error, reason} ->
+            error_msg("Failed to analyze directory: #{inspect(reason)}")
+            System.halt(1)
+        end
       end
 
     if config.verbose and show_progress do
       success_msg(
-        "  ✓ Analyzed #{analyze_result.files_analyzed} files (#{analyze_result.entities_found} entities)"
+        "  analyzed #{analyze_result.files_analyzed} files (#{analyze_result.entities_found} entities)"
       )
 
       Mix.shell().info("")
@@ -247,6 +267,14 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
     # Step 2: Run analyses
     results = run_analyses(config)
+
+    # Step 2.5: In diff mode, filter results to changed files only
+    results =
+      if config.diff and config.changed_files_set do
+        Runner.filter_results_by_files(results, config.changed_files_set)
+      else
+        results
+      end
 
     # Step 3: Generate report
     report = generate_report(config, analyze_result, results)
@@ -313,6 +341,19 @@ defmodule Mix.Tasks.Ragex.Analyze do
         else: Keyword.get(opts, key, false)
     end
 
+    diff = Keyword.get(opts, :diff, false)
+
+    # --diff implies --ci
+    ci = if diff, do: true, else: ci
+
+    # Resolve changed files when in diff mode
+    {changed_files_absolute, changed_files_set} =
+      if diff do
+        resolve_diff_files(path, opts)
+      else
+        {[], nil}
+      end
+
     %{
       path: path,
       output: Keyword.get(opts, :output),
@@ -320,6 +361,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
       verbose: Keyword.get(opts, :verbose, false),
       ci: ci,
       strict: strict,
+      diff: diff,
+      changed_files_absolute: changed_files_absolute,
+      changed_files_set: changed_files_set,
       severity: parse_severity(Keyword.get(opts, :severity, "medium")),
       threshold: Keyword.get(opts, :threshold, 0.85),
       min_complexity: Keyword.get(opts, :min_complexity, 10),
@@ -342,6 +386,23 @@ defmodule Mix.Tasks.Ragex.Analyze do
         coupling: resolve.(:coupling)
       }
     }
+  end
+
+  defp resolve_diff_files(path, opts) do
+    diff_opts =
+      []
+      |> then(fn o -> if opts[:base], do: [{:base, opts[:base]} | o], else: o end)
+      |> then(fn o -> if opts[:head], do: [{:head, opts[:head]} | o], else: o end)
+
+    case Diff.changed_files_for_path(path, diff_opts) do
+      {:ok, repo_root, files} ->
+        absolute = Enum.map(files, &Path.join(repo_root, &1))
+        relative_set = MapSet.new(files)
+        {absolute, relative_set}
+
+      {:error, reason} ->
+        Mix.raise("--diff: failed to resolve changed files: #{inspect(reason)}")
+    end
   end
 
   defp parse_severity(severity) when is_binary(severity) do
@@ -458,28 +519,86 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Output results
   defp output_results(config, report) do
-    if config.ci do
-      output_ci(report)
-    else
-      content =
-        case config.format do
-          "json" -> format_json(report)
-          "markdown" -> format_markdown(report)
-          _ -> format_text(report)
+    cond do
+      config.format == "github" ->
+        output_github(report)
+
+      config.ci ->
+        output_ci(report)
+
+      true ->
+        content =
+          case config.format do
+            "json" -> format_json(report)
+            "markdown" -> format_markdown(report)
+            _ -> format_text(report)
+          end
+
+        case config.output do
+          nil ->
+            if config.format != "json", do: Mix.shell().info("")
+            Mix.shell().info(content)
+
+          file ->
+            File.write!(file, content)
+            if config.format != "json", do: success_msg("\nReport written to #{file}")
         end
-
-      case config.output do
-        nil ->
-          # Only add blank line for non-JSON output
-          if config.format != "json", do: Mix.shell().info("")
-          Mix.shell().info(content)
-
-        file ->
-          File.write!(file, content)
-          if config.format != "json", do: success_msg("\n✓ Report written to #{file}")
-      end
     end
   end
+
+  # GitHub Actions workflow command format for inline PR annotations
+  defp output_github(report) do
+    lines =
+      report.results
+      |> Enum.flat_map(fn {type, data} -> github_lines_for(type, data) end)
+
+    Enum.each(lines, fn line -> Mix.shell().info(line) end)
+
+    total = length(lines)
+    Mix.shell().info("ragex: #{total} issue(s) found")
+  end
+
+  defp github_lines_for(:security, %{issues: issues}) do
+    issues
+    |> Enum.flat_map(fn result -> Map.get(result, :vulnerabilities, []) end)
+    |> Enum.map(fn vuln ->
+      level = if vuln.severity in [:critical, :high], do: "error", else: "warning"
+
+      "::#{level} file=#{vuln.file},line=#{vuln.line}::SECURITY #{vuln.category}: #{vuln.description}"
+    end)
+  end
+
+  defp github_lines_for(:business_logic, data) do
+    data
+    |> Map.get(:results, [])
+    |> Enum.flat_map(&Map.get(&1, :issues, []))
+    |> Enum.map(fn issue ->
+      level = if issue[:severity] in [:critical, :high], do: "error", else: "warning"
+
+      "::#{level} file=#{issue[:file]},line=#{issue[:line]}::#{issue[:analyzer]}: #{issue[:description]}"
+    end)
+  end
+
+  defp github_lines_for(:complexity, %{complex_functions: funcs}) do
+    Enum.map(funcs, fn f ->
+      "::warning file=#{f[:file] || f[:path]},line=#{f[:line] || 1}::COMPLEXITY #{f.module}.#{f.name}/#{f.arity} cyclomatic=#{f.cyclomatic_complexity}"
+    end)
+  end
+
+  defp github_lines_for(:dead_code, %{dead_functions: funcs}) do
+    Enum.map(funcs, fn f ->
+      "::notice file=#{f[:file] || f[:path]},line=#{f[:line] || 1}::DEAD_CODE #{f.module}.#{f.name}/#{f.arity}: #{f.reason}"
+    end)
+  end
+
+  defp github_lines_for(:circulars, %{cycles: cycles}) do
+    Enum.map(cycles, fn cycle ->
+      chain = Enum.map_join(cycle, " -> ", &format_module_name/1)
+      "::error::CIRCULAR dependency: #{chain}"
+    end)
+  end
+
+  defp github_lines_for(_, _), do: []
 
   # CI output: one-line-per-issue, no ANSI, machine-friendly
   defp output_ci(report) do

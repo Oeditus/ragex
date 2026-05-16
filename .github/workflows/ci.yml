@@ -135,6 +135,38 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: mix coveralls.github --exclude resource_intensive
 
+  analysis:
+    name: Diff Analysis
+    if: github.event_name == 'pull_request'
+    needs: deps
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ env.ELIXIR_VERSION }}
+        otp-version: ${{ env.OTP_VERSION }}
+
+    - name: Restore dependencies cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-${{ env.OTP_VERSION }}-${{ env.ELIXIR_VERSION }}-
+
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libgit2-dev
+
+    - name: Run diff analysis
+      run: mix ragex.ci --base origin/${{ github.base_ref }} --format github
+
   ci:
     name: CI
     needs: [compile, credo, test]

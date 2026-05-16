@@ -445,7 +445,7 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
 - [✓] Code quality analysis
 - [✓] Impact analysis and risk assessment
 - [✓] CLI improvements (interactive wizards, dashboard, completions, man pages)
-- [±] CI tasks
+- [✓] CI tasks (diff-based analysis, GitHub Actions annotations, `mix ragex.ci`)
 - [✗] Provider health checks and auto-failover
 - [✗] Production optimizations
 - [±] Additional language support
@@ -1009,6 +1009,7 @@ export DEEPSEEK_API_KEY="sk-xxxxxxxxxxxxx"
 
 ## Documentation
 
+- [CI / Diff-Based Analysis](stuff/docs/CI.md) - PR analysis, GitHub Actions, `mix ragex.ci`
 - [Using Ragex as MCP Server](stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md) - Installation, client setup, RAG queries, configuration
 - [Usage Guide](stuff/docs/USAGE.md) - Editor-specific integration (VIM, LunarVim)
 - [Zed Editor Integration](stuff/docs/ZED.md) - First-class Zed support with tasks and keybindings

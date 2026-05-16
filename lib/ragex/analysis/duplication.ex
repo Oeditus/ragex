@@ -76,7 +76,7 @@ defmodule Ragex.Analysis.Duplication do
     - `:cross_language` - Enable cross-language detection (default: true)
 
   ## Returns
-  - `{:ok, result}` - Metastatic.Analysis.Duplication.Result struct
+  - `{:ok, result}` - MetaCredo.Analysis.Duplication.Result struct
   - `{:error, reason}` - Error if analysis fails
 
   ## Examples
@@ -87,7 +87,7 @@ defmodule Ragex.Analysis.Duplication do
       end
   """
   @spec detect_between_files(String.t(), String.t(), keyword()) ::
-          {:ok, Metastatic.Analysis.Duplication.Result.t()} | {:error, term()}
+          {:ok, MetaCredo.Analysis.Duplication.Result.t()} | {:error, term()}
   def detect_between_files(file1_path, file2_path, opts \\ []) do
     threshold = Keyword.get(opts, :threshold, 0.8)
 

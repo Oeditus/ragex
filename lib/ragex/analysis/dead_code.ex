@@ -337,7 +337,7 @@ defmodule Ragex.Analysis.DeadCode do
       true
   """
   @spec analyze_file(String.t(), keyword()) ::
-          {:ok, Metastatic.Analysis.DeadCode.Result.t()} | {:error, term()}
+          {:ok, MetaCredo.Analysis.DeadCode.Result.t()} | {:error, term()}
   def analyze_file(file_path, opts \\ []) do
     min_confidence = Keyword.get(opts, :min_confidence, :low)
 

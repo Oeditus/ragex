@@ -133,6 +133,7 @@ defmodule Ragex.MixProject do
         stuff/docs/TROUBLESHOOTING.md
         stuff/docs/USAGE.md
         stuff/docs/ZED.md
+        stuff/docs/CI.md
         stuff/docs/RAGEX-VS-CICADA.md
         stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md
         bin/ragex-mcp
@@ -201,6 +202,7 @@ defmodule Ragex.MixProject do
       "stuff/docs/TROUBLESHOOTING.md": [title: "Troubleshooting"],
       "stuff/docs/ZED.md": [title: "Zed Editor Integration"],
       "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md": [title: "Using Ragex as MCP Server"],
+      "stuff/docs/CI.md": [title: "CI / Diff-Based Analysis"],
       "stuff/docs/RAGEX-VS-CICADA.md": [title: "Ragex vs Cicada"],
       "examples/product_cart/DEMO.md": [title: "Cart demo: README"]
     ]

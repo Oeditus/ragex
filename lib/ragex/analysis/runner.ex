@@ -46,24 +46,36 @@ defmodule Ragex.Analysis.Runner do
   @spec analyze_directory(String.t(), keyword()) :: {:ok, analyze_result()} | {:error, term()}
   def analyze_directory(path, opts \\ []) do
     case Directory.analyze_directory(path, opts) do
-      {:ok, stats} ->
-        entities_found =
-          if stats[:graph_stats] do
-            Map.get(stats.graph_stats, :nodes, 0)
-          else
-            0
-          end
-
-        {:ok,
-         %{
-           files_analyzed: stats.total,
-           entities_found: entities_found,
-           errors: stats[:error_details] || []
-         }}
-
-      {:error, reason} ->
-        {:error, reason}
+      {:ok, stats} -> {:ok, stats_to_result(stats)}
+      {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc """
+  Analyzes an explicit list of file paths and populates the knowledge graph.
+
+  Used by diff-based analysis to index only changed files.
+  """
+  @spec analyze_files([String.t()], keyword()) :: {:ok, analyze_result()} | {:error, term()}
+  def analyze_files(file_paths, opts \\ []) do
+    # Directory.analyze_files/2 always returns {:ok, stats}
+    {:ok, stats} = Directory.analyze_files(file_paths, opts)
+    {:ok, stats_to_result(stats)}
+  end
+
+  defp stats_to_result(stats) do
+    entities_found =
+      if stats[:graph_stats] do
+        Map.get(stats.graph_stats, :nodes, 0)
+      else
+        0
+      end
+
+    %{
+      files_analyzed: stats.total,
+      entities_found: entities_found,
+      errors: stats[:error_details] || []
+    }
   end
 
   @doc """
@@ -245,5 +257,81 @@ defmodule Ragex.Analysis.Runner do
       {:error, _} ->
         %{metrics: []}
     end
+  end
+
+  # ── Diff filtering ────────────────────────────────────────────────────
+
+  @doc """
+  Filters analysis results to only include issues touching the given files.
+
+  `changed_files` is a `MapSet` of relative file paths. Results whose file
+  path is not in the set are removed. Whole-project analyses (circulars,
+  coupling, etc.) pass through unfiltered since they represent structural
+  properties, not per-file issues.
+  """
+  @spec filter_results_by_files(map(), MapSet.t()) :: map()
+  def filter_results_by_files(results, changed_files) do
+    Map.new(results, fn {type, data} ->
+      {type, filter_type(type, data, changed_files)}
+    end)
+  end
+
+  defp filter_type(:security, %{issues: issues} = data, files) do
+    %{data | issues: Enum.filter(issues, &file_in_set?(&1[:file] || &1[:path], files))}
+  end
+
+  defp filter_type(:business_logic, %{results: results} = data, files) do
+    filtered = Enum.filter(results, &file_in_set?(&1[:file] || &1[:path], files))
+
+    total =
+      Enum.reduce(filtered, 0, fn r, acc -> acc + length(Map.get(r, :issues, [])) end)
+
+    %{data | results: filtered, total_issues: total, files_with_issues: length(filtered)}
+  end
+
+  defp filter_type(:complexity, %{complex_functions: funcs} = data, files) do
+    %{data | complex_functions: Enum.filter(funcs, &file_in_set?(&1[:file] || &1[:path], files))}
+  end
+
+  defp filter_type(:smells, %{smells: smells} = data, files) do
+    case smells do
+      %{results: results} ->
+        filtered = Enum.filter(results, &file_in_set?(&1[:path] || &1[:file], files))
+        %{data | smells: %{smells | results: filtered}}
+
+      list when is_list(list) ->
+        %{data | smells: Enum.filter(list, &file_in_set?(&1[:file] || &1[:path], files))}
+
+      _ ->
+        data
+    end
+  end
+
+  defp filter_type(:duplicates, %{duplicates: dups} = data, files) do
+    filtered =
+      Enum.filter(dups, fn dup ->
+        locations = Map.get(dup, :locations, [])
+        Enum.any?(locations, &file_in_set?(&1[:file] || &1[:path], files))
+      end)
+
+    %{data | duplicates: filtered}
+  end
+
+  defp filter_type(:dead_code, %{dead_functions: funcs} = data, files) do
+    %{data | dead_functions: Enum.filter(funcs, &file_in_set?(&1[:file] || &1[:path], files))}
+  end
+
+  # Structural / whole-project analyses pass through unfiltered
+  defp filter_type(_type, data, _files), do: data
+
+  defp file_in_set?(nil, _files), do: false
+
+  defp file_in_set?(path, files) do
+    # Match both absolute and relative paths
+    MapSet.member?(files, path) or
+      MapSet.member?(files, Path.basename(path)) or
+      Enum.any?(files, fn f ->
+        String.ends_with?(path, "/" <> f) or String.ends_with?(f, "/" <> path) or path == f
+      end)
   end
 end
