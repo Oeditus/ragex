@@ -66,7 +66,7 @@ defmodule Ragex.MixProject do
       {:owl, "~> 0.12"},
       # Embeddings and ML
       {:bumblebee, "~> 0.5"},
-      {:nx, "~> 0.9"},
+      {:nx, "~> 0.12", optional: false},
       {:exla, "~> 0.9"},
       # AI Provider
       {:req, "~> 0.5"},
