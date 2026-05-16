@@ -34,9 +34,7 @@ defmodule Ragex.Analysis.Smells do
   """
 
   require Logger
-  alias Metastatic.{Adapter, Document}
-  alias Metastatic.Analysis.Smells, as: MetaSmells
-  alias Ragex.Analysis.LocationEnricher
+  alias Ragex.Analysis.{LocationEnricher, MetaCredoBridge}
 
   @type smell_result :: %{
           path: String.t(),
@@ -98,18 +96,25 @@ defmodule Ragex.Analysis.Smells do
       result.has_smells?  # => true/false
       result.total_smells # => 3
   """
+  # MetaCredo checks used for smell detection
+  @smell_checks [
+    {MetaCredo.Check.Readability.LongFunction, []},
+    {MetaCredo.Check.Readability.DeepNesting, []},
+    {MetaCredo.Check.Readability.MagicNumber, []},
+    {MetaCredo.Check.Readability.ComplexConditional, []},
+    {MetaCredo.Check.Readability.LongParameterList, []}
+  ]
+
   @spec analyze_file(path :: String.t(), opts :: keyword()) ::
           {:ok, smell_result()} | {:error, term()}
   def analyze_file(path, opts \\ []) do
-    thresholds = Keyword.get(opts, :thresholds, %{}) |> merge_thresholds()
     language = Keyword.get(opts, :language, detect_language(path))
 
-    with {:ok, content} <- File.read(path),
-         {:ok, adapter} <- get_adapter(language),
-         {:ok, doc} <- parse_document(adapter, content, language),
-         {:ok, result} <- MetaSmells.analyze(doc, thresholds: thresholds) do
-      {:ok, format_result(path, language, result)}
-    else
+    case MetaCredoBridge.parse_file(path) do
+      {:ok, source_file} ->
+        issues = MetaCredoBridge.run_checks(source_file, @smell_checks)
+        {:ok, format_result_from_issues(path, language, issues)}
+
       {:error, reason} = error ->
         Logger.warning("Code smell analysis failed for #{path}: #{inspect(reason)}")
         error
@@ -224,32 +229,39 @@ defmodule Ragex.Analysis.Smells do
   # Private functions
 
   defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
-  defp get_adapter(lang), do: Ragex.LanguageSupport.get_adapter(lang)
 
-  defp parse_document(adapter, content, language) do
-    case Adapter.abstract(adapter, content, language) do
-      {:ok, %Document{} = doc} -> {:ok, doc}
-      {:error, _} = error -> error
-    end
-  end
+  defp format_result_from_issues(path, language, mc_issues) do
+    smells =
+      mc_issues
+      |> Enum.map(&MetaCredoBridge.issue_to_smell/1)
+      |> LocationEnricher.enrich_issues(path)
 
-  defp merge_thresholds(overrides) do
-    Map.merge(@default_thresholds, overrides)
-  end
+    total = length(smells)
 
-  defp format_result(path, language, result) do
-    # Enrich smells with knowledge graph function context using LocationEnricher
-    enriched_smells = LocationEnricher.enrich_issues(result.smells, path)
+    by_severity =
+      Enum.reduce(smells, %{}, fn s, acc ->
+        Map.update(acc, s.severity, 1, &(&1 + 1))
+      end)
+
+    by_type =
+      Enum.reduce(smells, %{}, fn s, acc ->
+        Map.update(acc, s.type, 1, &(&1 + 1))
+      end)
+
+    summary =
+      if total == 0,
+        do: "No code smells detected in #{path}",
+        else: "Found #{total} code smell(s) in #{path}"
 
     %{
       path: path,
       language: language,
-      has_smells?: result.has_smells?,
-      total_smells: result.total_smells,
-      smells: enriched_smells,
-      by_severity: result.by_severity,
-      by_type: result.by_type,
-      summary: result.summary,
+      has_smells?: total > 0,
+      total_smells: total,
+      smells: smells,
+      by_severity: by_severity,
+      by_type: by_type,
+      summary: summary,
       timestamp: DateTime.utc_now()
     }
   end

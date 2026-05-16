@@ -28,10 +28,7 @@ defmodule Ragex.Analysis.Security do
       report = Security.audit_report(results)
   """
 
-  alias Metastatic.{Adapter, Document}
-  alias Metastatic.Analysis.Security, as: MetaSecurity
-  alias Metastatic.Semantic.Enricher
-  alias Ragex.Analysis.LocationPreservation
+  alias Ragex.Analysis.{LocationPreservation, MetaCredoBridge}
   require Logger
 
   @type vulnerability :: %{
@@ -72,20 +69,39 @@ defmodule Ragex.Analysis.Security do
       {:ok, result} = Security.analyze_file("lib/my_module.ex")
       result.has_vulnerabilities?  # => false
   """
+  # All MetaCredo security checks
+  @security_checks [
+    {MetaCredo.Check.Security.HardcodedValue, []},
+    {MetaCredo.Check.Security.SQLInjection, []},
+    {MetaCredo.Check.Security.XSSVulnerability, []},
+    {MetaCredo.Check.Security.PathTraversal, []},
+    {MetaCredo.Check.Security.SSRFVulnerability, []},
+    {MetaCredo.Check.Security.SensitiveDataExposure, []},
+    {MetaCredo.Check.Security.MissingCSRFProtection, []},
+    {MetaCredo.Check.Security.InsecureDirectObjectReference, []},
+    {MetaCredo.Check.Security.UnrestrictedFileUpload, []},
+    {MetaCredo.Check.Security.TOCTOU, []},
+    {MetaCredo.Check.Security.MissingAuthentication, []},
+    {MetaCredo.Check.Security.MissingAuthorization, []},
+    {MetaCredo.Check.Security.IncorrectAuthorization, []},
+    {MetaCredo.Check.Security.ImproperInputValidation, []},
+    {MetaCredo.Check.Security.InlineJavascript, []},
+    # Command injection / unsafe exec
+    {MetaCredo.Check.Warning.UnsafeExec, []}
+  ]
+
   @spec analyze_file(String.t(), keyword()) :: {:ok, analysis_result()} | {:error, term()}
   def analyze_file(path, opts \\ []) do
     language = Keyword.get(opts, :language, detect_language(path))
+    min_severity = Keyword.get(opts, :min_severity)
+    categories = Keyword.get(opts, :categories)
 
-    with {:ok, content} <- File.read(path),
-         {:ok, adapter} <- get_adapter(language),
-         {:ok, doc} <- parse_document(adapter, content, language),
-         {:ok, enriched_doc} <- enrich_document(doc, language),
-         {:ok, meta_result} <- MetaSecurity.analyze(enriched_doc, opts) do
-      # MetaAST nodes already carry :line/:col; LocationPreservation's
-      # enricher fallback handles any remaining gaps via the knowledge graph.
-      result = build_result(path, language, meta_result, %{})
-      {:ok, result}
-    else
+    case MetaCredoBridge.parse_file(path) do
+      {:ok, source_file} ->
+        issues = MetaCredoBridge.run_checks(source_file, @security_checks)
+        result = build_result_from_issues(path, language, issues, min_severity, categories)
+        {:ok, result}
+
       {:error, reason} = error ->
         Logger.warning("Security analysis failed for #{path}: #{inspect(reason)}")
         error
@@ -179,54 +195,48 @@ defmodule Ragex.Analysis.Security do
   # Private functions
 
   defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
-  defp get_adapter(lang), do: Ragex.LanguageSupport.get_adapter(lang)
 
-  defp parse_document(adapter, content, language) do
-    case Adapter.abstract(adapter, content, language) do
-      {:ok, %Document{} = doc} -> {:ok, doc}
-      {:error, _} = error -> error
-    end
-  end
-
-  # Enrich the document with OpKind semantic metadata.
-  # The Elixir adapter already enriches in to_meta/2; for other adapters
-  # (Python, Ruby, Erlang, Haskell) we apply Enricher.enrich_tree here.
-  defp enrich_document(%Document{language: :elixir} = doc, :elixir) do
-    # Already enriched by the Elixir adapter's to_meta/2
-    {:ok, doc}
-  end
-
-  defp enrich_document(%Document{ast: ast, language: language} = doc, language) do
-    {:ok, %{doc | ast: Enricher.enrich_tree(ast, language)}}
-  rescue
-    _ -> {:ok, doc}
-  end
-
-  defp enrich_document(doc, _language), do: {:ok, doc}
-
-  defp build_result(path, language, meta_result, location_map) do
+  defp build_result_from_issues(path, language, mc_issues, min_severity, categories) do
     vulns =
-      meta_result.vulnerabilities
-      |> Enum.map(fn vuln ->
-        Map.merge(vuln, %{file: path, language: language})
-      end)
-      # Phase 2: First try native AST locations, then fallback to graph enrichment
-      |> LocationPreservation.merge_locations(location_map, path)
+      mc_issues
+      |> Enum.map(&MetaCredoBridge.issue_to_vulnerability(&1, path, language))
+      |> LocationPreservation.merge_locations(%{}, path)
+      |> maybe_filter_severity(min_severity)
+      |> maybe_filter_categories(categories)
 
+    total = length(vulns)
     severity_counts = count_by_severity(vulns)
 
     %{
       file: path,
       language: language,
       vulnerabilities: vulns,
-      has_vulnerabilities?: meta_result.has_vulnerabilities?,
-      total_vulnerabilities: meta_result.total_vulnerabilities,
+      has_vulnerabilities?: total > 0,
+      total_vulnerabilities: total,
       critical_count: Map.get(severity_counts, :critical, 0),
       high_count: Map.get(severity_counts, :high, 0),
       medium_count: Map.get(severity_counts, :medium, 0),
       low_count: Map.get(severity_counts, :low, 0),
       timestamp: DateTime.utc_now()
     }
+  end
+
+  @severity_order %{critical: 4, high: 3, medium: 2, low: 1}
+
+  defp maybe_filter_severity(vulns, nil), do: vulns
+
+  defp maybe_filter_severity(vulns, min_severity) do
+    min_level = Map.get(@severity_order, min_severity, 0)
+
+    Enum.filter(vulns, fn vuln ->
+      Map.get(@severity_order, vuln.severity, 0) >= min_level
+    end)
+  end
+
+  defp maybe_filter_categories(vulns, nil), do: vulns
+
+  defp maybe_filter_categories(vulns, categories) when is_list(categories) do
+    Enum.filter(vulns, &(&1.category in categories))
   end
 
   defp count_by_severity(vulnerabilities) do

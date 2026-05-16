@@ -20,7 +20,7 @@ defmodule Ragex.Analysis.DeadCode do
   potential entry points (callbacks, GenServer handlers, etc.).
   """
 
-  alias Metastatic.Analysis.DeadCode, as: MetaDeadCode
+  alias MetaCredo.Analysis.DeadCode, as: MetaDeadCode
   alias Ragex.{Analysis.DeadCode.AIRefiner, Analysis.MetastaticBridge, Graph.Store}
 
   require Logger

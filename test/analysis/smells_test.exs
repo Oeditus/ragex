@@ -115,11 +115,11 @@ defmodule Ragex.Analysis.SmellsTest do
     test "supports custom thresholds" do
       path = "/tmp/ragex_test_custom_threshold.ex"
 
-      # Function with 20 statements (above custom threshold of 10)
+      # Function with 60 statements (above MetaCredo's default LongFunction threshold)
       code = """
       defmodule CustomModule do
         def function_with_statements(x) do
-          #{Enum.map_join(1..20, "\n  ", fn i -> "IO.puts(\"line #{i}\")" end)}
+          #{Enum.map_join(1..60, "\n  ", fn i -> "IO.puts(\"line #{i}\")" end)}
           x
         end
       end

@@ -99,9 +99,7 @@ defmodule Ragex.Analysis.BusinessLogic do
       report = BusinessLogic.audit_report(results)
   """
 
-  alias Metastatic.Adapter
-  alias Metastatic.Analysis.{Registry, Runner}
-  alias Ragex.Analysis.LocationEnricher
+  alias Ragex.Analysis.{LocationEnricher, MetaCredoBridge}
   require Logger
 
   @type issue :: %{
@@ -190,50 +188,47 @@ defmodule Ragex.Analysis.BusinessLogic do
     :imperative_status_handling
   ]
 
-  # Map analyzer names to Metastatic modules
+  # Map analyzer names to MetaCredo check modules
   @analyzer_modules %{
-    callback_hell: Metastatic.Analysis.BusinessLogic.CallbackHell,
-    missing_error_handling: Metastatic.Analysis.BusinessLogic.MissingErrorHandling,
-    silent_error_case: Metastatic.Analysis.BusinessLogic.SilentErrorCase,
-    swallowing_exception: Metastatic.Analysis.BusinessLogic.SwallowingException,
-    hardcoded_value: Metastatic.Analysis.BusinessLogic.HardcodedValue,
-    n_plus_one_query: Metastatic.Analysis.BusinessLogic.NPlusOneQuery,
-    inefficient_filter: Metastatic.Analysis.BusinessLogic.InefficientFilter,
-    unmanaged_task: Metastatic.Analysis.BusinessLogic.UnmanagedTask,
-    telemetry_in_recursive_function:
-      Metastatic.Analysis.BusinessLogic.TelemetryInRecursiveFunction,
+    callback_hell: MetaCredo.Check.Warning.CallbackHell,
+    missing_error_handling: MetaCredo.Check.Warning.MissingErrorHandling,
+    silent_error_case: MetaCredo.Check.Warning.SilentErrorCase,
+    swallowing_exception: MetaCredo.Check.Warning.SwallowingException,
+    hardcoded_value: MetaCredo.Check.Security.HardcodedValue,
+    n_plus_one_query: MetaCredo.Check.Warning.NPlusOneQuery,
+    inefficient_filter: MetaCredo.Check.Warning.InefficientFilter,
+    unmanaged_task: MetaCredo.Check.Warning.UnmanagedTask,
+    telemetry_in_recursive_function: MetaCredo.Check.Observability.TelemetryInRecursiveFunction,
     missing_telemetry_for_external_http:
-      Metastatic.Analysis.BusinessLogic.MissingTelemetryForExternalHttp,
-    sync_over_async: Metastatic.Analysis.BusinessLogic.SyncOverAsync,
-    direct_struct_update: Metastatic.Analysis.BusinessLogic.DirectStructUpdate,
-    missing_handle_async: Metastatic.Analysis.BusinessLogic.MissingHandleAsync,
-    blocking_in_plug: Metastatic.Analysis.BusinessLogic.BlockingInPlug,
-    missing_telemetry_in_auth_plug: Metastatic.Analysis.BusinessLogic.MissingTelemetryInAuthPlug,
+      MetaCredo.Check.Observability.MissingTelemetryForExternalHttp,
+    sync_over_async: MetaCredo.Check.Warning.SyncOverAsync,
+    direct_struct_update: MetaCredo.Check.Warning.DirectStructUpdate,
+    missing_handle_async: MetaCredo.Check.Warning.MissingHandleAsync,
+    blocking_in_plug: MetaCredo.Check.Warning.BlockingInPlug,
+    missing_telemetry_in_auth_plug: MetaCredo.Check.Observability.MissingTelemetryInAuthPlug,
     missing_telemetry_in_liveview_mount:
-      Metastatic.Analysis.BusinessLogic.MissingTelemetryInLiveviewMount,
-    missing_telemetry_in_oban_worker:
-      Metastatic.Analysis.BusinessLogic.MissingTelemetryInObanWorker,
-    missing_preload: Metastatic.Analysis.BusinessLogic.MissingPreload,
-    inline_javascript: Metastatic.Analysis.BusinessLogic.InlineJavascript,
-    missing_throttle: Metastatic.Analysis.BusinessLogic.MissingThrottle,
-    # Security analyzers (CWE-based)
-    sql_injection: Metastatic.Analysis.BusinessLogic.SQLInjection,
-    xss_vulnerability: Metastatic.Analysis.BusinessLogic.XSSVulnerability,
-    ssrf_vulnerability: Metastatic.Analysis.BusinessLogic.SSRFVulnerability,
-    path_traversal: Metastatic.Analysis.BusinessLogic.PathTraversal,
-    insecure_direct_object_reference:
-      Metastatic.Analysis.BusinessLogic.InsecureDirectObjectReference,
-    missing_authentication: Metastatic.Analysis.BusinessLogic.MissingAuthentication,
-    missing_authorization: Metastatic.Analysis.BusinessLogic.MissingAuthorization,
-    incorrect_authorization: Metastatic.Analysis.BusinessLogic.IncorrectAuthorization,
-    missing_csrf_protection: Metastatic.Analysis.BusinessLogic.MissingCSRFProtection,
-    sensitive_data_exposure: Metastatic.Analysis.BusinessLogic.SensitiveDataExposure,
-    unrestricted_file_upload: Metastatic.Analysis.BusinessLogic.UnrestrictedFileUpload,
-    improper_input_validation: Metastatic.Analysis.BusinessLogic.ImproperInputValidation,
-    # Race condition analyzers
-    toctou: Metastatic.Analysis.BusinessLogic.TOCTOU,
-    # Refactoring analyzers
-    imperative_status_handling: Metastatic.Analysis.BusinessLogic.ImperativeStatusHandling
+      MetaCredo.Check.Observability.MissingTelemetryInLiveviewMount,
+    missing_telemetry_in_oban_worker: MetaCredo.Check.Observability.MissingTelemetryInObanWorker,
+    missing_preload: MetaCredo.Check.Warning.MissingPreload,
+    inline_javascript: MetaCredo.Check.Security.InlineJavascript,
+    missing_throttle: MetaCredo.Check.Warning.MissingThrottle,
+    # Security checks (CWE-based)
+    sql_injection: MetaCredo.Check.Security.SQLInjection,
+    xss_vulnerability: MetaCredo.Check.Security.XSSVulnerability,
+    ssrf_vulnerability: MetaCredo.Check.Security.SSRFVulnerability,
+    path_traversal: MetaCredo.Check.Security.PathTraversal,
+    insecure_direct_object_reference: MetaCredo.Check.Security.InsecureDirectObjectReference,
+    missing_authentication: MetaCredo.Check.Security.MissingAuthentication,
+    missing_authorization: MetaCredo.Check.Security.MissingAuthorization,
+    incorrect_authorization: MetaCredo.Check.Security.IncorrectAuthorization,
+    missing_csrf_protection: MetaCredo.Check.Security.MissingCSRFProtection,
+    sensitive_data_exposure: MetaCredo.Check.Security.SensitiveDataExposure,
+    unrestricted_file_upload: MetaCredo.Check.Security.UnrestrictedFileUpload,
+    improper_input_validation: MetaCredo.Check.Security.ImproperInputValidation,
+    # Race condition checks
+    toctou: MetaCredo.Check.Security.TOCTOU,
+    # Refactoring checks
+    imperative_status_handling: MetaCredo.Check.Warning.ImperativeStatusHandling
   }
 
   @doc """
@@ -349,15 +344,14 @@ defmodule Ragex.Analysis.BusinessLogic do
     language = Keyword.get(opts, :language, detect_language(path))
     analyzers = Keyword.get(opts, :analyzers, :all)
     min_severity = Keyword.get(opts, :min_severity, :info)
-    config = Keyword.get(opts, :config, %{})
 
-    with {:ok, content} <- File.read(path),
-         {:ok, adapter} <- get_adapter(language),
-         {:ok, doc} <- parse_document(adapter, content, language),
-         {:ok, report} <- run_analyzers(doc, analyzers, config) do
-      result = build_result(path, language, report, min_severity)
-      {:ok, result}
-    else
+    case MetaCredoBridge.parse_file(path) do
+      {:ok, source_file} ->
+        checks = resolve_checks(analyzers)
+        issues = MetaCredoBridge.run_checks(source_file, checks)
+        result = build_result(path, language, issues, min_severity)
+        {:ok, result}
+
       {:error, reason} = error ->
         Logger.warning("Business logic analysis failed for #{path}: #{inspect(reason)}")
         error
@@ -440,50 +434,24 @@ defmodule Ragex.Analysis.BusinessLogic do
   # Private functions
 
   defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
-  defp get_adapter(lang), do: Ragex.LanguageSupport.get_adapter(lang)
 
-  defp parse_document(adapter, content, language) do
-    Adapter.abstract(adapter, content, language)
+  # Resolve analyzer names to MetaCredo check tuples [{module, params}]
+  defp resolve_checks(:all) do
+    Enum.map(Map.values(@analyzer_modules), &{&1, []})
   end
 
-  defp run_analyzers(doc, :all, config) do
-    # Get all business logic analyzer modules
-    analyzer_modules = Map.values(@analyzer_modules)
-
-    # Ensure they're registered
-    Enum.each(analyzer_modules, fn mod ->
-      case Registry.get_by_name(mod.info().name) do
-        nil -> Registry.register(mod)
-        _ -> :ok
-      end
-    end)
-
-    Runner.run(doc, analyzers: analyzer_modules, config: config)
+  defp resolve_checks(analyzer_names) when is_list(analyzer_names) do
+    analyzer_names
+    |> Enum.map(&Map.get(@analyzer_modules, &1))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&{&1, []})
   end
 
-  defp run_analyzers(doc, analyzer_names, config) when is_list(analyzer_names) do
-    # Map names to modules
-    analyzer_modules =
-      analyzer_names
-      |> Enum.map(&Map.get(@analyzer_modules, &1))
-      |> Enum.reject(&is_nil/1)
-
-    # Ensure they're registered
-    Enum.each(analyzer_modules, fn mod ->
-      case Registry.get_by_name(mod.info().name) do
-        nil -> Registry.register(mod)
-        _ -> :ok
-      end
-    end)
-
-    Runner.run(doc, analyzers: analyzer_modules, config: config)
-  end
-
-  defp build_result(path, language, report, min_severity) do
-    # Convert Metastatic issues to our format
+  defp build_result(path, language, mc_issues, min_severity) do
+    # Convert MetaCredo issues to our format
     issues =
-      report.issues
-      |> Enum.map(&format_issue(&1, path))
+      mc_issues
+      |> Enum.map(&MetaCredoBridge.issue_to_ragex_issue(&1, path))
       |> filter_by_severity(min_severity)
       |> LocationEnricher.enrich_issues(path)
 
@@ -506,193 +474,6 @@ defmodule Ragex.Analysis.BusinessLogic do
       timestamp: DateTime.utc_now()
     }
   end
-
-  defp format_issue(meta_issue, file_path) do
-    # Metastatic v0.5.0+ uses :message, older versions used :description
-    message = Map.get(meta_issue, :message) || Map.get(meta_issue, :description, "No description")
-
-    # Normalize severity levels - Metastatic may use :warning, :error, etc.
-    # Ragex uses: :critical, :high, :medium, :low, :info
-    severity = normalize_severity(meta_issue.severity)
-
-    # Extract location from issue or node metadata
-    location = extract_location(meta_issue)
-
-    # Merge metadata into context so LocationEnricher can find function names.
-    # Metastatic issues have :metadata (not :context), but downstream code
-    # expects function names in :context.
-    metadata = Map.get(meta_issue, :metadata, %{})
-    context = Map.get(meta_issue, :context, %{}) |> Map.merge(metadata)
-
-    %{
-      analyzer: meta_issue.analyzer,
-      category: meta_issue.category,
-      severity: severity,
-      message: message,
-      description: message,
-      suggestion: Map.get(meta_issue, :suggestion),
-      context: context,
-      location: format_location(location),
-      line: if(location, do: Map.get(location, :line), else: nil),
-      column: if(location, do: Map.get(location, :column), else: nil),
-      file: file_path
-    }
-  end
-
-  defp extract_location(meta_issue) do
-    # First try the issue's location field (from Metastatic's Analyzer.issue/1)
-    issue_location = Map.get(meta_issue, :location)
-
-    # If location has actual line/column values, use it
-    if issue_location && (issue_location[:line] || issue_location[:column]) do
-      issue_location
-    else
-      # Location was nil or had nil values; try to extract from node metadata.
-      # This is critical for Ruby/Python/JS where MetaAST nodes store location
-      # in keyword metadata (e.g., [line: 5, col: 2]).
-      node_location =
-        case Map.get(meta_issue, :node) do
-          nil -> nil
-          node when is_tuple(node) -> extract_location_from_node(node)
-          _ -> nil
-        end
-
-      # Extract function name from Metastatic metadata
-      metadata = Map.get(meta_issue, :metadata, %{})
-      function_name = Map.get(metadata, :function) || Map.get(metadata, :function_name)
-
-      # Also check if the issue location had function/module context even without line
-      issue_function = issue_location && Map.get(issue_location, :function)
-      issue_module = issue_location && Map.get(issue_location, :module)
-
-      cond do
-        # Node had line info -- best source
-        node_location && node_location[:line] ->
-          node_location
-          |> Map.put(:function, function_name || (node_location[:function] || issue_function))
-          |> Map.put(:module, issue_module)
-
-        # No line anywhere but we have a function name
-        function_name ->
-          %{
-            line: nil,
-            column: nil,
-            function: function_name,
-            module: issue_module
-          }
-
-        # Return whatever we could find
-        node_location ->
-          node_location
-
-        true ->
-          nil
-      end
-    end
-  end
-
-  defp extract_location_from_node(node) do
-    # Improved Metastatic embeds line numbers deep in the AST node tree
-    # We need to traverse the entire node to find any metadata with line information
-    find_line_in_node(node)
-  end
-
-  # Recursively traverse MetaAST node to find line/column metadata
-  defp find_line_in_node(node) when is_tuple(node) do
-    # MetaAST nodes are 3-tuples: {type, keyword_meta, children}
-    # Check keyword metadata directly first for efficiency
-    case node do
-      {_type, meta, children} when is_list(meta) ->
-        case extract_keyword_location(meta) do
-          nil ->
-            # Recurse into children only
-            find_line_in_node(children)
-
-          location ->
-            location
-        end
-
-      _ ->
-        # Generic tuple: check each element
-        node
-        |> Tuple.to_list()
-        |> Enum.find_value(&find_line_in_node/1)
-    end
-  end
-
-  defp find_line_in_node(list) when is_list(list) do
-    # First check if this is a keyword list with :line metadata
-    case extract_keyword_location(list) do
-      nil ->
-        # Not a keyword list with line info, check each element
-        Enum.find_value(list, &find_line_in_node/1)
-
-      location ->
-        location
-    end
-  end
-
-  defp find_line_in_node(meta) when is_map(meta) do
-    # Check if this map has line/column info
-    extract_meta_location(meta)
-  end
-
-  defp find_line_in_node(_), do: nil
-
-  # Extract location from a keyword list (MetaAST metadata format)
-  defp extract_keyword_location(kw) when is_list(kw) do
-    if Keyword.keyword?(kw) do
-      line = Keyword.get(kw, :line)
-      col = Keyword.get(kw, :col) || Keyword.get(kw, :column)
-      function = Keyword.get(kw, :function)
-
-      if line do
-        %{line: line, column: col, function: function}
-      else
-        nil
-      end
-    else
-      nil
-    end
-  end
-
-  defp extract_keyword_location(_), do: nil
-
-  defp extract_meta_location(meta) when is_map(meta) do
-    line = Map.get(meta, :line) || Map.get(meta, :start_line)
-    column = Map.get(meta, :column) || Map.get(meta, :start_column)
-
-    if line || column do
-      %{
-        line: line,
-        column: column,
-        function: Map.get(meta, :function)
-      }
-    else
-      nil
-    end
-  end
-
-  defp format_location(nil), do: nil
-
-  defp format_location(loc) do
-    %{
-      line: Map.get(loc, :line),
-      column: Map.get(loc, :column),
-      function: Map.get(loc, :function)
-    }
-  end
-
-  # Normalize Metastatic severity levels to Ragex standard levels
-  defp normalize_severity(:error), do: :critical
-  defp normalize_severity(:warning), do: :medium
-  defp normalize_severity(:critical), do: :critical
-  defp normalize_severity(:high), do: :high
-  defp normalize_severity(:medium), do: :medium
-  defp normalize_severity(:low), do: :low
-  defp normalize_severity(:info), do: :info
-  # Default to medium for unknown
-  defp normalize_severity(_), do: :medium
 
   defp filter_by_severity(issues, :info), do: issues
 

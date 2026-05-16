@@ -34,7 +34,7 @@ defmodule Ragex.Analysis.Duplication do
       {:ok, results} = Duplication.detect_in_directory("lib/")
   """
 
-  alias Metastatic.Analysis.Duplication, as: MetaDuplication
+  alias MetaCredo.Analysis.Duplication, as: MetaDuplication
 
   alias Ragex.{
     Analysis.Duplication.AIAnalyzer,

@@ -78,10 +78,10 @@ defmodule Ragex.MixProject do
       # REST API bridge (Phase K)
       {:bandit, "~> 1.0"},
       {:plug, "~> 1.16"},
-      # Metastatic MetaAST
-      case System.get_env("LOCAL_METASTATIC") do
-        nil -> {:metastatic, "~> 0.5"}
-        _ -> {:metastatic, path: "../metastatic"}
+      # MetaCredo analysis (transitively brings Metastatic for core types)
+      case System.get_env("LOCAL_METACREDO") do
+        nil -> {:metacredo, "~> 0.1"}
+        _ -> {:metacredo, path: "../metacredo"}
       end,
       # Development and documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},

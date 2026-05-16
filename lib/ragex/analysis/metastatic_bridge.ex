@@ -32,8 +32,8 @@ defmodule Ragex.Analysis.MetastaticBridge do
   - `:timestamp` - Analysis timestamp
   """
 
+  alias MetaCredo.Analysis.{Complexity, Purity}
   alias Metastatic.{Adapter, Document}
-  alias Metastatic.Analysis.{Complexity, Purity}
   alias Metastatic.Semantic.{Enricher, OpKind}
   require Logger
 

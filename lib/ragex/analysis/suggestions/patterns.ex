@@ -550,7 +550,7 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
     case data do
       %{quality: %{business_logic: %{issues: issues}}} when is_list(issues) ->
         Enum.filter(issues, fn issue ->
-          issue[:analyzer] == Metastatic.Analysis.BusinessLogic.ImperativeStatusHandling or
+          issue[:analyzer] == :imperative_status_handling or
             issue[:analyzer] == analyzer_name
         end)
 
