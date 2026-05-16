@@ -125,6 +125,11 @@ defmodule Ragex.Git.Backend.Egit do
   # ── Private helpers ──────────────────────────────────────────────────
 
   defp ensure_open!(repo_root) do
+    unless Process.whereis(RepoServer) do
+      raise RuntimeError,
+            "Ragex.Git.RepoServer is not running; start the application first"
+    end
+
     current = RepoServer.current_path()
 
     if current != repo_root do

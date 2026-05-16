@@ -104,6 +104,8 @@ defmodule Ragex.Git.Diff do
     end
   rescue
     _ -> cli_changed_files(repo_root, base, head, filter)
+  catch
+    :exit, _ -> cli_changed_files(repo_root, base, head, filter)
   end
 
   # -- CLI path ---------------------------------------------------------

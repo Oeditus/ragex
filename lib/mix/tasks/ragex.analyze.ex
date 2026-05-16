@@ -205,7 +205,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
         report = generate_report(config, analyze_result, results)
         output_results(config, report)
         print_summary(config, results)
-        maybe_exit(config, results)
+        maybe_exit(config, report.results)
 
       {:error, reason} ->
         error_msg("Delegation to running server failed: #{inspect(reason)}")
@@ -221,6 +221,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
     # Disable MCP server for non-interactive formats (prevents hanging)
     if config.format in ["json", "markdown", "github"] or config.ci do
       Application.put_env(:ragex, :start_server, false)
+    end
+
+    # In CI/diff mode, skip Bumblebee: ML embeddings are not needed for static analysis
+    if config.ci do
+      Application.put_env(:ragex, :skip_bumblebee, true)
     end
 
     # Start required applications
@@ -286,7 +291,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     print_summary(config, results)
 
     # Step 6: Exit code for CI/strict mode
-    maybe_exit(config, results)
+    maybe_exit(config, report.results)
 
     :ok
   end
