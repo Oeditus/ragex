@@ -39,24 +39,24 @@ defmodule Ragex.Embeddings.Bumblebee do
   def embed(text) when is_binary(text) do
     GenServer.call(__MODULE__, {:embed, text}, @timeout)
   catch
-    :exit, {:timeout, {GenServer, :call, [_pid, {:embed, ^text}, @timeout]}} ->
-      {:error, :timeout}
+    :exit, {:noproc, _} -> {:error, :not_started}
+    :exit, {:timeout, _} -> {:error, :timeout}
   end
 
   @impl Ragex.Embeddings.Behaviour
   def embed_batch(texts) when is_list(texts) do
     GenServer.call(__MODULE__, {:embed_batch, texts}, @timeout)
   catch
-    :exit, {:timeout, {GenServer, :call, [_pid, {:embed_batch, ^texts}, @timeout]}} ->
-      {:error, :timeout}
+    :exit, {:noproc, _} -> {:error, :not_started}
+    :exit, {:timeout, _} -> {:error, :timeout}
   end
 
   @impl Ragex.Embeddings.Behaviour
   def dimensions do
     GenServer.call(__MODULE__, :dimensions, @timeout)
   catch
-    :exit, {:timeout, {GenServer, :call, [_pid, :dimensions, @timeout]}} ->
-      {:error, :timeout}
+    :exit, {:noproc, _} -> {:error, :not_started}
+    :exit, {:timeout, _} -> {:error, :timeout}
   end
 
   @doc """
@@ -65,8 +65,8 @@ defmodule Ragex.Embeddings.Bumblebee do
   def model_info do
     GenServer.call(__MODULE__, :model_info, @timeout)
   catch
-    :exit, {:timeout, {GenServer, :call, [_pid, :model_info, @timeout]}} ->
-      {:error, :timeout}
+    :exit, {:noproc, _} -> {:error, :not_started}
+    :exit, {:timeout, _} -> {:error, :timeout}
   end
 
   @doc """
@@ -75,8 +75,8 @@ defmodule Ragex.Embeddings.Bumblebee do
   def ready? do
     GenServer.call(__MODULE__, :ready?, @timeout)
   catch
-    :exit, {:timeout, {GenServer, :call, [_pid, :ready?, @timeout]}} ->
-      {:error, :timeout}
+    :exit, {:noproc, _} -> false
+    :exit, {:timeout, _} -> false
   end
 
   # Server Callbacks
