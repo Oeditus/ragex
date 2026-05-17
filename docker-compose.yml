@@ -13,8 +13,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - RAGEX_EMBEDDING_MODEL=${RAGEX_EMBEDDING_MODEL:-all_minilm_l6_v2}
       - BUMBLEBEE_CACHE_DIR=/home/ragex/.cache/bumblebee
-      - XLA_TARGET=cpu
-      - EXLA_TARGET=host
+      # - XLA_TARGET=${XLA_TARGET:-cuda13}
+      # - EXLA_TARGET=${EXLA_TARGET:-cuda}
+      - XLA_TARGET=${XLA_TARGET:-cpu}
+      - EXLA_TARGET=${EXLA_TARGET:-host}
     
     # Volumes for persistent data
     volumes:
