@@ -16,6 +16,7 @@ defmodule Mix.Tasks.Ragex.Ci do
     * `--base REF` - Base git ref (default: origin/main)
     * `--head REF` - Head git ref (default: HEAD)
     * `--format FORMAT` - Output format: text, github (default: text)
+    * `--config PATH` - Path to `.metacredo.exs` config file for metacredo
 
   ## Examples
 
@@ -35,7 +36,8 @@ defmodule Mix.Tasks.Ragex.Ci do
         strict: [
           base: :string,
           head: :string,
-          format: :string
+          format: :string,
+          config: :string
         ]
       )
 
@@ -49,11 +51,14 @@ defmodule Mix.Tasks.Ragex.Ci do
         if(base, do: ["--base", base], else: []) ++
         if(head, do: ["--head", head], else: [])
 
+    config = opts[:config]
+
     # Build args for metacredo --diff
     metacredo_args =
       ["--diff", "--strict", "--format", format] ++
         if(base, do: ["--base", base], else: []) ++
-        if(head, do: ["--head", head], else: [])
+        if(head, do: ["--head", head], else: []) ++
+        if(config, do: ["--config", config], else: [])
 
     # Run ragex.analyze first
     Mix.Task.run("ragex.analyze", ragex_args)
