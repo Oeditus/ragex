@@ -9,6 +9,7 @@ defmodule Ragex.Graph.Store do
   use GenServer
   require Logger
 
+  alias Ragex.Dllb.Adapter, as: DllbAdapter
   alias Ragex.Embeddings.{FileTracker, Persistence}
   alias Ragex.Graph.Persistence, as: GraphPersistence
 
@@ -498,6 +499,17 @@ defmodule Ragex.Graph.Store do
   def handle_cast({:add_node, node_type, node_id, data}, state) do
     key = {node_type, node_id}
     :ets.insert(@nodes_table, {key, data})
+
+    if DllbAdapter.enabled?() do
+      Task.start(fn ->
+        try do
+          DllbAdapter.store_node(node_type, node_id, data)
+        rescue
+          e -> Logger.debug("dllb store_node failed: #{inspect(e)}")
+        end
+      end)
+    end
+
     {:noreply, state}
   end
 
@@ -508,6 +520,17 @@ defmodule Ragex.Graph.Store do
     metadata = Keyword.get(opts, :metadata, %{})
     metadata_with_weight = Map.put(metadata, :weight, weight)
     :ets.insert(@edges_table, {key, metadata_with_weight})
+
+    if DllbAdapter.enabled?() do
+      Task.start(fn ->
+        try do
+          DllbAdapter.store_edge(from_node, to_node, edge_type, metadata_with_weight)
+        rescue
+          e -> Logger.debug("dllb store_edge failed: #{inspect(e)}")
+        end
+      end)
+    end
+
     {:noreply, state}
   end
 
@@ -515,6 +538,17 @@ defmodule Ragex.Graph.Store do
   def handle_cast({:store_embedding, node_type, node_id, embedding, text}, state) do
     key = {node_type, node_id}
     :ets.insert(@embeddings_table, {key, embedding, text})
+
+    if DllbAdapter.enabled?() do
+      Task.start(fn ->
+        try do
+          DllbAdapter.store_embedding(node_type, node_id, embedding, text)
+        rescue
+          e -> Logger.debug("dllb store_embedding failed: #{inspect(e)}")
+        end
+      end)
+    end
+
     {:noreply, state}
   end
 
@@ -619,6 +653,13 @@ defmodule Ragex.Graph.Store do
 
       {:error, reason} ->
         Logger.warning("Failed to load graph cache: #{inspect(reason)}")
+    end
+
+    if DllbAdapter.enabled?() do
+      case DllbAdapter.bootstrap() do
+        {:ok, :bootstrapped} -> Logger.info("dllb schema bootstrapped")
+        {:error, reason} -> Logger.warning("dllb bootstrap failed: #{inspect(reason)}")
+      end
     end
   end
 end

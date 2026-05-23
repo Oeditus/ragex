@@ -156,4 +156,13 @@ config :ragex, :analysis,
 
 config :bumblebee, :progress_bar_enabled, false
 
+# dllb multi-model database (disabled by default -- enable when dllb server is running)
+config :dllb,
+  enabled: false,
+  host: "127.0.0.1",
+  port: 3009,
+  pool_size: 5,
+  outcome: :json,
+  timeout: 30_000
+
 if File.exists?("config/#{Mix.env()}.exs"), do: import_config("#{Mix.env()}.exs")
