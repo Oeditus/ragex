@@ -131,14 +131,15 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   end
 
   defp walk({:function_def, meta, body}, ctx, acc) when is_list(meta) and is_list(body) do
-    name_str = Keyword.get(meta, :name, "unknown")
+    name_str = meta |> Keyword.get(:name, "unknown") |> coerce_name()
     params = Keyword.get(meta, :params, [])
     visibility = Keyword.get(meta, :visibility, :public)
     line = Keyword.get(meta, :line, 0)
     arity = length(params)
+    func_atom = String.to_atom(name_str)
 
     func_entry = %{
-      name: String.to_atom(name_str),
+      name: func_atom,
       arity: arity,
       module: ctx.container || "top_level",
       file: ctx.file,
@@ -152,7 +153,7 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
 
     inner_ctx = %{
       ctx
-      | function: String.to_atom(name_str),
+      | function: func_atom,
         arity: arity
     }
 
@@ -162,7 +163,7 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   end
 
   defp walk({:function_call, meta, args}, ctx, acc) when is_list(meta) and is_list(args) do
-    name_str = Keyword.get(meta, :name, "unknown")
+    name_str = meta |> Keyword.get(:name, "unknown") |> coerce_name()
     line = Keyword.get(meta, :line, 0)
     call_arity = length(args)
 
@@ -283,4 +284,11 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
       _ -> "_"
     end)
   end
+
+  # Coerce AST :name values to binaries.
+  # Metastatic emits non-string names for pattern-matched function heads,
+  # e.g. `defp variable({name, meta, args})` where :name is an AST list.
+  defp coerce_name(name) when is_binary(name), do: name
+  defp coerce_name(name) when is_atom(name), do: Atom.to_string(name)
+  defp coerce_name(name), do: inspect(name)
 end

@@ -8,9 +8,12 @@ defmodule Ragex.Analyzers.Directory do
 
   alias Ragex.Analyzers.JavaScript, as: JavaScriptAnalyzer
   alias Ragex.Analyzers.Metastatic, as: MetastaticAnalyzer
+  alias Ragex.CLI.Progress
   alias Ragex.Embeddings.{FileTracker, Helper}
   alias Ragex.Graph.Store
   alias Ragex.MCP.Server
+
+  require Logger
 
   @doc """
   Analyzes all supported files in a directory recursively.
@@ -24,6 +27,8 @@ defmodule Ragex.Analyzers.Directory do
   - `:incremental` - Enable incremental updates (default: true)
   - `:force_refresh` - Force full refresh even if unchanged (default: false)
   - `:notify` - Send MCP progress notifications (default: true)
+  - `:timeout` - Per-file analysis timeout in ms (default: 300_000 = 5 min)
+  - `:max_concurrency` - Max parallel file analyses (default: 4)
   """
   def analyze_directory(path, opts \\ []) do
     max_depth = Keyword.get(opts, :max_depth, 10)
@@ -31,6 +36,8 @@ defmodule Ragex.Analyzers.Directory do
     incremental = Keyword.get(opts, :incremental, true)
     force_refresh = Keyword.get(opts, :force_refresh, false)
     notify = Keyword.get(opts, :notify, true)
+    timeout = Keyword.get(opts, :timeout, 300_000)
+    max_concurrency = Keyword.get(opts, :max_concurrency, 4)
 
     case File.stat(path) do
       {:ok, %File.Stat{type: :directory}} ->
@@ -39,7 +46,9 @@ defmodule Ragex.Analyzers.Directory do
         analyze_files(files,
           incremental: incremental,
           force_refresh: force_refresh,
-          notify: notify
+          notify: notify,
+          timeout: timeout,
+          max_concurrency: max_concurrency
         )
 
       {:ok, %File.Stat{type: :regular}} ->
@@ -47,7 +56,9 @@ defmodule Ragex.Analyzers.Directory do
         analyze_files([path],
           incremental: incremental,
           force_refresh: force_refresh,
-          notify: notify
+          notify: notify,
+          timeout: timeout,
+          max_concurrency: max_concurrency
         )
 
       {:error, reason} ->
@@ -63,11 +74,15 @@ defmodule Ragex.Analyzers.Directory do
   - `:incremental` - Skip unchanged files (default: true)
   - `:force_refresh` - Force analysis even if unchanged (default: false)
   - `:notify` - Send MCP progress notifications (default: true)
+  - `:timeout` - Per-file analysis timeout in ms (default: 300_000 = 5 min)
+  - `:max_concurrency` - Max parallel file analyses (default: 4)
   """
   def analyze_files(file_paths, opts \\ []) when is_list(file_paths) do
     incremental = Keyword.get(opts, :incremental, true)
     force_refresh = Keyword.get(opts, :force_refresh, false)
     notify = Keyword.get(opts, :notify, true)
+    timeout = Keyword.get(opts, :timeout, 300_000)
+    max_concurrency = Keyword.get(opts, :max_concurrency, 4)
 
     # Filter files based on incremental mode
     {files_to_analyze, skipped_files} =
@@ -85,21 +100,33 @@ defmodule Ragex.Analyzers.Directory do
       })
     end
 
+    total_to_analyze = length(files_to_analyze)
+    t0 = System.monotonic_time(:millisecond)
+
+    Logger.info("Analyzing #{total_to_analyze} files (concurrency=#{max_concurrency})")
+
     results =
       files_to_analyze
       |> Task.async_stream(&analyze_and_store_file/1,
-        max_concurrency: System.schedulers_online(),
-        # 30 seconds per file
-        timeout: 30_000,
+        max_concurrency: max_concurrency,
+        timeout: timeout,
         on_timeout: :kill_task
       )
       |> Stream.with_index(1)
       |> Enum.map(fn
         {{:ok, {:ok, result}}, index} ->
+          elapsed = div(System.monotonic_time(:millisecond) - t0, 1000)
+          basename = Path.basename(result.file)
+
+          Progress.bar(index, total_to_analyze,
+            label: "#{basename} (#{elapsed}s)",
+            width: 30
+          )
+
           if notify do
             notify_progress("analysis_file", %{
               current: index,
-              total: length(files_to_analyze),
+              total: total_to_analyze,
               file: result.file,
               status: result.status
             })
@@ -107,10 +134,28 @@ defmodule Ragex.Analyzers.Directory do
 
           {:ok, result}
 
-        {{:ok, {:error, {file, reason}}}, _index} ->
+        {{:ok, {:error, {file, reason}}}, index} ->
+          elapsed = div(System.monotonic_time(:millisecond) - t0, 1000)
+          basename = Path.basename(file)
+          short_reason = reason |> inspect() |> String.slice(0, 60)
+
+          Progress.bar(index, total_to_analyze,
+            label: "FAIL #{basename} (#{elapsed}s)",
+            width: 30
+          )
+
+          Logger.warning("[#{index}/#{total_to_analyze}] #{basename}: #{short_reason}")
           {:error, {file, reason}}
 
-        {{:exit, reason}, _index} ->
+        {{:exit, reason}, index} ->
+          elapsed = div(System.monotonic_time(:millisecond) - t0, 1000)
+
+          Progress.bar(index, total_to_analyze,
+            label: "TIMEOUT (#{elapsed}s)",
+            width: 30
+          )
+
+          Logger.warning("[#{index}/#{total_to_analyze}] TIMEOUT: #{inspect(reason)}")
           {:error, {:task_exit, reason}}
       end)
 

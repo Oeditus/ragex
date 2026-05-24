@@ -24,7 +24,6 @@ defmodule Ragex.Embeddings.Helper do
   def generate_and_store_embeddings(analysis_result) do
     if Bumblebee.ready?() do
       try do
-        # Generate embeddings for modules
         module_count = length(analysis_result.modules)
         function_count = length(analysis_result.functions)
 
@@ -32,18 +31,19 @@ defmodule Ragex.Embeddings.Helper do
           "Generating embeddings for #{module_count} modules and #{function_count} functions"
         )
 
-        Enum.each(analysis_result.modules, fn module_data ->
-          generate_module_embedding(module_data)
-        end)
+        # Batch modules
+        if module_count > 0 do
+          generate_batch_embeddings(analysis_result.modules, :module)
+        end
 
-        # Generate embeddings for functions
-        Enum.each(analysis_result.functions, fn function_data ->
-          generate_function_embedding(function_data)
-        end)
+        # Batch functions in chunks of 32 to avoid OOM on huge files
+        if function_count > 0 do
+          analysis_result.functions
+          |> Enum.chunk_every(32)
+          |> Enum.each(&generate_batch_embeddings(&1, :function))
+        end
 
-        Logger.info(
-          "Successfully generated embeddings for #{module_count + function_count} entities"
-        )
+        Logger.info("Embeddings generated for #{module_count + function_count} entities")
 
         :ok
       rescue

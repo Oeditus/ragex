@@ -27,7 +27,7 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   @timeout :ragex
            |> Application.compile_env(:timeouts, [])
-           |> Keyword.get(:bumblebee, :infinity)
+           |> Keyword.get(:bumblebee, 60_000)
 
   # Client API
 
