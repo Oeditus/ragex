@@ -174,11 +174,25 @@ defmodule Ragex.Graph.Store do
       [%{id: {MyModule, :test, 2}, data: ...}, ...]
   """
   def list_functions(opts \\ []) do
+    module = Keyword.get(opts, :module)
     limit = Keyword.get(opts, :limit, @functions_limit)
 
-    :function
-    |> backend().list_nodes(limit)
-    |> Enum.map(&%{id: &1.id, data: &1.data})
+    nodes =
+      case module do
+        nil ->
+          backend().list_nodes(:function, limit)
+
+        mod ->
+          :function
+          |> backend().list_nodes(:infinity)
+          |> Enum.filter(fn
+            %{id: {m, _, _}} -> m == mod
+            _ -> false
+          end)
+          |> Enum.take(limit)
+      end
+
+    Enum.map(nodes, &%{id: &1.id, data: &1.data})
   end
 
   @doc """
