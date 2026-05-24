@@ -74,10 +74,7 @@ defmodule Ragex.Graph.Store do
   Finds a node by type and id.
   """
   def find_node(node_type, node_id) do
-    case :ets.lookup(@nodes_table, {node_type, node_id}) do
-      [{_key, data}] -> data
-      [] -> nil
-    end
+    backend().find_node(node_type, node_id)
   end
 
   @doc """
@@ -150,7 +147,7 @@ defmodule Ragex.Graph.Store do
   """
   def list_modules do
     :module
-    |> list_nodes(:infinity)
+    |> backend().list_nodes(:infinity)
     |> Enum.map(&%{id: &1.id, data: &1.data})
   end
 
@@ -177,25 +174,11 @@ defmodule Ragex.Graph.Store do
       [%{id: {MyModule, :test, 2}, data: ...}, ...]
   """
   def list_functions(opts \\ []) do
-    module_filter = Keyword.get(opts, :module)
     limit = Keyword.get(opts, :limit, @functions_limit)
 
-    pattern =
-      case module_filter do
-        nil -> {{:function, {:"$1", :"$2", :"$3"}}, :"$4"}
-        mod -> {{:function, {mod, :"$1", :"$2"}}, :"$3"}
-      end
-
-    @nodes_table
-    |> :ets.match(pattern)
-    |> Enum.take(limit)
-    |> Enum.map(fn
-      [module, name, arity, data] ->
-        %{id: {module, name, arity}, data: data}
-
-      [name, arity, data] ->
-        %{id: {module_filter, name, arity}, data: data}
-    end)
+    :function
+    |> backend().list_nodes(limit)
+    |> Enum.map(&%{id: &1.id, data: &1.data})
   end
 
   @doc """
@@ -407,10 +390,7 @@ defmodule Ragex.Graph.Store do
   Returns `{embedding, text}` tuple or `nil` if not found.
   """
   def get_embedding(node_type, node_id) do
-    case :ets.lookup(@embeddings_table, {node_type, node_id}) do
-      [{_key, embedding, text}] -> {embedding, text}
-      [] -> nil
-    end
+    backend().get_embedding(node_type, node_id)
   end
 
   @doc """
@@ -419,19 +399,7 @@ defmodule Ragex.Graph.Store do
   Returns list of `{node_type, node_id, embedding, text}` tuples.
   """
   def list_embeddings(node_type \\ nil, limit \\ @embeddings_limit) do
-    pattern =
-      case node_type do
-        nil -> {{:"$1", :"$2"}, :"$3", :"$4"}
-        type -> {{type, :"$1"}, :"$2", :"$3"}
-      end
-
-    @embeddings_table
-    |> :ets.match(pattern)
-    |> Enum.take(limit)
-    |> Enum.map(fn
-      [node_type, node_id, embedding, text] -> {node_type, node_id, embedding, text}
-      [node_id, embedding, text] -> {node_type, node_id, embedding, text}
-    end)
+    backend().list_embeddings(node_type, limit)
   end
 
   @doc """
@@ -448,11 +416,7 @@ defmodule Ragex.Graph.Store do
   Returns statistics about the graph.
   """
   def stats do
-    %{
-      nodes: :ets.info(@nodes_table, :size),
-      edges: :ets.info(@edges_table, :size),
-      embeddings: :ets.info(@embeddings_table, :size)
-    }
+    backend().stats()
   end
 
   @doc """
