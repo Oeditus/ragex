@@ -10,7 +10,6 @@ defmodule Ragex.VectorStore do
   use GenServer
   require Logger
 
-  alias Ragex.Dllb.Adapter, as: DllbAdapter
   alias Ragex.Graph.Store
 
   @timeout :ragex
@@ -124,59 +123,8 @@ defmodule Ragex.VectorStore do
   # Private Functions
 
   defp perform_search(query_embedding, opts) do
-    # Try dllb HNSW first (much faster for large datasets)
-    case DllbAdapter.vector_search(query_embedding, opts) do
-      {:ok, results} when results != [] ->
-        results
-        |> Enum.map(fn row ->
-          %{
-            node_type: Map.get(row, :kind, :unknown),
-            node_id: Map.get(row, :name, ""),
-            score: Map.get(row, :score, 0.0),
-            text: Map.get(row, :source_text, ""),
-            embedding: []
-          }
-        end)
-
-      _ ->
-        # Fall back to ETS brute-force
-        perform_ets_search(query_embedding, opts)
-    end
-  end
-
-  defp perform_ets_search(query_embedding, opts) do
-    limit = Keyword.get(opts, :limit, 10)
-    threshold = Keyword.get(opts, :threshold, 0.0)
-    node_type_filter = Keyword.get(opts, :node_type)
-
-    # Get all embeddings from graph store
-    embeddings =
-      case node_type_filter do
-        nil -> Store.list_embeddings()
-        type -> Store.list_embeddings(type)
-      end
-
-    # Calculate similarities in parallel
-    embeddings
-    |> Task.async_stream(
-      fn {node_type, node_id, embedding, text} ->
-        score = cosine_similarity(query_embedding, embedding)
-
-        %{
-          node_type: node_type,
-          node_id: node_id,
-          score: score,
-          text: text,
-          embedding: embedding
-        }
-      end,
-      ordered: false,
-      timeout: :infinity
-    )
-    |> Enum.map(fn {:ok, result} -> result end)
-    |> Enum.filter(fn result -> result.score >= threshold end)
-    |> Enum.sort_by(fn result -> result.score end, :desc)
-    |> Enum.take(limit)
+    # credo:disable-for-next-line
+    Ragex.Store.Backend.module().search_vectors(query_embedding, opts)
   end
 
   # Vector math helpers

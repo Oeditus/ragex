@@ -1,17 +1,22 @@
 defmodule Ragex.Graph.Store do
   @moduledoc """
-  Knowledge graph storage using ETS tables.
+  Knowledge graph storage dispatcher.
 
   Manages nodes (modules, functions, types, etc.) and edges (calls, imports, etc.)
   representing relationships in the codebase.
+
+  The actual storage is delegated to the configured backend module
+  (see `Ragex.Store.Backend`). The default is ETS; dllb can be selected via:
+
+      config :ragex, :store_backend, :dllb
   """
 
   use GenServer
   require Logger
 
-  alias Ragex.Dllb.Adapter, as: DllbAdapter
   alias Ragex.Embeddings.{FileTracker, Persistence}
   alias Ragex.Graph.Persistence, as: GraphPersistence
+  alias Ragex.Store.Backend
 
   @nodes_table :ragex_nodes
   @edges_table :ragex_edges
@@ -497,105 +502,31 @@ defmodule Ragex.Graph.Store do
 
   @impl true
   def handle_cast({:add_node, node_type, node_id, data}, state) do
-    key = {node_type, node_id}
-    :ets.insert(@nodes_table, {key, data})
-
-    if DllbAdapter.enabled?() do
-      Task.start(fn ->
-        try do
-          DllbAdapter.store_node(node_type, node_id, data)
-        rescue
-          e -> Logger.debug("dllb store_node failed: #{inspect(e)}")
-        end
-      end)
-    end
-
+    backend().store_node(node_type, node_id, data)
     {:noreply, state}
   end
 
   @impl true
   def handle_cast({:add_edge, from_node, to_node, edge_type, opts}, state) do
-    key = {from_node, to_node, edge_type}
-    weight = Keyword.get(opts, :weight, 1.0)
-    metadata = Keyword.get(opts, :metadata, %{})
-    metadata_with_weight = Map.put(metadata, :weight, weight)
-    :ets.insert(@edges_table, {key, metadata_with_weight})
-
-    if DllbAdapter.enabled?() do
-      Task.start(fn ->
-        try do
-          DllbAdapter.store_edge(from_node, to_node, edge_type, metadata_with_weight)
-        rescue
-          e -> Logger.debug("dllb store_edge failed: #{inspect(e)}")
-        end
-      end)
-    end
-
+    backend().store_edge(from_node, to_node, edge_type, opts)
     {:noreply, state}
   end
 
   @impl true
   def handle_cast({:store_embedding, node_type, node_id, embedding, text}, state) do
-    key = {node_type, node_id}
-    :ets.insert(@embeddings_table, {key, embedding, text})
-
-    if DllbAdapter.enabled?() do
-      Task.start(fn ->
-        try do
-          DllbAdapter.store_embedding(node_type, node_id, embedding, text)
-        rescue
-          e -> Logger.debug("dllb store_embedding failed: #{inspect(e)}")
-        end
-      end)
-    end
-
+    backend().store_embedding(node_type, node_id, embedding, text)
     {:noreply, state}
   end
 
   @impl true
   def handle_cast({:remove_node, node_type, node_id}, state) do
-    node_key = {node_type, node_id}
-
-    # Build edge identifier: edges use tuples like {:module, id} or {:function, mod, name, arity}
-    # Node storage uses {node_type, node_id}, but edges flatten function tuples
-    edge_identifier =
-      case {node_type, node_id} do
-        {:function, {mod, name, arity}} -> {:function, mod, name, arity}
-        {type, id} -> {type, id}
-      end
-
-    # Remove the node itself
-    :ets.delete(@nodes_table, node_key)
-
-    # Remove all outgoing edges from this node
-    # Pattern: {{edge_identifier, to_node, edge_type}, metadata}
-    outgoing_pattern = {{edge_identifier, :"$1", :"$2"}, :"$3"}
-    outgoing_matches = :ets.match(@edges_table, outgoing_pattern)
-
-    Enum.each(outgoing_matches, fn [to_node, edge_type, _metadata] ->
-      :ets.delete(@edges_table, {edge_identifier, to_node, edge_type})
-    end)
-
-    # Remove all incoming edges to this node
-    # Pattern: {{from_node, edge_identifier, edge_type}, metadata}
-    incoming_pattern = {{:"$1", edge_identifier, :"$2"}, :"$3"}
-    incoming_matches = :ets.match(@edges_table, incoming_pattern)
-
-    Enum.each(incoming_matches, fn [from_node, edge_type, _metadata] ->
-      :ets.delete(@edges_table, {from_node, edge_identifier, edge_type})
-    end)
-
-    # Remove embedding if exists
-    :ets.delete(@embeddings_table, node_key)
-
+    backend().remove_node(node_type, node_id)
     {:noreply, state}
   end
 
   @impl true
   def handle_cast(:clear, state) do
-    :ets.delete_all_objects(@nodes_table)
-    :ets.delete_all_objects(@edges_table)
-    :ets.delete_all_objects(@embeddings_table)
+    backend().clear()
     {:noreply, state}
   end
 
@@ -630,36 +561,40 @@ defmodule Ragex.Graph.Store do
 
   # Loads graph and embedding caches for a given project path (nil = CWD).
   defp do_load_project_cache(project_path) do
-    case Persistence.load(project_path) do
-      {:ok, count} ->
-        Logger.info("Loaded #{count} cached embeddings")
+    # For ETS backend, load from disk cache
+    if Backend.module() == Ragex.Store.Backend.ETS do
+      case Persistence.load(project_path) do
+        {:ok, count} ->
+          Logger.info("Loaded #{count} cached embeddings")
 
-      {:error, :not_found} ->
-        Logger.debug("No embedding cache found")
+        {:error, :not_found} ->
+          Logger.debug("No embedding cache found")
 
-      {:error, :incompatible} ->
-        Logger.warning("Embedding cache incompatible with current model")
+        {:error, :incompatible} ->
+          Logger.warning("Embedding cache incompatible with current model")
 
-      {:error, reason} ->
-        Logger.warning("Failed to load embedding cache: #{inspect(reason)}")
-    end
+        {:error, reason} ->
+          Logger.warning("Failed to load embedding cache: #{inspect(reason)}")
+      end
 
-    case GraphPersistence.load(project_path) do
-      {:ok, %{nodes: n, edges: e}} ->
-        Logger.info("Loaded graph from cache: #{n} nodes, #{e} edges")
+      case GraphPersistence.load(project_path) do
+        {:ok, %{nodes: n, edges: e}} ->
+          Logger.info("Loaded graph from cache: #{n} nodes, #{e} edges")
 
-      {:error, :not_found} ->
-        Logger.debug("No graph cache found")
+        {:error, :not_found} ->
+          Logger.debug("No graph cache found")
 
-      {:error, reason} ->
-        Logger.warning("Failed to load graph cache: #{inspect(reason)}")
-    end
-
-    if DllbAdapter.enabled?() do
-      case DllbAdapter.bootstrap() do
-        {:ok, :bootstrapped} -> Logger.info("dllb schema bootstrapped")
-        {:error, reason} -> Logger.warning("dllb bootstrap failed: #{inspect(reason)}")
+        {:error, reason} ->
+          Logger.warning("Failed to load graph cache: #{inspect(reason)}")
       end
     end
+
+    # Bootstrap backend (no-op for ETS, schema setup for dllb)
+    case backend().bootstrap() do
+      :ok -> Logger.info("Store backend bootstrapped (#{Backend.module()})")
+      {:error, reason} -> Logger.warning("Store backend bootstrap failed: #{inspect(reason)}")
+    end
   end
+
+  defp backend, do: Backend.module()
 end

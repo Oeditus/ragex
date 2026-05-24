@@ -156,6 +156,9 @@ config :ragex, :analysis,
 
 config :bumblebee, :progress_bar_enabled, false
 
+# Store backend: :ets (default, in-memory) or :dllb (persistent, requires dllb server)
+config :ragex, :store_backend, :ets
+
 # dllb multi-model database (disabled by default -- enable when dllb server is running)
 config :dllb,
   enabled: false,

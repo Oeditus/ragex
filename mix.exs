@@ -63,7 +63,10 @@ defmodule Ragex.MixProject do
       {:jason, "~> 1.4"},
       {:file_system, "~> 1.0"},
       # dllb multi-model database client
-      {:dllb, path: "../dllb_ex"},
+      case System.get_env("LOCAL_DLLB") do
+        nil -> {:dllb, "~> 0.1"}
+        _ -> {:dllb, path: "../dllb_ex"}
+      end,
       # TUI Framework
       {:owl, "~> 0.12"},
       # Embeddings and ML
