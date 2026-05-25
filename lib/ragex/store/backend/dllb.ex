@@ -127,6 +127,21 @@ defmodule Ragex.Store.Backend.Dllb do
   end
 
   @impl true
+  def find_function(module_name, func_name) do
+    query_string = MQ.functions_of_module(inspect(module_name))
+
+    case MQ.exec(query_string, query_fn()) do
+      {:ok, rows} ->
+        Enum.find_value(rows, fn row ->
+          if row[:name] == to_string(func_name), do: row
+        end)
+
+      {:error, _} ->
+        nil
+    end
+  end
+
+  @impl true
   def remove_node(node_type, node_id) do
     id = node_to_dllb_id({node_type, node_id})
     Dllb.query(Dllb.Query.delete("ast_node:#{id}"))
@@ -195,7 +210,32 @@ defmodule Ragex.Store.Backend.Dllb do
   def get_edge_weight(_from_node, _to_node, _edge_type), do: 1.0
 
   @impl true
-  def list_edges(_opts \\ []), do: []
+  def list_edges(opts \\ []) do
+    edge_type = Keyword.get(opts, :edge_type)
+
+    where =
+      case edge_type do
+        nil -> nil
+        type -> "edge_type = '#{type}'"
+      end
+
+    query_string = Dllb.Query.select("_edge_idx", where: where)
+
+    case Dllb.query(query_string) do
+      {:ok, %Dllb.Result.Rows{data: data}} ->
+        Enum.map(data, fn row ->
+          %{
+            from: unwrap_typed(row["from_id"]),
+            to: unwrap_typed(row["to_id"]),
+            type: safe_to_edge_atom(unwrap_typed(row["edge_type"])),
+            metadata: %{}
+          }
+        end)
+
+      _ ->
+        []
+    end
+  end
 
   # ---------------------------------------------------------------------------
   # Embeddings
@@ -273,4 +313,17 @@ defmodule Ragex.Store.Backend.Dllb do
 
   defp effective_limit(:infinity), do: nil
   defp effective_limit(n) when is_integer(n), do: n
+
+  # dllb JSON wraps typed values as %{"String" => "value"}, %{"Int" => 42}, etc.
+  defp unwrap_typed(%{"String" => v}), do: v
+  defp unwrap_typed(%{"Int" => v}), do: v
+  defp unwrap_typed(%{"Float" => v}), do: v
+  defp unwrap_typed(%{"Bool" => v}), do: v
+  defp unwrap_typed(v), do: v
+
+  defp safe_to_edge_atom("calls"), do: :calls
+  defp safe_to_edge_atom("contains"), do: :contains
+  defp safe_to_edge_atom("imports"), do: :imports
+  defp safe_to_edge_atom(other) when is_binary(other), do: String.to_atom(other)
+  defp safe_to_edge_atom(other), do: other
 end

@@ -97,6 +97,16 @@ defmodule Ragex.Store.Backend.ETS do
   end
 
   @impl true
+  def find_function(module, name) do
+    pattern = {{:function, {module, name, :_}}, :"$1"}
+
+    case :ets.match(@nodes_table, pattern) do
+      [[data] | _] -> data
+      [] -> nil
+    end
+  end
+
+  @impl true
   def remove_node(node_type, node_id) do
     node_key = {node_type, node_id}
 

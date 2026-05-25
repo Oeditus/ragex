@@ -40,6 +40,7 @@ defmodule Ragex.Store.Backend do
               map()
             ]
   @callback count_nodes_by_type(node_type :: atom()) :: non_neg_integer()
+  @callback find_function(module :: atom(), name :: atom()) :: map() | nil
   @callback remove_node(node_type :: atom(), node_id :: term()) :: :ok
   @callback update_node_metadata(node_type :: atom(), node_id :: term(), metadata :: map()) :: :ok
 

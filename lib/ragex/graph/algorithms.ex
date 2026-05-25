@@ -791,10 +791,9 @@ defmodule Ragex.Graph.Algorithms do
   end
 
   defp get_call_edges do
-    # Get all :calls edges from the edges table
-    # Edges are stored as {{from_node, to_node, edge_type}, metadata}
-    :ets.match(:ragex_edges, {{:"$1", :"$2", :calls}, :_})
-    |> Enum.map(fn [from, to] -> {from, to} end)
+    # Use the configured backend to list call edges
+    Store.list_edges(edge_type: :calls)
+    |> Enum.map(fn edge -> {edge.from, edge.to} end)
     |> Enum.uniq()
   end
 

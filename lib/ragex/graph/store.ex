@@ -29,7 +29,6 @@ defmodule Ragex.Graph.Store do
 
   @functions_limit Application.compile_env(:ragex, :functions_limit, 1_000)
   @nodes_limit Application.compile_env(:ragex, :nodes_limit, 1_000)
-  @edges_limit Application.compile_env(:ragex, :edges_limit, 1_000)
   @embeddings_limit Application.compile_env(:ragex, :embeddings_limit, 1_000)
 
   # Client API
@@ -81,12 +80,7 @@ defmodule Ragex.Graph.Store do
   Finds a function node by module and name (any arity).
   """
   def find_function(module, name) do
-    pattern = {{:function, {module, name, :_}}, :"$1"}
-
-    case :ets.match(@nodes_table, pattern) do
-      [[data] | _] -> data
-      [] -> nil
-    end
+    backend().find_function(module, name)
   end
 
   @doc """
@@ -199,35 +193,14 @@ defmodule Ragex.Graph.Store do
   Lists nodes with optional filtering by type.
   """
   def list_nodes(node_type \\ nil, limit \\ @nodes_limit) do
-    pattern =
-      case node_type do
-        nil -> {{:"$1", :"$2"}, :"$3"}
-        type -> {{type, :"$1"}, :"$2"}
-      end
-
-    matches = :ets.match(@nodes_table, pattern)
-
-    matches =
-      case limit do
-        :infinity -> matches
-        n when is_integer(n) -> Enum.take(matches, n)
-      end
-
-    Enum.map(matches, fn
-      [node_type, node_id, data] -> %{type: node_type, id: node_id, data: data}
-      [node_id, data] -> %{type: node_type, id: node_id, data: data}
-    end)
+    backend().list_nodes(node_type, limit)
   end
 
   @doc """
   Counts nodes of a specific type.
   """
   def count_nodes_by_type(node_type) do
-    pattern = {{node_type, :"$1"}, :"$2"}
-
-    @nodes_table
-    |> :ets.match(pattern)
-    |> length()
+    backend().count_nodes_by_type(node_type)
   end
 
   @doc """
@@ -247,24 +220,14 @@ defmodule Ragex.Graph.Store do
   Gets all outgoing edges from a node of a specific type.
   """
   def get_outgoing_edges(from_node, edge_type) do
-    pattern = {{from_node, :"$1", edge_type}, :"$2"}
-
-    :ets.match(@edges_table, pattern)
-    |> Enum.map(fn [to_node, metadata] ->
-      %{to: to_node, type: edge_type, metadata: metadata}
-    end)
+    backend().get_outgoing_edges(from_node, edge_type)
   end
 
   @doc """
   Gets all incoming edges to a node of a specific type.
   """
   def get_incoming_edges(to_node, edge_type) do
-    pattern = {{:"$1", to_node, edge_type}, :"$2"}
-
-    :ets.match(@edges_table, pattern)
-    |> Enum.map(fn [from_node, metadata] ->
-      %{from: from_node, type: edge_type, metadata: metadata}
-    end)
+    backend().get_incoming_edges(to_node, edge_type)
   end
 
   @doc """
@@ -273,10 +236,7 @@ defmodule Ragex.Graph.Store do
   Returns the weight (default: 1.0) if edge exists, nil otherwise.
   """
   def get_edge_weight(from_node, to_node, edge_type) do
-    case :ets.lookup(@edges_table, {from_node, to_node, edge_type}) do
-      [{_key, metadata}] -> Map.get(metadata, :weight, 1.0)
-      [] -> nil
-    end
+    backend().get_edge_weight(from_node, to_node, edge_type)
   end
 
   @doc """
@@ -303,25 +263,7 @@ defmodule Ragex.Graph.Store do
       [%{from: mod1, to: mod2, type: :imports, metadata: %{weight: 1.0}}, ...]
   """
   def list_edges(opts \\ []) do
-    edge_type = Keyword.get(opts, :edge_type)
-    limit = Keyword.get(opts, :limit, @edges_limit)
-
-    pattern =
-      case edge_type do
-        nil -> {{:"$1", :"$2", :"$3"}, :"$4"}
-        type -> {{:"$1", :"$2", type}, :"$3"}
-      end
-
-    @edges_table
-    |> :ets.match(pattern)
-    |> Enum.take(limit)
-    |> Enum.map(fn
-      [from_node, to_node, edge_type, metadata] ->
-        %{from: from_node, to: to_node, type: edge_type, metadata: metadata}
-
-      [from_node, to_node, metadata] ->
-        %{from: from_node, to: to_node, type: edge_type, metadata: metadata}
-    end)
+    backend().list_edges(opts)
   end
 
   @doc """
@@ -349,19 +291,7 @@ defmodule Ragex.Graph.Store do
   - `new_metadata` -- map of metadata to merge
   """
   def update_node_metadata(node_type, node_id, new_metadata) when is_map(new_metadata) do
-    key = {node_type, node_id}
-
-    case :ets.lookup(@nodes_table, key) do
-      [{^key, data}] when is_map(data) ->
-        existing_meta = Map.get(data, :metadata, %{})
-        merged_meta = Map.merge(existing_meta, new_metadata)
-        updated_data = Map.put(data, :metadata, merged_meta)
-        :ets.insert(@nodes_table, {key, updated_data})
-        :ok
-
-      _ ->
-        :ok
-    end
+    backend().update_node_metadata(node_type, node_id, new_metadata)
   end
 
   @doc """
