@@ -263,6 +263,7 @@ defmodule Ragex.Analysis.DependencyGraph do
       modules =
         Store.list_nodes(:module, :infinity)
         |> Enum.map(& &1.id)
+        |> Enum.reject(&is_nil/1)
 
       metrics_list =
         modules
@@ -313,11 +314,13 @@ defmodule Ragex.Analysis.DependencyGraph do
       all_modules =
         Store.list_nodes(:module, :infinity)
         |> Enum.map(& &1.id)
+        |> Enum.reject(&is_nil/1)
         |> MapSet.new()
 
       # Get modules that have incoming edges (are referenced)
       referenced_modules =
         Store.list_nodes(:module, :infinity)
+        |> Enum.reject(fn %{id: id} -> is_nil(id) end)
         |> Enum.flat_map(fn %{id: module} ->
           # Check for incoming imports
           imports = Store.get_incoming_edges({:module, module}, :imports)
@@ -521,7 +524,7 @@ defmodule Ragex.Analysis.DependencyGraph do
   # Build adjacency list for dependency analysis
   defp build_dependency_adjacency(:module) do
     # Build module-level adjacency from :imports edges and function calls
-    modules = Store.list_nodes(:module, :infinity) |> Enum.map(& &1.id)
+    modules = Store.list_nodes(:module, :infinity) |> Enum.map(& &1.id) |> Enum.reject(&is_nil/1)
 
     Enum.reduce(modules, %{}, fn module, acc ->
       # Get direct imports
@@ -545,7 +548,10 @@ defmodule Ragex.Analysis.DependencyGraph do
 
   defp build_dependency_adjacency(:function) do
     # Build function-level adjacency from :calls edges
-    functions = Store.list_nodes(:function, :infinity) |> Enum.map(& &1.id)
+      functions =
+        Store.list_nodes(:function, :infinity)
+        |> Enum.map(& &1.id)
+        |> Enum.filter(&match?({_, _, _}, &1))
 
     Enum.reduce(functions, %{}, fn {module, name, arity}, acc ->
       func_id = {:function, module, name, arity}
@@ -759,7 +765,10 @@ defmodule Ragex.Analysis.DependencyGraph do
   # Get all functions in a module
   defp get_module_functions(module) do
     Store.list_nodes(:function, :infinity)
-    |> Enum.filter(fn %{id: {mod, _name, _arity}} -> mod == module end)
+    |> Enum.filter(fn
+      %{id: {mod, _name, _arity}} -> mod == module
+      _ -> false
+    end)
     |> Enum.map(fn %{id: {mod, name, arity}} -> {:function, mod, name, arity} end)
   end
 

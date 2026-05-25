@@ -132,10 +132,16 @@ defmodule Ragex.Graph.Algorithms do
       |> Enum.group_by(fn {from, _to} -> from end)
       |> Map.new(fn {node, list} -> {node, length(list)} end)
 
-    # Get all nodes - calls use 4-tuple format {:function, module, name, arity}
-    # But nodes are stored with 3-tuple IDs {module, name, arity}
-    # So we need to normalize to the 4-tuple format to match call edges
-    all_nodes =
+    # Start with all nodes from edges (guaranteed to match edge endpoint format)
+    edge_nodes =
+      edges
+      |> Enum.flat_map(fn {from, to} -> [from, to] end)
+      |> MapSet.new()
+
+    # Also include store-listed nodes so that edgeless nodes (e.g. modules)
+    # still appear with zero degree.  Normalize their IDs to the 4-tuple
+    # format used by ETS edges; for dllb string IDs, just keep them as-is.
+    store_nodes =
       Store.list_nodes()
       |> Enum.map(fn node ->
         case {node.type, node.id} do
@@ -145,6 +151,8 @@ defmodule Ragex.Graph.Algorithms do
         end
       end)
       |> MapSet.new()
+
+    all_nodes = MapSet.union(edge_nodes, store_nodes)
 
     Map.new(all_nodes, fn node ->
       in_deg = Map.get(in_degrees, node, 0)
@@ -341,6 +349,97 @@ defmodule Ragex.Graph.Algorithms do
       detect_communities(resolution: 0.5)
   """
   def detect_communities(opts \\ []) do
+    hierarchical = Keyword.get(opts, :hierarchical, false)
+
+    # Delegate to the dllb Rust engine when the dllb backend is active and
+    # the non-hierarchical (standard) format is requested.  The native Louvain
+    # runs in O(E) per iteration vs. the O(N*C*E) pure-Elixir path, which
+    # reduces a 207-second call to single-digit milliseconds on real codebases.
+    if not hierarchical and dllb_backend?() do
+      case detect_communities_via_dllb(opts) do
+        {:ok, communities} ->
+          communities
+
+        {:error, reason} ->
+          require Logger
+
+          Logger.warning(
+            "[graph:detect_communities] dllb path failed (#{inspect(reason)}), falling back to Elixir"
+          )
+
+          detect_communities_elixir(opts)
+      end
+    else
+      detect_communities_elixir(opts)
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private: dllb-backed community detection
+  # ---------------------------------------------------------------------------
+
+  # Returns true when the dllb store backend is configured and enabled.
+  defp dllb_backend? do
+    Application.get_env(:ragex, :store_backend, :ets) == :dllb and
+      Application.get_env(:dllb, :enabled, false)
+  end
+
+  # Send a GRAPH COMMUNITIES query to the dllb Rust engine and convert the
+  # response back to the standard %{community_id => [node_ids]} shape.
+  defp detect_communities_via_dllb(opts) do
+    max_iter = Keyword.get(opts, :max_iterations, 10)
+    resolution = Keyword.get(opts, :resolution, 1.0)
+
+    # Map the Elixir algorithm atom to the dllb query option.
+    algo =
+      case Keyword.get(opts, :algorithm, :louvain) do
+        :label_propagation -> :lp
+        other -> other
+      end
+
+    query =
+      Dllb.Query.graph_communities("calls",
+        algorithm: algo,
+        max_iter: max_iter,
+        resolution: resolution
+      )
+
+    case Dllb.query(query) do
+      {:ok, %Dllb.Result.Communities{data: data}} ->
+        communities =
+          Map.new(data, fn group ->
+            comm_id = unwrap_dllb_value(group["id"])
+
+            members =
+              case group["members"] do
+                %{"Array" => list} -> Enum.map(list, &unwrap_dllb_value/1)
+                list when is_list(list) -> Enum.map(list, &unwrap_dllb_value/1)
+                _ -> []
+              end
+
+            {comm_id, members}
+          end)
+
+        {:ok, communities}
+
+      {:ok, %Dllb.Result.Error{message: msg}} ->
+        {:error, {:dllb_error, msg}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Unwrap serde-tagged dllb JSON values: %{"String" => v}, %{"Int" => v}, etc.
+  defp unwrap_dllb_value(%{"String" => v}), do: v
+  defp unwrap_dllb_value(%{"Int" => v}), do: v
+  defp unwrap_dllb_value(%{"Float" => v}), do: v
+  defp unwrap_dllb_value(%{"Bool" => v}), do: v
+  defp unwrap_dllb_value(v), do: v
+
+  # Pure-Elixir Louvain fallback (used when dllb is not active or returns an
+  # error, and always for hierarchical output).
+  defp detect_communities_elixir(opts) do
     max_iterations = Keyword.get(opts, :max_iterations, 10)
     min_improvement = Keyword.get(opts, :min_improvement, 0.0001)
     resolution = Keyword.get(opts, :resolution, 1.0)
@@ -383,7 +482,6 @@ defmodule Ragex.Graph.Algorithms do
       if hierarchical do
         result
       else
-        # Convert to community => [nodes] format
         node_to_community = result.node_to_community
 
         node_to_community
@@ -532,54 +630,91 @@ defmodule Ragex.Graph.Algorithms do
     default_max = Application.get_env(:ragex, :graph, []) |> Keyword.get(:max_nodes_export, 500)
     max_nodes = Keyword.get(opts, :max_nodes, default_max)
 
-    edges = get_call_edges()
+    edges =
+      :telemetry.span([:ragex, :graph, :get_call_edges], %{}, fn ->
+        result = get_call_edges()
+        {result, %{edge_count: length(result)}}
+      end)
 
     # Get all nodes
     all_nodes =
-      edges
-      |> Enum.flat_map(fn {from, to} -> [from, to] end)
-      |> Enum.uniq()
-      |> Enum.take(max_nodes)
+      :telemetry.span([:ragex, :graph, :build_all_nodes], %{max_nodes: max_nodes}, fn ->
+        result =
+          edges
+          |> Enum.flat_map(fn {from, to} -> [from, to] end)
+          |> Enum.uniq()
+          |> Enum.take(max_nodes)
+
+        {result, %{max_nodes: max_nodes, node_count: length(result)}}
+      end)
 
     if all_nodes == [] do
       {:ok, %{nodes: [], links: []}}
     else
       # Get metrics
-      pagerank_scores = pagerank()
-      degree_metrics = degree_centrality()
+      pagerank_scores =
+        :telemetry.span([:ragex, :graph, :pagerank], %{}, fn ->
+          result = pagerank()
+          {result, %{node_count: map_size(result)}}
+        end)
+
+      degree_metrics =
+        :telemetry.span([:ragex, :graph, :degree_centrality], %{}, fn ->
+          result = degree_centrality()
+          {result, %{node_count: map_size(result)}}
+        end)
 
       # Detect communities
-      communities = if include_communities, do: detect_communities(), else: %{}
+      communities =
+        if include_communities do
+          :telemetry.span([:ragex, :graph, :detect_communities], %{}, fn ->
+            result = detect_communities()
+            {result, %{community_count: map_size(result)}}
+          end)
+        else
+          %{}
+        end
+
       node_to_community = invert_community_map(communities)
 
       # Build nodes list
       nodes =
-        Enum.map(all_nodes, fn node ->
-          %{
-            id: format_node_id_string(node),
-            type: get_node_type(node),
-            pagerank: Map.get(pagerank_scores, node, 0.0),
-            degree: Map.get(degree_metrics, node, %{total_degree: 0}).total_degree,
-            community: Map.get(node_to_community, node)
-          }
+        :telemetry.span([:ragex, :graph, :build_nodes], %{}, fn ->
+          result =
+            Enum.map(all_nodes, fn node ->
+              %{
+                id: format_node_id_string(node),
+                type: get_node_type(node),
+                pagerank: Map.get(pagerank_scores, node, 0.0),
+                degree: Map.get(degree_metrics, node, %{total_degree: 0}).total_degree,
+                community: Map.get(node_to_community, node)
+              }
+            end)
+
+          {result, %{count: length(result)}}
         end)
 
       # Build edges list
       node_set = MapSet.new(all_nodes)
 
       links =
-        edges
-        |> Enum.filter(fn {from, to} ->
-          MapSet.member?(node_set, from) and MapSet.member?(node_set, to)
-        end)
-        |> Enum.map(fn {from, to} ->
-          weight = get_edge_weight_value(from, to)
+        :telemetry.span([:ragex, :graph, :build_links], %{}, fn ->
+          result =
+            edges
+            |> Enum.filter(fn {from, to} ->
+              MapSet.member?(node_set, from) and MapSet.member?(node_set, to)
+            end)
+            |> Enum.map(fn {from, to} ->
+              weight = get_edge_weight_value(from, to)
 
-          %{
-            source: format_node_id_string(from),
-            target: format_node_id_string(to),
-            weight: weight
-          }
+              %{
+                source: format_node_id_string(from),
+                target: format_node_id_string(to),
+                weight: weight
+              }
+            end)
+
+          {result, %{count: length(result)}}
         end)
 
       {:ok, %{nodes: nodes, links: links}}
@@ -1387,6 +1522,9 @@ defmodule Ragex.Graph.Algorithms do
     "#{label_text} (#{node_count} nodes)"
   end
 
+  # Pass through binary IDs (dllb backend returns string IDs like "ast_node:file_name_42")
+  defp format_node_id_string(node) when is_binary(node), do: node
+
   defp format_node_id_string(node) do
     case node do
       {:function, module, name, arity} -> "#{trim_elixir_prefix(module)}.#{name}/#{arity}"
@@ -1402,6 +1540,25 @@ defmodule Ragex.Graph.Algorithms do
   end
 
   defp trim_elixir_prefix(other), do: to_string(other)
+
+  # For binary IDs (dllb backend), infer type from the ID pattern.
+  # MetaAST IDs look like "ast_node:file_stem_Name_line" where
+  # container/module names start with uppercase.
+  defp get_node_type(node) when is_binary(node) do
+    bare = String.replace_prefix(node, "ast_node:", "")
+    parts = String.split(bare, "_")
+
+    # Containers/modules have a capitalized name segment (not the file stem).
+    # If any non-first part is capitalized and the last part looks like a line number,
+    # the second-to-last determines type.
+    capitalized_parts = Enum.drop(parts, 1) |> Enum.filter(&String.match?(&1, ~r/^[A-Z]/))
+
+    if capitalized_parts != [] and length(parts) <= 3 do
+      "module"
+    else
+      "function"
+    end
+  end
 
   defp get_node_type(node) do
     case node do
