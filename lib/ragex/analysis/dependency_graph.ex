@@ -548,10 +548,10 @@ defmodule Ragex.Analysis.DependencyGraph do
 
   defp build_dependency_adjacency(:function) do
     # Build function-level adjacency from :calls edges
-      functions =
-        Store.list_nodes(:function, :infinity)
-        |> Enum.map(& &1.id)
-        |> Enum.filter(&match?({_, _, _}, &1))
+    functions =
+      Store.list_nodes(:function, :infinity)
+      |> Enum.map(& &1.id)
+      |> Enum.filter(&match?({_, _, _}, &1))
 
     Enum.reduce(functions, %{}, fn {module, name, arity}, acc ->
       func_id = {:function, module, name, arity}
