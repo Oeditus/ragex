@@ -523,7 +523,7 @@ defmodule Ragex.Analysis.BusinessLogic do
         end
       end,
       max_concurrency: max_concurrency,
-      timeout: 30_000
+      timeout: :infinity
     )
     |> Enum.map(fn
       {:ok, result} -> result

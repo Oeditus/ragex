@@ -292,7 +292,7 @@ defmodule Ragex.Analysis.Suggestions.RAGAdvisor do
             {:error, _} -> Map.put(suggestion, :rag_advice, nil)
           end
         end,
-        timeout: 30_000,
+        timeout: :infinity,
         max_concurrency: 3
       )
       |> Enum.map(fn {:ok, result} -> result end)

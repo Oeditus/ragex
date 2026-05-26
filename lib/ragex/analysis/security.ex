@@ -254,7 +254,7 @@ defmodule Ragex.Analysis.Security do
     |> Task.async_stream(
       fn file -> analyze_file(file, opts) end,
       max_concurrency: max_concurrency,
-      timeout: 30_000
+      timeout: :infinity
     )
     |> Enum.reduce([], fn
       {:ok, {:ok, result}}, acc -> [result | acc]

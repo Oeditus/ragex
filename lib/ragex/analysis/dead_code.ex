@@ -383,7 +383,7 @@ defmodule Ragex.Analysis.DeadCode do
           end
         end,
         max_concurrency: System.schedulers_online() * 2,
-        timeout: 30_000
+        timeout: :infinity
       )
       |> Enum.map(fn {:ok, result} -> result end)
       |> Map.new()
