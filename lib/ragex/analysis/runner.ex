@@ -65,10 +65,10 @@ defmodule Ragex.Analysis.Runner do
 
   defp stats_to_result(stats) do
     entities_found =
-      if stats[:graph_stats] do
-        Map.get(stats.graph_stats, :nodes, 0)
-      else
-        0
+      case stats[:graph_stats] do
+        %{nodes: n} when is_integer(n) -> n
+        %{total: n} when is_integer(n) -> n
+        _ -> 0
       end
 
     %{
@@ -83,36 +83,57 @@ defmodule Ragex.Analysis.Runner do
 
   Returns a map of `%{analysis_type => result}` matching the format
   expected by `Mix.Tasks.Ragex.Analyze` formatters.
+
+  ## Options
+
+    * `:on_progress` - `(atom(), :start | {:done, non_neg_integer()}) -> any()`
+      callback invoked before and after each analysis pass.
   """
-  @spec run_all(config()) :: map()
-  def run_all(config) do
+  @spec run_all(config(), keyword()) :: map()
+  def run_all(config, opts \\ []) do
     analyses = config.analyses
+    on_progress = Keyword.get(opts, :on_progress, fn _key, _phase -> :ok end)
 
     %{}
-    |> maybe_run(:security, analyses, fn -> run_security(config) end)
-    |> maybe_run(:business_logic, analyses, fn -> run_business_logic(config) end)
-    |> maybe_run(:complexity, analyses, fn -> run_complexity(config) end)
-    |> maybe_run(:smells, analyses, fn -> run_smells(config) end)
-    |> maybe_run(:duplicates, analyses, fn -> run_duplicates(config) end)
-    |> maybe_run(:dead_code, analyses, fn -> run_dead_code() end)
-    |> maybe_run(:dependencies, analyses, fn -> run_dependencies() end)
-    |> maybe_run(:quality, analyses, fn -> run_quality(config) end)
-    |> maybe_run(:circulars, analyses, fn -> run_circulars() end)
-    |> maybe_run(:god_modules, analyses, fn -> run_god_modules(config) end)
-    |> maybe_run(:unstable_modules, analyses, fn -> run_unstable_modules(config) end)
-    |> maybe_run(:unused_modules, analyses, fn -> run_unused_modules() end)
-    |> maybe_run(:coupling, analyses, fn -> run_coupling() end)
+    |> maybe_run(:security, analyses, on_progress, fn -> run_security(config) end)
+    |> maybe_run(:business_logic, analyses, on_progress, fn -> run_business_logic(config) end)
+    |> maybe_run(:complexity, analyses, on_progress, fn -> run_complexity(config) end)
+    |> maybe_run(:smells, analyses, on_progress, fn -> run_smells(config) end)
+    |> maybe_run(:duplicates, analyses, on_progress, fn -> run_duplicates(config) end)
+    |> maybe_run(:dead_code, analyses, on_progress, fn -> run_dead_code() end)
+    |> maybe_run(:dependencies, analyses, on_progress, fn -> run_dependencies() end)
+    |> maybe_run(:quality, analyses, on_progress, fn -> run_quality(config) end)
+    |> maybe_run(:circulars, analyses, on_progress, fn -> run_circulars() end)
+    |> maybe_run(:god_modules, analyses, on_progress, fn -> run_god_modules(config) end)
+    |> maybe_run(:unstable_modules, analyses, on_progress, fn -> run_unstable_modules(config) end)
+    |> maybe_run(:unused_modules, analyses, on_progress, fn -> run_unused_modules() end)
+    |> maybe_run(:coupling, analyses, on_progress, fn -> run_coupling() end)
   end
 
   # Private functions
 
-  defp maybe_run(results, key, analyses, fun) do
+  defp maybe_run(results, key, analyses, on_progress, fun) do
     if Map.get(analyses, key, false) do
-      Map.put(results, key, fun.())
+      on_progress.(key, :start)
+      result = fun.()
+      on_progress.(key, {:done, extract_issue_count(result)})
+      Map.put(results, key, result)
     else
       results
     end
   end
+
+  defp extract_issue_count(%{issues: issues}) when is_list(issues), do: length(issues)
+  defp extract_issue_count(%{smells: smells}) when is_list(smells), do: length(smells)
+  defp extract_issue_count(%{duplicates: d}) when is_list(d), do: length(d)
+  defp extract_issue_count(%{dead_functions: f}) when is_list(f), do: length(f)
+  defp extract_issue_count(%{complex_functions: f}) when is_list(f), do: length(f)
+  defp extract_issue_count(%{cycles: c}) when is_list(c), do: length(c)
+  defp extract_issue_count(%{modules: m}) when is_list(m), do: length(m)
+  defp extract_issue_count(%{metrics: m}) when is_list(m), do: length(m)
+  defp extract_issue_count(%{results: r}) when is_list(r), do: length(r)
+  defp extract_issue_count(%{total_issues: n}) when is_integer(n), do: n
+  defp extract_issue_count(_), do: 0
 
   defp run_security(config) do
     case Security.analyze_directory(config.path, severity: config.severity) do
