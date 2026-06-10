@@ -243,6 +243,14 @@ defmodule Ragex.Store.Backend.ETS do
   end
 
   @impl true
+  def count_embeddings do
+    case :ets.info(@embeddings_table, :size) do
+      n when is_integer(n) -> n
+      _ -> 0
+    end
+  end
+
+  @impl true
   def list_embeddings(node_type \\ nil, limit \\ @embeddings_limit) do
     pattern =
       case node_type do

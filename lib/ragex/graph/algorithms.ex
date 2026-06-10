@@ -374,6 +374,90 @@ defmodule Ragex.Graph.Algorithms do
     end
   end
 
+  @doc """
+  Counts the connected components of the call graph.
+
+  Treats `calls` edges as undirected. When the dllb backend is active this
+  delegates to the native `GRAPH COMPONENTS` statement (O(E) union-find in
+  Rust); otherwise it computes components in Elixir via BFS.
+
+  Returns the number of components as a non-negative integer.
+  """
+  @spec connected_components(keyword()) :: non_neg_integer()
+  def connected_components(opts \\ []) do
+    if dllb_backend?() do
+      case connected_components_via_dllb(opts) do
+        {:ok, count} ->
+          count
+
+        {:error, reason} ->
+          require Logger
+
+          Logger.warning(
+            "[graph:connected_components] dllb path failed (#{inspect(reason)}), falling back to Elixir"
+          )
+
+          connected_components_elixir()
+      end
+    else
+      connected_components_elixir()
+    end
+  end
+
+  # Query the dllb engine for the connected-component count over `calls`.
+  defp connected_components_via_dllb(_opts) do
+    case Dllb.query(Dllb.Query.graph_components("calls")) do
+      {:ok, %Dllb.Result.Components{component_count: count}} -> {:ok, count}
+      {:ok, %Dllb.Result.Error{message: msg}} -> {:error, {:dllb_error, msg}}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Pure-Elixir connected components via BFS over the undirected call graph.
+  defp connected_components_elixir do
+    edges = get_call_edges()
+    nodes = edges |> Enum.flat_map(fn {from, to} -> [from, to] end) |> MapSet.new()
+
+    if MapSet.size(nodes) == 0 do
+      0
+    else
+      adjacency =
+        Enum.reduce(edges, %{}, fn {from, to}, acc ->
+          acc
+          |> Map.update(from, [to], &[to | &1])
+          |> Map.update(to, [from], &[from | &1])
+        end)
+
+      {count, _visited} =
+        Enum.reduce(nodes, {0, MapSet.new()}, fn node, {count, visited} ->
+          if MapSet.member?(visited, node) do
+            {count, visited}
+          else
+            {count + 1, component_bfs([node], adjacency, MapSet.put(visited, node))}
+          end
+        end)
+
+      count
+    end
+  end
+
+  defp component_bfs([], _adjacency, visited), do: visited
+
+  defp component_bfs([node | rest], adjacency, visited) do
+    {queue, visited} =
+      adjacency
+      |> Map.get(node, [])
+      |> Enum.reduce({rest, visited}, fn neighbor, {queue, vis} ->
+        if MapSet.member?(vis, neighbor) do
+          {queue, vis}
+        else
+          {[neighbor | queue], MapSet.put(vis, neighbor)}
+        end
+      end)
+
+    component_bfs(queue, adjacency, visited)
+  end
+
   # ---------------------------------------------------------------------------
   # Private: dllb-backed community detection
   # ---------------------------------------------------------------------------

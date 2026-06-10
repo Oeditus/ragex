@@ -10,6 +10,20 @@ defmodule Ragex.Graph.StoreTest do
     :ok
   end
 
+  describe "count_embeddings/0" do
+    test "returns 0 when no embeddings are stored" do
+      assert Store.count_embeddings() == 0
+    end
+
+    test "counts stored embeddings" do
+      Store.store_embedding(:function, {ModuleA, :foo, 0}, [0.1, 0.2, 0.3], "foo")
+      Store.store_embedding(:module, ModuleB, [0.4, 0.5, 0.6], "modb")
+      Store.sync()
+
+      assert Store.count_embeddings() == 2
+    end
+  end
+
   describe "add_node/3 and find_node/2" do
     test "adds and retrieves a module node" do
       module_data = %{name: TestModule, file: "test.ex", line: 1}

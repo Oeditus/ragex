@@ -73,6 +73,7 @@ defmodule Ragex.Store.Backend do
   @callback get_embedding(node_type :: atom(), node_id :: term()) :: {[float()], String.t()} | nil
   @callback list_embeddings(node_type :: atom() | nil, limit :: non_neg_integer() | :infinity) ::
               [tuple()]
+  @callback count_embeddings() :: non_neg_integer()
 
   # ---------------------------------------------------------------------------
   # Vector search

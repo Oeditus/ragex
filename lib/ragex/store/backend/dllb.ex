@@ -242,21 +242,38 @@ defmodule Ragex.Store.Backend.Dllb do
   # ---------------------------------------------------------------------------
 
   @impl true
-  def store_embedding(node_type, node_id, embedding, _text) do
-    id = node_to_dllb_id({node_type, node_id})
+  def store_embedding(node_type, node_id, embedding, _text) when is_list(embedding) do
+    # Attach the embedding to the matching ast_node row(s) by their stable
+    # attributes (kind/module/name/arity) rather than a reconstructed record
+    # id, via a server-side `UPDATE ... WHERE`.
+    case embedding_match_attrs({node_type, node_id}) do
+      attrs when map_size(attrs) == 0 ->
+        :ok
 
-    query_string =
-      Dllb.MetaAST.to_dllb_embeddings("ast_node:#{id}", %{source_embedding: embedding})
+      attrs ->
+        attrs
+        |> MQ.set_source_embedding(embedding)
+        |> Dllb.query()
 
-    Dllb.query(query_string)
-    :ok
+        :ok
+    end
   end
+
+  def store_embedding(_node_type, _node_id, _embedding, _text), do: :ok
 
   @impl true
   def get_embedding(_node_type, _node_id), do: nil
 
   @impl true
   def list_embeddings(_node_type \\ nil, _limit \\ 1_000), do: []
+
+  @impl true
+  def count_embeddings do
+    case MQ.exec_count_embeddings(query_fn()) do
+      {:ok, count} -> count
+      {:error, _} -> 0
+    end
+  end
 
   # ---------------------------------------------------------------------------
   # Vector search
@@ -290,6 +307,26 @@ defmodule Ragex.Store.Backend.Dllb do
   defp extract_name(:function, {_mod, name, _arity}), do: to_string(name)
   defp extract_name(:module, name), do: inspect(name)
   defp extract_name(_type, id), do: inspect(id)
+
+  # Builds the attribute filter used to locate the ast_node row(s) an embedding
+  # belongs to. Mirrors the values written during ingestion by
+  # `Dllb.MetaAST.to_dllb_document/2` (module/name/arity/kind). Returns an empty
+  # map for node shapes we cannot match, so the caller can skip the write.
+  defp embedding_match_attrs({:function, {mod, name, arity}}) do
+    %{kind: "function_def", module: module_string(mod), name: to_string(name), arity: arity}
+  end
+
+  defp embedding_match_attrs({:module, name}) do
+    %{kind: "container", name: module_string(name)}
+  end
+
+  defp embedding_match_attrs(_), do: %{}
+
+  # Module names are stored without the "Elixir." prefix (matching `inspect/1`
+  # of a module atom and the analyzer-provided container name).
+  defp module_string(mod) when is_atom(mod), do: inspect(mod)
+  defp module_string(mod) when is_binary(mod), do: String.replace_prefix(mod, "Elixir.", "")
+  defp module_string(mod), do: mod |> to_string() |> String.replace_prefix("Elixir.", "")
 
   defp node_to_dllb_id({:function, {mod, name, arity}}) do
     "#{inspect(mod)}_#{name}_#{arity}" |> String.replace(~r/[^a-zA-Z0-9_]/, "_")

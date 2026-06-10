@@ -109,11 +109,16 @@ defmodule Ragex.VectorStore do
 
   @impl true
   def handle_call(:stats, _from, state) do
-    # Get embeddings from graph store
+    # Total vectors come from a backend count (server-side COUNT on dllb),
+    # which works even when listing embeddings is not supported by the backend.
+    total = Store.count_embeddings()
+
+    # Dimensions are still derived from a sample embedding; backends that do
+    # not list embeddings report 0 here (handled separately).
     embeddings = Store.list_embeddings()
 
     stats = %{
-      total_embeddings: length(embeddings),
+      total_embeddings: total,
       dimensions: if(embeddings != [], do: length(elem(hd(embeddings), 2)), else: 0)
     }
 

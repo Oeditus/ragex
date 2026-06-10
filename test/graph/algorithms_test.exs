@@ -109,6 +109,31 @@ defmodule Ragex.Graph.AlgorithmsTest do
     end
   end
 
+  describe "connected_components/1" do
+    test "counts a single connected component" do
+      # Setup graph (A->B->C, A->D, D->C) is fully connected.
+      assert Algorithms.connected_components() == 1
+    end
+
+    test "counts disjoint subgraphs separately" do
+      Store.clear()
+      Store.sync()
+
+      Store.add_edge({:function, :M1, :a, 0}, {:function, :M1, :b, 0}, :calls)
+      Store.add_edge({:function, :M2, :c, 0}, {:function, :M2, :d, 0}, :calls)
+      Store.sync()
+
+      assert Algorithms.connected_components() == 2
+    end
+
+    test "returns 0 for an empty graph" do
+      Store.clear()
+      Store.sync()
+
+      assert Algorithms.connected_components() == 0
+    end
+  end
+
   describe "find_paths/3" do
     test "finds direct paths between nodes" do
       from = {:function, :ModuleA, :foo, 0}

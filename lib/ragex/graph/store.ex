@@ -347,6 +347,13 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Returns the number of stored embeddings (vectors) in the active backend.
+  """
+  def count_embeddings do
+    backend().count_embeddings()
+  end
+
+  @doc """
   Synchronous barrier: blocks until all pending casts have been processed.
 
   Useful in tests to ensure async operations (add_node, add_edge, etc.)
