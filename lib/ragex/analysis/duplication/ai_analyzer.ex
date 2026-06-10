@@ -323,12 +323,6 @@ defmodule Ragex.Analysis.Duplication.AIAnalyzer do
     parse_analysis_text(text)
   end
 
-  defp parse_analysis_response(text, _clone_pair) when is_binary(text) do
-    parse_analysis_text(text)
-  end
-
-  defp parse_analysis_response(_, _), do: {:error, :invalid_response_format}
-
   defp parse_analysis_text(text) do
     # Extract structured sections
     equivalent = extract_equivalent(text)

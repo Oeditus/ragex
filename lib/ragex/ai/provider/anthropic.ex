@@ -429,7 +429,7 @@ defmodule Ragex.AI.Provider.Anthropic do
                   thinking: nil,
                   done: true,
                   metadata: %{
-                    stop_reason: stop_reason || acc.stop_reason || "end_turn",
+                    stop_reason: acc.stop_reason || "end_turn",
                     provider: :anthropic,
                     model: acc.model,
                     usage: %{

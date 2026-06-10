@@ -490,23 +490,12 @@ defmodule Mix.Tasks.Ragex.Refactor do
 
     Output.key_value(
       [
-        {"Files modified", Colors.highlight(to_string(result.files_edited))},
-        {"Lines changed", result.lines_added + result.lines_removed}
+        {"Files modified", Colors.highlight(to_string(result.files_modified))}
       ],
       indent: 2
     )
 
     IO.puts("")
-
-    if result.warnings != [] do
-      IO.puts(Colors.warning("Warnings:"))
-
-      Enum.each(result.warnings, fn warning ->
-        IO.puts(Colors.muted("  • #{warning}"))
-      end)
-
-      IO.puts("")
-    end
   end
 
   defp handle_result({:error, result}) do

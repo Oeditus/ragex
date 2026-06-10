@@ -65,10 +65,6 @@ defmodule Ragex.AI.Provider.Ollama do
     with {:ok, config} <- get_config(opts),
          {:ok, full_prompt} <- build_prompt(prompt, context, opts) do
       stream_api(full_prompt, config)
-    else
-      {:error, reason} = error ->
-        Logger.error("Ollama streaming failed: #{inspect(reason)}")
-        error
     end
   end
 

@@ -343,12 +343,6 @@ defmodule Ragex.Editor.ValidationAI do
     parse_explanation_text(text)
   end
 
-  defp parse_explanation_response(text) when is_binary(text) do
-    parse_explanation_text(text)
-  end
-
-  defp parse_explanation_response(_), do: {:error, :invalid_response_format}
-
   defp parse_explanation_text(text) do
     # Extract EXPLANATION and SUGGESTION sections
     explanation =

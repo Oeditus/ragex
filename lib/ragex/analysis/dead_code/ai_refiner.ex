@@ -284,12 +284,6 @@ defmodule Ragex.Analysis.DeadCode.AIRefiner do
     parse_refinement_text(text, dead_func)
   end
 
-  defp parse_refinement_response(text, dead_func) when is_binary(text) do
-    parse_refinement_text(text, dead_func)
-  end
-
-  defp parse_refinement_response(_, _), do: {:error, :invalid_response_format}
-
   defp parse_refinement_text(text, dead_func) do
     # Extract structured sections
     assessment = extract_assessment(text)

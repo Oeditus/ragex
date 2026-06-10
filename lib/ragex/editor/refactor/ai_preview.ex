@@ -338,12 +338,6 @@ defmodule Ragex.Editor.Refactor.AIPreview do
     parse_commentary_text(text, preview_data)
   end
 
-  defp parse_commentary_response(text, preview_data) when is_binary(text) do
-    parse_commentary_text(text, preview_data)
-  end
-
-  defp parse_commentary_response(_, _), do: {:error, :invalid_response_format}
-
   defp parse_commentary_text(text, preview_data) do
     # Extract structured sections
     summary = extract_section(text, "SUMMARY")

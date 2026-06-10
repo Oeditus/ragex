@@ -234,12 +234,6 @@ defmodule Ragex.Analysis.Suggestions.RAGAdvisor do
     response[:answer] || response[:content] || "No advice generated"
   end
 
-  defp extract_advice_text(response) when is_binary(response) do
-    response
-  end
-
-  defp extract_advice_text(_), do: "No advice generated"
-
   defp format_target(target) when is_map(target) do
     case target[:type] do
       :function ->

@@ -7896,7 +7896,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp semantic_operations_tool(_), do: {:error, "path is required"}
 
   defp format_semantic_result(result, path, domains, include_security, format, scan_type) do
-    operations = result.operations
+    operations = normalize_operations(result)
 
     # Filter by domains if specified
     filtered_ops =
@@ -7965,6 +7965,26 @@ defmodule Ragex.MCP.Handlers.Tools do
       _ ->
         base
     end
+  end
+
+  # `analyze_directory/2` returns a flat `:operations` list, while
+  # `analyze_file/2` groups operations under `:domains`. Normalize both to a
+  # flat list of operation maps so formatting works for either scan type.
+  defp normalize_operations(%{operations: operations}), do: operations
+
+  defp normalize_operations(%{domains: domains}) do
+    Enum.flat_map(domains, fn {domain, ops} ->
+      Enum.map(ops, fn op ->
+        %{
+          domain: domain,
+          operation: op.operation,
+          target: op.target,
+          framework: op.framework,
+          async: Map.get(op, :async, false),
+          line: Map.get(op, :line)
+        }
+      end)
+    end)
   end
 
   defp format_op_location(op) do
