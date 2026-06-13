@@ -23,6 +23,7 @@ defmodule Ragex.Store.Backend.Dllb do
   require Logger
 
   alias Dllb.MetaAST.Query, as: MQ
+  alias Ragex.Embeddings.Registry
 
   defp query_fn, do: &Dllb.query/1
 
@@ -32,10 +33,35 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def bootstrap do
-    case Dllb.Schema.bootstrap(query_fn()) do
-      {:ok, :bootstrapped} -> :ok
-      {:error, _} = err -> err
-    end
+    schema_statements()
+    |> Enum.reduce_while(:ok, fn stmt, :ok ->
+      case Dllb.query(stmt) do
+        # The server replies {:ok, %Dllb.Result.Error{}} for statements the
+        # engine does not execute (e.g. DEFINE TABLE/FIELD) or for an index
+        # that already exists. These are tolerated so bootstrap stays
+        # idempotent; only a transport-level failure aborts.
+        {:ok, _} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @doc """
+  Returns the ordered list of schema statements executed by `bootstrap/0`.
+
+  The table, secondary-index, and edge-index definitions come from
+  `Dllb.Schema`. The full-text and vector search indexes are built here so the
+  vector index dimension can be resolved dynamically from the configured
+  embedding model (see the `:embedding_model` config and
+  `Ragex.Embeddings.Registry`). A static dimension that does not match the
+  model's output makes the engine silently skip indexing every row.
+  """
+  @spec schema_statements() :: [String.t()]
+  def schema_statements do
+    Dllb.Schema.ast_node_table() ++
+      Dllb.Schema.ast_node_indexes() ++
+      search_index_statements() ++
+      Dllb.Schema.edge_idx_table()
   end
 
   @impl true
@@ -303,6 +329,41 @@ defmodule Ragex.Store.Backend.Dllb do
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
+
+  # Full-text indexes are model-independent; the vector index dimension is
+  # derived from the active embedding model so it matches the vectors ragex
+  # actually produces. `structure_embedding` has no producer yet, so no index
+  # is defined for it.
+  defp search_index_statements do
+    [
+      Dllb.Query.define_fulltext_index("ast_node", "idx_source_text", "source_text"),
+      Dllb.Query.define_fulltext_index("ast_node", "idx_docstring", "docstring"),
+      Dllb.Query.define_vector_index(
+        "ast_node",
+        "idx_source_embedding",
+        "source_embedding",
+        source_embedding_dim(),
+        metric: "cosine"
+      )
+    ]
+  end
+
+  # Resolves the embedding dimension from the configured model via the
+  # registry, falling back to the default model's dimension for an unknown id.
+  defp source_embedding_dim do
+    :ragex
+    |> Application.get_env(:embedding_model, Registry.default())
+    |> Registry.dimensions()
+    |> case do
+      {:ok, dim} -> dim
+      {:error, _} -> default_embedding_dim()
+    end
+  end
+
+  defp default_embedding_dim do
+    {:ok, dim} = Registry.dimensions(Registry.default())
+    dim
+  end
 
   defp extract_name(:function, {_mod, name, _arity}), do: to_string(name)
   defp extract_name(:module, name), do: inspect(name)
