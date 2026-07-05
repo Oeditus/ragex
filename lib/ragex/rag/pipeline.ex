@@ -15,7 +15,7 @@ defmodule Ragex.RAG.Pipeline do
 
   alias Ragex.AI.{Cache, Config, Usage}
   alias Ragex.RAG.{ContextBuilder, PromptTemplate}
-  alias Ragex.Retrieval.Hybrid
+  alias Ragex.Retrieval.{Hybrid, Reranker}
 
   @doc """
   Execute RAG query pipeline.
@@ -31,6 +31,11 @@ defmodule Ragex.RAG.Pipeline do
   - `:temperature` - AI temperature (default: 0.7)
   - `:format` - Context format: :text, :json, :ast (default: :text)
   - `:response_format` - AI response format: nil or :json (default: nil)
+  - `:rerank` - Enable LLM reranking after retrieval (default: false).
+    Reranking blends the model's relevance judgment with the retrieval score
+    before context assembly. Adds one LLM call.
+  - `:rerank_alpha` - Blend weight for LLM rerank score (default: 0.6)
+  - `:rerank_max_candidates` - Max candidates sent to the reranker (default: 20)
   """
   def query(user_query, opts \\ []) do
     Logger.info("RAG Pipeline: query='#{user_query}'")
@@ -129,10 +134,24 @@ defmodule Ragex.RAG.Pipeline do
     limit = Keyword.get(opts, :limit, 10)
     threshold = Keyword.get(opts, :threshold, 0.7)
     strategy = Keyword.get(opts, :strategy, :fusion)
+    rerank = Keyword.get(opts, :rerank, false)
 
     case Hybrid.search(query, limit: limit, threshold: threshold, strategy: strategy) do
       {:ok, [_ | _] = results} ->
-        {:ok, results}
+        final_results =
+          if rerank and Reranker.available?() do
+            rerank_opts = [
+              alpha: Keyword.get(opts, :rerank_alpha, 0.6),
+              max_candidates: Keyword.get(opts, :rerank_max_candidates, 20),
+              provider: Keyword.get(opts, :provider)
+            ]
+
+            Reranker.rerank(results, query, rerank_opts)
+          else
+            results
+          end
+
+        {:ok, final_results}
 
       {:ok, []} ->
         {:error, :no_results_found}

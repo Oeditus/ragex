@@ -276,6 +276,7 @@ defmodule Ragex.Store.Backend.ETS do
     limit = Keyword.get(opts, :limit, 10)
     threshold = Keyword.get(opts, :threshold, 0.0)
     node_type_filter = Keyword.get(opts, :node_type)
+    exclude_type = Keyword.get(opts, :exclude_node_type)
 
     embeddings =
       case node_type_filter do
@@ -294,6 +295,7 @@ defmodule Ragex.Store.Backend.ETS do
     )
     |> Enum.map(fn {:ok, result} -> result end)
     |> Enum.filter(fn result -> result.score >= threshold end)
+    |> Enum.reject(fn result -> exclude_type != nil and result.node_type == exclude_type end)
     |> Enum.sort_by(fn result -> result.score end, :desc)
     |> Enum.take(limit)
   end

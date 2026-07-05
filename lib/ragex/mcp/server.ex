@@ -37,6 +37,21 @@ defmodule Ragex.MCP.Server do
     GenServer.cast(__MODULE__, {:send_notification, method, params})
   end
 
+  @doc """
+  Stream a partial content chunk to the client during a long-running tool call.
+
+  Emits a `notifications/progress` message carrying the partial text so clients
+  can display incremental output before the final `tools/call` response arrives.
+
+  - `request_id` — the JSON-RPC `id` of the originating `tools/call` request
+  - `partial`    — the new chunk of text to append to any previous output
+  - `done`       — set to `true` on the final chunk (default `false`)
+  """
+  @spec send_progress(term(), String.t(), boolean()) :: :ok
+  def send_progress(request_id, partial, done \\ false) do
+    GenServer.cast(__MODULE__, {:send_progress, request_id, partial, done})
+  end
+
   # Server Callbacks
 
   @impl true
@@ -78,6 +93,18 @@ defmodule Ragex.MCP.Server do
   @impl true
   def handle_cast({:send_notification, method, params}, state) do
     notification = Protocol.notification(method, params)
+    send_response(notification)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:send_progress, request_id, partial, done}, state) do
+    notification =
+      Protocol.notification("notifications/progress", %{
+        progressToken: request_id,
+        value: %{type: "text", text: partial, done: done}
+      })
+
     send_response(notification)
     {:noreply, state}
   end
@@ -145,9 +172,11 @@ defmodule Ragex.MCP.Server do
           Protocol.method_not_found(method, id)
       end
 
-    send_response(response)
+    # Streaming tools return nil and send their response asynchronously via handle_info
+    if response != nil do
+      send_response(response)
+    end
 
-    # Update state if this was an initialize call
     case method do
       "initialize" -> %{state | initialized: true, client_info: params}
       _ -> state
@@ -165,6 +194,14 @@ defmodule Ragex.MCP.Server do
     state
   end
 
+  @impl true
+  def handle_info({:send_response_async, response}, state) do
+    send_response(response)
+    {:noreply, state}
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
   defp handle_initialize(params, id, state) do
     Logger.info("Initializing with client: #{inspect(params)}")
 
@@ -174,7 +211,9 @@ defmodule Ragex.MCP.Server do
       capabilities: %{
         tools: %{},
         resources: %{},
-        prompts: %{}
+        prompts: %{},
+        # Signal that this server emits notifications/progress during streaming tool calls
+        notifications: %{progress: true}
       }
     }
 
@@ -191,19 +230,53 @@ defmodule Ragex.MCP.Server do
     arguments = Map.get(params, "arguments", %{})
     format_opts = Formatter.extract_opts(arguments)
 
-    case MCPTelemetry.execute(tool_name, fn -> Tools.call_tool(tool_name, arguments) end) do
-      {:ok, result} ->
-        # Apply context compaction (compact by default, verbose on request)
-        formatted = Formatter.format(result, tool_name, format_opts)
-        # Convert result to JSON-safe format (handling tuples, etc.)
-        json_safe_result = result_to_json(formatted)
-        text = :json.encode(json_safe_result) |> IO.iodata_to_binary()
-        Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
+    if streaming_tool?(tool_name) do
+      # Run streaming tool asynchronously; each chunk is pushed via notifications/progress
+      # before the final tools/call response is sent.
+      server = self()
 
-      {:error, reason} ->
-        Protocol.internal_error(reason, id)
+      progress_fn = fn partial, done ->
+        send_progress(id, partial, done)
+      end
+
+      Task.start(fn ->
+        result =
+          MCPTelemetry.execute(tool_name, fn ->
+            Tools.call_tool_streaming(tool_name, arguments, progress_fn)
+          end)
+
+        response =
+          case result do
+            {:ok, r} ->
+              formatted = Formatter.format(r, tool_name, format_opts)
+              json_safe = result_to_json(formatted)
+              text = :json.encode(json_safe) |> IO.iodata_to_binary()
+              Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
+
+            {:error, reason} ->
+              Protocol.internal_error(reason, id)
+          end
+
+        send(server, {:send_response_async, response})
+      end)
+
+      # Return nil to skip the synchronous send_response — the Task handles it
+      nil
+    else
+      case MCPTelemetry.execute(tool_name, fn -> Tools.call_tool(tool_name, arguments) end) do
+        {:ok, result} ->
+          formatted = Formatter.format(result, tool_name, format_opts)
+          json_safe_result = result_to_json(formatted)
+          text = :json.encode(json_safe_result) |> IO.iodata_to_binary()
+          Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
+
+        {:error, reason} ->
+          Protocol.internal_error(reason, id)
+      end
     end
   end
+
+  defp streaming_tool?(name), do: String.ends_with?(name || "", "_stream")
 
   defp handle_resources_list(id) do
     result = Resources.list_resources()

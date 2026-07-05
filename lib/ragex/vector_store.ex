@@ -10,7 +10,9 @@ defmodule Ragex.VectorStore do
   use GenServer
   require Logger
 
+  alias Ragex.Embeddings.Chunker
   alias Ragex.Graph.Store
+  alias Ragex.Store.Backend
 
   @timeout :ragex
            |> Application.compile_env(:timeouts, [])
@@ -32,20 +34,27 @@ defmodule Ragex.VectorStore do
     - `:limit` - Maximum results to return (default: 10)
     - `:threshold` - Minimum similarity score 0.0-1.0 (default: 0.0)
     - `:node_type` - Filter by node type (:module, :function, etc.)
+    - `:include_chunks` - Include `:chunk` embeddings in search (default: false).
+      When true, chunk results include a `:chunk_parent` key with
+      `{parent_type, parent_id}` so callers can group by source entity.
 
   ## Returns
 
   List of results sorted by similarity (highest first), each containing:
-  - `:node_type` - Type of the entity
-  - `:node_id` - ID of the entity
+  - `:node_type` - Type of the entity (`:module`, `:function`, or `:chunk`)
+  - `:node_id` - ID of the entity (chunk keys are `{parent_type, parent_id, index}`)
   - `:score` - Similarity score (0.0 to 1.0)
-  - `:text` - Original text description
+  - `:text` - Original text description (chunk text for `:chunk` results)
   - `:embedding` - The embedding vector
+  - `:chunk_parent` - `{parent_type, parent_id}` tuple, present only for `:chunk` results
 
   ## Example
 
       {:ok, query_emb} = Bumblebee.embed("function to calculate sum")
       results = VectorStore.search(query_emb, limit: 5, threshold: 0.7)
+
+      # Include fine-grained chunk results:
+      results = VectorStore.search(query_emb, limit: 10, include_chunks: true)
   """
   def search(query_embedding, opts \\ []) do
     GenServer.call(__MODULE__, {:search, query_embedding, opts}, @timeout)
@@ -128,9 +137,51 @@ defmodule Ragex.VectorStore do
   # Private Functions
 
   defp perform_search(query_embedding, opts) do
-    # credo:disable-for-next-line
-    Ragex.Store.Backend.module().search_vectors(query_embedding, opts)
+    include_chunks = Keyword.get(opts, :include_chunks, false)
+    backend = Backend.module()
+
+    if include_chunks do
+      # Run two passes: entity embeddings (excluding chunks) + chunk-only pass.
+      limit = Keyword.get(opts, :limit, 10)
+
+      entity_opts =
+        opts |> Keyword.delete(:include_chunks) |> Keyword.put(:exclude_node_type, :chunk)
+
+      chunk_opts =
+        opts
+        |> Keyword.delete(:include_chunks)
+        |> Keyword.put(:node_type, :chunk)
+        |> Keyword.put(:limit, limit * 2)
+
+      entity_results = backend.search_vectors(query_embedding, entity_opts)
+
+      chunk_results =
+        backend.search_vectors(query_embedding, chunk_opts)
+        |> Enum.map(&annotate_chunk_parent/1)
+
+      (entity_results ++ chunk_results)
+      |> Enum.sort_by(& &1.score, :desc)
+      |> Enum.take(limit)
+    else
+      # Default: exclude :chunk node_type so callers don't see raw chunk keys
+      # unless they explicitly filtered to a specific type (e.g. :function).
+      node_type = Keyword.get(opts, :node_type)
+
+      if node_type == nil do
+        opts_no_chunks = Keyword.put(opts, :exclude_node_type, :chunk)
+        backend.search_vectors(query_embedding, opts_no_chunks)
+      else
+        backend.search_vectors(query_embedding, opts)
+      end
+    end
   end
+
+  defp annotate_chunk_parent(%{node_type: :chunk, node_id: chunk_key} = result) do
+    parent = Chunker.parent_of(chunk_key)
+    Map.put(result, :chunk_parent, parent)
+  end
+
+  defp annotate_chunk_parent(result), do: result
 
   # Vector math helpers
 

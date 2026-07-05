@@ -36,6 +36,7 @@ defmodule Ragex.Agent.Memory do
   @default_context_max_chars 32_000
   @session_ttl_ms :timer.hours(24)
   @cleanup_interval_ms :timer.minutes(30)
+  @session_file_ext ".session"
 
   # Session struct
   defmodule Session do
@@ -213,11 +214,32 @@ defmodule Ragex.Agent.Memory do
     GenServer.call(__MODULE__, :stats)
   end
 
+  @doc """
+  Explicitly persist all active sessions to disk.
+
+  Sessions are automatically persisted on every mutation when persistence is
+  enabled. Call this to force a full flush (e.g. before a planned shutdown).
+
+  Returns `{:ok, count}` with the number of sessions written, or
+  `{:error, :persistence_disabled}` when the feature is not configured.
+  """
+  @spec persist_all() :: {:ok, non_neg_integer()} | {:error, :persistence_disabled}
+  def persist_all do
+    GenServer.call(__MODULE__, :persist_all)
+  end
+
+  @doc """
+  Returns the directory used for session persistence, or `nil` when disabled.
+  """
+  @spec persistence_dir() :: String.t() | nil
+  def persistence_dir do
+    Application.get_env(:ragex, :session_persistence_dir)
+  end
+
   # Server Callbacks
 
   @impl true
   def init(_opts) do
-    # Create ETS table if it doesn't exist
     table =
       case :ets.whereis(@table_name) do
         :undefined ->
@@ -227,7 +249,10 @@ defmodule Ragex.Agent.Memory do
           tid
       end
 
-    # Schedule cleanup
+    # Restore sessions persisted in a previous run
+    restored = restore_sessions_from_disk()
+    if restored > 0, do: Logger.info("Restored #{restored} agent sessions from disk")
+
     schedule_cleanup()
 
     Logger.info("Agent Memory started")
@@ -248,6 +273,7 @@ defmodule Ragex.Agent.Memory do
     }
 
     :ets.insert(@table_name, {session.id, session})
+    persist_session(session)
     Logger.debug("Created new agent session: #{session.id}")
     {:reply, {:ok, session}, state}
   end
@@ -285,6 +311,7 @@ defmodule Ragex.Agent.Memory do
         }
 
         :ets.insert(@table_name, {session_id, updated_session})
+        persist_session(updated_session)
         :ok
       end
 
@@ -304,6 +331,7 @@ defmodule Ragex.Agent.Memory do
         }
 
         :ets.insert(@table_name, {session_id, updated_session})
+        persist_session(updated_session)
         :ok
       end
 
@@ -360,6 +388,7 @@ defmodule Ragex.Agent.Memory do
         }
 
         :ets.insert(@table_name, {session_id, updated_session})
+        persist_session(updated_session)
         :ok
       end
 
@@ -369,6 +398,7 @@ defmodule Ragex.Agent.Memory do
   @impl true
   def handle_call({:clear_session, session_id}, _from, state) do
     :ets.delete(@table_name, session_id)
+    delete_session_file(session_id)
     Logger.debug("Cleared agent session: #{session_id}")
     {:reply, :ok, state}
   end
@@ -407,6 +437,20 @@ defmodule Ragex.Agent.Memory do
     }
 
     {:reply, stats, state}
+  end
+
+  @impl true
+  def handle_call(:persist_all, _from, state) do
+    reply =
+      if persist?() do
+        sessions = :ets.tab2list(@table_name) |> Enum.reject(fn {_, s} -> session_expired?(s) end)
+        Enum.each(sessions, fn {_, session} -> persist_session(session) end)
+        {:ok, length(sessions)}
+      else
+        {:error, :persistence_disabled}
+      end
+
+    {:reply, reply, state}
   end
 
   @impl true
@@ -557,6 +601,89 @@ defmodule Ragex.Agent.Memory do
   defp maybe_add(map, _key, nil), do: map
   defp maybe_add(map, key, value), do: Map.put(map, key, value)
 
+  # ---------------------------------------------------------------------------
+  # Persistence helpers
+  # ---------------------------------------------------------------------------
+
+  defp persist?, do: not is_nil(persistence_dir())
+
+  defp session_file_path(session_id) do
+    Path.join(persistence_dir(), session_id <> @session_file_ext)
+  end
+
+  defp persist_session(session) do
+    if persist?() do
+      dir = persistence_dir()
+      File.mkdir_p!(dir)
+      path = session_file_path(session.id)
+      binary = :erlang.term_to_binary(session, [:compressed])
+
+      case File.write(path, binary) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning("Failed to persist session #{session.id}: #{inspect(reason)}")
+          :ok
+      end
+    end
+  end
+
+  defp delete_session_file(session_id) do
+    if persist?() do
+      path = session_file_path(session_id)
+      File.rm(path)
+    end
+  end
+
+  defp restore_sessions_from_disk do
+    if persist?() do
+      dir = persistence_dir()
+
+      case File.ls(dir) do
+        {:ok, files} ->
+          files
+          |> Enum.filter(&String.ends_with?(&1, @session_file_ext))
+          |> Enum.reduce(0, fn filename, count ->
+            path = Path.join(dir, filename)
+
+            case restore_session_file(path) do
+              :ok -> count + 1
+              :skip -> count
+            end
+          end)
+
+        {:error, _} ->
+          0
+      end
+    else
+      0
+    end
+  end
+
+  defp restore_session_file(path) do
+    with {:ok, binary} <- File.read(path),
+         %Session{} = session <- safe_decode_session(binary) do
+      if session_expired?(session) do
+        File.rm(path)
+        :skip
+      else
+        :ets.insert(@table_name, {session.id, session})
+        :ok
+      end
+    else
+      _ ->
+        Logger.warning("Skipping corrupted session file: #{path}")
+        :skip
+    end
+  end
+
+  defp safe_decode_session(binary) do
+    :erlang.binary_to_term(binary, [:safe])
+  rescue
+    _ -> nil
+  end
+
   defp session_expired?(%Session{updated_at: updated_at}) do
     diff_ms = DateTime.diff(DateTime.utc_now(), updated_at, :millisecond)
     diff_ms > @session_ttl_ms
@@ -567,6 +694,7 @@ defmodule Ragex.Agent.Memory do
     |> Enum.filter(fn {_, session} -> session_expired?(session) end)
     |> Enum.each(fn {id, _} ->
       :ets.delete(@table_name, id)
+      delete_session_file(id)
       Logger.debug("Cleaned up expired session: #{id}")
     end)
   end

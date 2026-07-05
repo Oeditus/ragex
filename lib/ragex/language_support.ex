@@ -15,7 +15,8 @@ defmodule Ragex.LanguageSupport do
   - `:haskell` -- `.hs`
   - `:javascript` -- `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`
 
-  Note: JavaScript has no Metastatic adapter yet; `get_adapter/1` returns an error for it.
+  Note: JavaScript/TypeScript use `Metastatic.Adapters.JavaScript`, a pure-Elixir
+  adapter that produces MetaAST directly from source text without an intermediate parse step.
 
   ## Usage
 
@@ -55,10 +56,11 @@ defmodule Ragex.LanguageSupport do
     erlang: Metastatic.Adapters.Erlang,
     python: Metastatic.Adapters.Python,
     ruby: Metastatic.Adapters.Ruby,
-    haskell: Metastatic.Adapters.Haskell
+    haskell: Metastatic.Adapters.Haskell,
+    javascript: Metastatic.Adapters.JavaScript
   }
 
-  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs)
+  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .js .jsx .ts .tsx .mjs .cjs)
 
   @all_extensions Map.keys(@extension_map)
 
@@ -90,7 +92,7 @@ defmodule Ragex.LanguageSupport do
       {:ok, Metastatic.Adapters.Elixir}
 
       iex> Ragex.LanguageSupport.get_adapter(:javascript)
-      {:error, {:unsupported_language, :javascript}}
+      {:ok, Metastatic.Adapters.JavaScript}
   """
   @spec get_adapter(language()) :: {:ok, module()} | {:error, {:unsupported_language, language()}}
   def get_adapter(language) do

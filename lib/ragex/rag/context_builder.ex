@@ -7,15 +7,33 @@ defmodule Ragex.RAG.ContextBuilder do
   - `:json` - Structured JSON with code metadata
   - `:ast` - JSON with MetaAST data, purity, and complexity
 
+  ## Context assembly strategy
+
+  The default assembly uses *greedy packing*: results are scored against the
+  query, sorted by relevance, and added one-by-one until `max_context_length`
+  would be exceeded.  Before adding each result, overlapping code ranges in
+  already-selected results are checked; if the candidate's file+line range
+  substantially overlaps an already-included result, it is skipped to avoid
+  sending the same code twice (common when chunk embeddings and entity
+  embeddings both match).
+
+  To use the old truncation behaviour, pass `smart_assembly: false`.
+
   ## Options
 
   - `:format` - Output format: `:text`, `:json`, or `:ast` (default: `:text`)
   - `:include_code` - Include full code snippets (default: true)
   - `:max_context_length` - Max context size in characters (default: 8000)
+  - `:smart_assembly` - Enable greedy packing + deduplication (default: true)
+  - `:query` - Original query string used to score candidates (optional).
+    When provided, candidates are scored against the query before packing.
+  - `:overlap_threshold` - Line-overlap ratio above which a candidate is
+    considered a duplicate of an already-included result (default: 0.6)
   """
 
   # characters
   @max_context_length 8000
+  @overlap_threshold 0.6
 
   @doc """
   Build context from retrieval results in the specified format.
@@ -31,6 +49,9 @@ defmodule Ragex.RAG.ContextBuilder do
   """
   @spec build_context([map()], keyword()) :: {:ok, String.t()}
   def build_context(results, opts \\ []) do
+    smart = Keyword.get(opts, :smart_assembly, true)
+    results = if smart, do: smart_select(results, opts), else: results
+
     case Keyword.get(opts, :format, :text) do
       :json -> build_json_context(results, opts)
       :ast -> build_ast_context(results, opts)
@@ -86,7 +107,7 @@ defmodule Ragex.RAG.ContextBuilder do
   # Text result formatter (original)
   defp format_text_result(result, include_code) do
     """
-    ## #{result[:node_id] || "Unknown"}
+    ## #{format_node_id(result[:node_id]) || "Unknown"}
 
     **File**: #{result[:file] || "unknown"}
     **Line**: #{result[:line] || "N/A"}
@@ -141,7 +162,100 @@ defmodule Ragex.RAG.ContextBuilder do
     |> maybe_put(:ranking_intent, safe_to_string(result[:ranking_intent]))
   end
 
+  # ---------------------------------------------------------------------------
+  # Smart assembly: greedy packing + overlap deduplication
+  # ---------------------------------------------------------------------------
+
+  # Select results greedily by relevance score, skipping duplicates and
+  # stopping when the next result would exceed max_context_length.
+  defp smart_select(results, opts) do
+    max_length = Keyword.get(opts, :max_context_length, @max_context_length)
+    overlap_threshold = Keyword.get(opts, :overlap_threshold, @overlap_threshold)
+
+    # Sort by best available score (rerank_score > fusion_score > score)
+    sorted = Enum.sort_by(results, &best_score/1, :desc)
+
+    {selected, _budget, _seen} =
+      Enum.reduce(sorted, {[], max_length, []}, fn result, {acc, budget, seen_ranges} ->
+        snippet = render_snippet(result)
+        cost = byte_size(snippet)
+
+        cond do
+          cost > budget ->
+            {acc, budget, seen_ranges}
+
+          overlaps_any?(result, seen_ranges, overlap_threshold) ->
+            {acc, budget, seen_ranges}
+
+          true ->
+            range = code_range(result)
+            {[result | acc], budget - cost, [range | seen_ranges]}
+        end
+      end)
+
+    Enum.reverse(selected)
+  end
+
+  defp best_score(r) do
+    r[:rerank_score] || r[:fusion_score] || r[:score] || 0.0
+  end
+
+  # Render a quick plain-text preview of a result to estimate its byte cost.
+  defp render_snippet(result) do
+    code = result[:code] || result[:text] || result[:doc] || ""
+    id = result[:node_id] |> inspect()
+    "## #{id}\n#{String.slice(code, 0, 4000)}\n"
+  end
+
+  # A code range is {file, line_start, line_end} or nil when location unknown.
+  defp code_range(result) do
+    file = result[:file]
+    line = result[:line]
+
+    cond do
+      is_nil(file) or is_nil(line) -> nil
+      is_integer(line) -> {file, line, line + estimate_lines(result)}
+      true -> nil
+    end
+  end
+
+  defp estimate_lines(result) do
+    code = result[:code] || result[:text] || ""
+    max(String.split(code, "\n") |> length(), 1)
+  end
+
+  defp overlaps_any?(_result, [], _threshold), do: false
+
+  defp overlaps_any?(result, seen_ranges, threshold) do
+    range = code_range(result)
+
+    if is_nil(range) do
+      false
+    else
+      Enum.any?(seen_ranges, fn seen ->
+        line_overlap_ratio(range, seen) >= threshold
+      end)
+    end
+  end
+
+  # Compute the ratio of overlap between two {file, start, end} ranges.
+  # Returns 0.0 if the files differ or either range is nil.
+  defp line_overlap_ratio(_, nil), do: 0.0
+
+  defp line_overlap_ratio({file_a, s_a, e_a}, {file_b, s_b, e_b}) when file_a == file_b do
+    overlap_start = max(s_a, s_b)
+    overlap_end = min(e_a, e_b)
+    overlap_lines = max(0, overlap_end - overlap_start + 1)
+
+    min_span = max(min(e_a - s_a + 1, e_b - s_b + 1), 1)
+    overlap_lines / min_span
+  end
+
+  defp line_overlap_ratio(_, _), do: 0.0
+
+  # ---------------------------------------------------------------------------
   # Helpers
+  # ---------------------------------------------------------------------------
 
   defp truncate_if_needed(context, max_length) when byte_size(context) > max_length do
     truncated = String.slice(context, 0, max_length)

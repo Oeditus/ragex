@@ -24,7 +24,7 @@ defmodule Ragex.MixProject do
         plt_add_deps: :app_tree,
         plt_add_apps: [:mix],
         plt_core_path: ".dialyzer",
-        list_unused_filters: true,
+        # list_unused_filters: true,
         ignore_warnings: ".dialyzer/ignore.exs"
       ],
       name: "Ragex",

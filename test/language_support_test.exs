@@ -51,9 +51,8 @@ defmodule Ragex.LanguageSupportTest do
       assert {:ok, Metastatic.Adapters.Haskell} = LanguageSupport.get_adapter(:haskell)
     end
 
-    test "returns error for JavaScript (no adapter yet)" do
-      assert {:error, {:unsupported_language, :javascript}} =
-               LanguageSupport.get_adapter(:javascript)
+    test "returns adapter for JavaScript" do
+      assert {:ok, Metastatic.Adapters.JavaScript} = LanguageSupport.get_adapter(:javascript)
     end
 
     test "returns error for :unknown" do
@@ -68,8 +67,8 @@ defmodule Ragex.LanguageSupportTest do
     end
 
     test "returns error for unsupported language" do
-      assert {:error, {:unsupported_language, :javascript}} =
-               LanguageSupport.parse_document("const x = 1;", :javascript)
+      assert {:error, {:unsupported_language, :lua}} =
+               LanguageSupport.parse_document("x = 1", :lua)
     end
   end
 
@@ -116,10 +115,10 @@ defmodule Ragex.LanguageSupportTest do
       assert basenames == ["a.ex", "b.py"]
     end
 
-    test "metastatic_only excludes JavaScript", %{dir: dir} do
+    test "metastatic_only includes JavaScript (now a Metastatic language)", %{dir: dir} do
       {:ok, files} = LanguageSupport.find_source_files(dir, metastatic_only: true)
       basenames = Enum.map(files, &Path.basename/1) |> Enum.sort()
-      assert basenames == ["a.ex", "b.py", "d.erl"]
+      assert basenames == ["a.ex", "b.py", "d.erl", "e.js"]
     end
 
     test "handles single file path", %{dir: dir} do
@@ -142,12 +141,12 @@ defmodule Ragex.LanguageSupportTest do
   end
 
   describe "metastatic_extensions/0" do
-    test "excludes JavaScript extensions" do
+    test "includes JavaScript extensions (JS now a Metastatic language)" do
       exts = LanguageSupport.metastatic_extensions()
       assert ".ex" in exts
       assert ".py" in exts
-      refute ".js" in exts
-      refute ".ts" in exts
+      assert ".js" in exts
+      assert ".ts" in exts
     end
   end
 
@@ -157,9 +156,12 @@ defmodule Ragex.LanguageSupportTest do
       assert LanguageSupport.has_adapter?(:python)
     end
 
-    test "false for JavaScript and unknown" do
-      refute LanguageSupport.has_adapter?(:javascript)
+    test "false for unknown languages" do
       refute LanguageSupport.has_adapter?(:unknown)
+    end
+
+    test "true for JavaScript (now supported via Metastatic)" do
+      assert LanguageSupport.has_adapter?(:javascript)
     end
   end
 end

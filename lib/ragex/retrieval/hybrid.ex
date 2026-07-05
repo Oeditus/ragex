@@ -5,12 +5,24 @@ defmodule Ragex.Retrieval.Hybrid do
   Provides multiple strategies for combining structural and semantic search:
   - **Semantic-first**: Use embeddings to find candidates, refine with graph
   - **Graph-first**: Use symbolic queries to filter, rank by similarity
-  - **Fusion**: Combine results from both approaches using RRF
+  - **Fusion**: Combine results from both approaches using RRF, including a
+    BM25 full-text search leg via dllb/Tantivy when dllb is enabled
+
+  ## FTS leg
+
+  When `Ragex.Dllb.Adapter.enabled?/0` is true, `fusion_search/2` adds a
+  third result set from a Tantivy BM25 `SEARCH ast_node source_text` query.
+  BM25 scores are min-max normalized to [0,1] before RRF fusion so they are
+  comparable to the cosine similarity scores from the semantic leg. When dllb
+  is disabled the FTS leg silently returns an empty list.
   """
 
+  require Logger
+
+  alias Ragex.Dllb.Adapter, as: DllbAdapter
   alias Ragex.Embeddings.Bumblebee
   alias Ragex.Graph.Store
-  alias Ragex.Retrieval.MetaASTRanker
+  alias Ragex.Retrieval.{MetaASTRanker, QueryExpansion}
   alias Ragex.VectorStore
 
   @doc """
@@ -21,6 +33,8 @@ defmodule Ragex.Retrieval.Hybrid do
   - `:semantic_first` - Semantic search followed by graph filtering
   - `:graph_first` - Graph query followed by semantic ranking
   - `:fusion` - Combine both with Reciprocal Rank Fusion (default)
+  - `:graph_algo` - dllb PageRank-based retrieval: rank nodes by structural
+    importance, filter to those matching the semantic query.
 
   ## Options
 
@@ -34,6 +48,13 @@ defmodule Ragex.Retrieval.Hybrid do
     - `:prefer_pure` - Boost pure functions more (default: true)
     - `:penalize_complex` - Penalize complex code more (default: true)
     - `:cross_language` - Enable cross-language equivalence search (default: false)
+  - `:hyde` - Enable HyDE query expansion (default: false). When true, a
+    hypothetical code snippet is generated from the query via AI, embedded, and
+    its embedding is fused with the standard semantic leg. Falls back silently
+    if the AI provider is unavailable.
+  - `:hyde_opts` - Options forwarded to `QueryExpansion.hyde_embedding/2`:
+    - `:language` - target language hint (default: "elixir")
+    - `:provider` - AI provider override
 
   ## Examples
 
@@ -61,6 +82,7 @@ defmodule Ragex.Retrieval.Hybrid do
     case strategy do
       :semantic_first -> semantic_first_search(query, opts)
       :graph_first -> graph_first_search(query, opts)
+      :graph_algo -> graph_algo_search(query, opts)
       :fusion -> fusion_search(query, opts)
       _ -> {:error, "Unknown strategy: #{strategy}"}
     end
@@ -119,18 +141,33 @@ defmodule Ragex.Retrieval.Hybrid do
     threshold = Keyword.get(opts, :threshold, 0.7)
     node_type = Keyword.get(opts, :node_type)
     graph_filter = Keyword.get(opts, :graph_filter, %{})
+    use_hyde = Keyword.get(opts, :hyde, false)
+    hyde_opts = Keyword.get(opts, :hyde_opts, [])
 
     # Generate query embedding
     case Bumblebee.embed(query) do
       {:ok, query_embedding} ->
-        # Semantic search
-        # Get more candidates
         search_opts = [limit: limit * 2, threshold: threshold]
 
         search_opts =
           if node_type, do: Keyword.put(search_opts, :node_type, node_type), else: search_opts
 
-        semantic_results = VectorStore.search(query_embedding, search_opts)
+        raw_results = VectorStore.search(query_embedding, search_opts)
+
+        # Optionally add a HyDE leg: embed a hypothetical answer and search by it,
+        # then RRF-fuse with the raw semantic results.
+        semantic_results =
+          if use_hyde do
+            hyde_results = run_hyde_search(query, search_opts, hyde_opts)
+
+            if hyde_results != [] do
+              reciprocal_rank_fusion([raw_results, hyde_results], limit: limit * 2)
+            else
+              raw_results
+            end
+          else
+            raw_results
+          end
 
         # Apply graph filters
         filtered_results =
@@ -218,17 +255,25 @@ defmodule Ragex.Retrieval.Hybrid do
   defp fusion_search(query, opts) do
     limit = Keyword.get(opts, :limit, 10)
 
-    # Run both strategies
+    # Run semantic + graph legs, then optionally add FTS and graph-algo legs.
     case {semantic_first_search(query, opts), graph_first_search(query, opts)} do
       {{:ok, semantic_results}, {:ok, graph_results}} ->
-        # Apply RRF fusion
-        pre_fusion_results =
-          reciprocal_rank_fusion(
-            [semantic_results, graph_results],
-            limit: limit * 2
-          )
+        fts_results = fts_search(query, limit * 2)
 
-        # Apply MetaAST ranking if enabled
+        algo_results =
+          if Keyword.get(opts, :graph_algo_boost, false) do
+            pagerank_candidates(limit * 2)
+          else
+            []
+          end
+
+        result_sets =
+          [semantic_results, graph_results, fts_results, algo_results]
+          |> Enum.reject(&Enum.empty?/1)
+
+        pre_fusion_results =
+          reciprocal_rank_fusion(result_sets, limit: limit * 2)
+
         fused_results =
           if Keyword.get(opts, :metaast_ranking, true) do
             metaast_opts =
@@ -289,4 +334,194 @@ defmodule Ragex.Retrieval.Hybrid do
 
   defp get_item_key(%{node_type: type, node_id: id}), do: {type, id}
   defp get_item_key(item), do: inspect(item)
+
+  # ---------------------------------------------------------------------------
+  # Graph-algorithm retrieval leg
+  # ---------------------------------------------------------------------------
+
+  # A standalone strategy that retrieves nodes ranked by dllb PageRank, then
+  # filters to those whose embedding is above the semantic similarity threshold
+  # to the query.  Falls back to graph_first if dllb is disabled.
+  defp graph_algo_search(query, opts) do
+    if DllbAdapter.enabled?() do
+      limit = Keyword.get(opts, :limit, 10)
+      threshold = Keyword.get(opts, :threshold, 0.5)
+
+      candidates = pagerank_candidates(limit * 3)
+
+      # Filter by semantic similarity
+      case Bumblebee.embed(query) do
+        {:ok, query_embedding} ->
+          results =
+            candidates
+            |> Enum.map(fn candidate ->
+              case Store.get_embedding(candidate.node_type, candidate.node_id) do
+                {embedding, text} ->
+                  score = VectorStore.cosine_similarity(query_embedding, embedding)
+                  Map.merge(candidate, %{score: score, text: text})
+
+                nil ->
+                  nil
+              end
+            end)
+            |> Enum.reject(&is_nil/1)
+            |> Enum.filter(fn r -> r.score >= threshold end)
+            |> Enum.sort_by(
+              fn r ->
+                # Blend pagerank importance with semantic score
+                pr = r[:pagerank] || 0.0
+                r.score * 0.7 + pr * 0.3
+              end,
+              :desc
+            )
+            |> Enum.take(limit)
+
+          {:ok, results}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      graph_first_search(query, opts)
+    end
+  end
+
+  # Fetch top-N nodes by PageRank from dllb. Returns a flat list of
+  # %{node_type, node_id, pagerank} maps. Returns [] when dllb is disabled.
+  defp pagerank_candidates(n) do
+    pr_query = Dllb.Query.graph_pagerank("ast_node_edges", limit: n)
+
+    case DllbAdapter.query(pr_query) do
+      {:ok, %Dllb.Result.Rows{data: rows}} when is_list(rows) ->
+        rows
+        |> Enum.map(fn row ->
+          id = Map.get(row, "id") || Map.get(row, :id) || ""
+          pr = Map.get(row, "score") || Map.get(row, :score) || 0.0
+
+          # dllb ids are in the form "ast_node:module_name_10" — extract kind
+          {node_type, node_id} = parse_dllb_id(id)
+          %{node_type: node_type, node_id: node_id, pagerank: pr}
+        end)
+        |> Enum.reject(fn r -> is_nil(r.node_id) end)
+
+      _ ->
+        []
+    end
+  end
+
+  # Parse a dllb record ID like "ast_node:module_my_module_1" back to a
+  # ragex {node_type, node_id} tuple.  Best-effort: falls back to :unknown.
+  defp parse_dllb_id(id) when is_binary(id) do
+    case String.split(id, ":", parts: 2) do
+      [_table, name] ->
+        # Heuristic: module names start with uppercase, function names contain "_"
+        if String.match?(name, ~r/^[A-Z]/) do
+          {:module, String.to_atom(name)}
+        else
+          {:function, name}
+        end
+
+      _ ->
+        {:unknown, id}
+    end
+  end
+
+  defp parse_dllb_id(_), do: {:unknown, nil}
+
+  # ---------------------------------------------------------------------------
+  # HyDE retrieval helper
+  # ---------------------------------------------------------------------------
+
+  # Generate a hypothetical code snippet embedding and run a semantic search
+  # against it. Returns an empty list on any failure so fusion is unaffected.
+  defp run_hyde_search(query, search_opts, hyde_opts) do
+    case QueryExpansion.hyde_embedding(query, hyde_opts) do
+      {:ok, hypo_embedding} ->
+        VectorStore.search(hypo_embedding, search_opts)
+
+      {:error, reason} ->
+        Logger.debug("HyDE embedding failed (ignored): #{inspect(reason)}")
+        []
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # FTS (Tantivy / dllb) retrieval leg
+  # ---------------------------------------------------------------------------
+
+  # Run a BM25 full-text search via dllb and convert results to the same map
+  # shape used by the semantic/graph legs so they can be fused with RRF.
+  # Returns an empty list when dllb is disabled or the query fails.
+  defp fts_search(query, limit) do
+    fts_query = Dllb.Query.search("ast_node", "source_text", query, limit: limit)
+
+    case DllbAdapter.query(fts_query) do
+      {:ok, %Dllb.Result.Rows{data: rows}} when is_list(rows) and rows != [] ->
+        rows
+        |> normalize_bm25_scores()
+        |> Enum.map(&fts_row_to_result/1)
+
+      {:ok, _} ->
+        []
+
+      {:error, :dllb_disabled} ->
+        []
+
+      {:error, reason} ->
+        Logger.debug("FTS search failed (ignored in fusion): #{inspect(reason)}")
+        []
+    end
+  end
+
+  # Min-max normalize BM25 scores across the result set to [0, 1].
+  defp normalize_bm25_scores(rows) do
+    scores = Enum.map(rows, &(Map.get(&1, "score") || Map.get(&1, :score) || 0.0))
+    min_s = Enum.min(scores, fn -> 0.0 end)
+    max_s = Enum.max(scores, fn -> 1.0 end)
+    range = max(max_s - min_s, 1.0e-9)
+
+    Enum.zip(rows, scores)
+    |> Enum.map(fn {row, raw} ->
+      Map.put(row, :normalized_bm25, (raw - min_s) / range)
+    end)
+  end
+
+  defp fts_row_to_result(row) do
+    kind = Map.get(row, "kind") || Map.get(row, :kind)
+    name = Map.get(row, "name") || Map.get(row, :name)
+    file = Map.get(row, "file_path") || Map.get(row, :file_path)
+    line = Map.get(row, "line_start") || Map.get(row, :line_start)
+    source = Map.get(row, "source_text") || Map.get(row, :source_text) || ""
+
+    node_type =
+      case kind do
+        "module" -> :module
+        "function_def" -> :function
+        _ -> :unknown
+      end
+
+    node_id =
+      case node_type do
+        :module ->
+          name && String.to_atom(name)
+
+        :function ->
+          mod_str = Map.get(row, "module") || Map.get(row, :module) || ""
+          arity = Map.get(row, "arity") || Map.get(row, :arity) || 0
+          {String.to_atom(mod_str), String.to_atom(name || "unknown"), arity}
+
+        _ ->
+          name
+      end
+
+    %{
+      node_type: node_type,
+      node_id: node_id,
+      score: Map.get(row, :normalized_bm25, 0.0),
+      text: String.slice(source, 0, 500),
+      file: file,
+      line: line,
+      source: :fts
+    }
+  end
 end

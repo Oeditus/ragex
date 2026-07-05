@@ -6,7 +6,6 @@ defmodule Ragex.Analyzers.Directory do
   This module provides batch analysis capabilities for entire projects.
   """
 
-  alias Ragex.Analyzers.JavaScript, as: JavaScriptAnalyzer
   alias Ragex.Analyzers.Metastatic, as: MetastaticAnalyzer
   alias Ragex.CLI.Progress
   alias Ragex.Embeddings.{FileTracker, Helper}
@@ -265,14 +264,29 @@ defmodule Ragex.Analyzers.Directory do
       {:ok, analysis} ->
         store_analysis(analysis)
 
-        # Generate embeddings for semantic search
-        case Helper.generate_and_store_embeddings(analysis) do
-          :ok -> :ok
-          # Don't fail the whole analysis if embeddings fail
-          {:error, _reason} -> :ok
+        # Build entity-body pairs so we can diff against stored hashes.
+        entity_pairs = build_entity_pairs(analysis)
+
+        # Only re-embed entities whose body text has changed since last run.
+        stale = FileTracker.stale_entities_for_file(file_path, entity_pairs)
+
+        embed_opts =
+          if MapSet.size(stale) == length(entity_pairs) do
+            # All entities are new/changed — skip the filter for a simpler path
+            []
+          else
+            [only: stale]
+          end
+
+        case Helper.generate_and_store_embeddings(analysis, embed_opts) do
+          :ok ->
+            # Persist the new hashes so unchanged functions are skipped next time
+            FileTracker.record_entity_hashes(file_path, entity_pairs)
+
+          {:error, _reason} ->
+            :ok
         end
 
-        # Track file after successful analysis
         FileTracker.track_file(file_path, analysis)
         {:ok, %{file: file_path, status: :success}}
 
@@ -281,18 +295,28 @@ defmodule Ragex.Analyzers.Directory do
     end
   end
 
-  defp analyze_file(file_path) do
-    language = Ragex.LanguageSupport.detect_language(file_path)
+  # Build {entity_id, body_text} pairs for all modules and functions so we can
+  # hash their bodies and detect per-function changes between analysis runs.
+  defp build_entity_pairs(%{modules: modules, functions: functions}) do
+    module_pairs =
+      Enum.map(modules, fn mod ->
+        {mod.name, mod[:source] || mod[:doc] || inspect(mod.name)}
+      end)
 
+    function_pairs =
+      Enum.map(functions, fn func ->
+        id = {func.module, func.name, func.arity}
+        body = func[:source] || func[:body] || func[:doc] || inspect(id)
+        {id, body}
+      end)
+
+    module_pairs ++ function_pairs
+  end
+
+  defp analyze_file(file_path) do
     case File.read(file_path) do
       {:ok, content} ->
-        # JavaScript has no Metastatic adapter -- use native analyzer
-        if language == :javascript do
-          JavaScriptAnalyzer.analyze(content, file_path)
-        else
-          # Primary path: MetaAST analyzer for all Metastatic-supported languages
-          MetastaticAnalyzer.analyze(content, file_path)
-        end
+        MetastaticAnalyzer.analyze(content, file_path)
 
       {:error, reason} ->
         {:error, {:file_read_error, reason}}

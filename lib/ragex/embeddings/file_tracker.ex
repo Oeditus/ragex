@@ -32,6 +32,8 @@ defmodule Ragex.Embeddings.FileTracker do
   require Logger
 
   @tracker_table :ragex_file_tracker
+  # Per-entity body hashes. Key: {file_path, entity_id}, value: sha256 binary.
+  @fn_hash_table :ragex_fn_hash_tracker
 
   @type file_metadata :: %{
           path: String.t(),
@@ -52,7 +54,6 @@ defmodule Ragex.Embeddings.FileTracker do
   Called automatically by the application supervisor.
   """
   def init do
-    # Only create if it doesn't exist
     case :ets.whereis(@tracker_table) do
       :undefined ->
         :ets.new(@tracker_table, [:named_table, :set, :public, read_concurrency: true])
@@ -60,6 +61,14 @@ defmodule Ragex.Embeddings.FileTracker do
 
       _table ->
         Logger.debug("File tracker already initialized")
+    end
+
+    case :ets.whereis(@fn_hash_table) do
+      :undefined ->
+        :ets.new(@fn_hash_table, [:named_table, :set, :public, read_concurrency: true])
+
+      _table ->
+        :ok
     end
 
     :ok
@@ -161,12 +170,57 @@ defmodule Ragex.Embeddings.FileTracker do
   end
 
   @doc """
+  Records per-entity body hashes for a file.
+
+  `entities` is a list of `{entity_id, body_text}` pairs where `entity_id` is
+  the same tuple stored in file metadata (e.g. `{module, name, arity}` for a
+  function). A SHA256 of `body_text` is stored so future calls to
+  `stale_entities_for_file/2` can identify which functions actually changed.
+  """
+  @spec record_entity_hashes(String.t(), [{term(), String.t()}]) :: :ok
+  def record_entity_hashes(file_path, entities) do
+    Enum.each(entities, fn {entity_id, body} ->
+      hash = :crypto.hash(:sha256, body)
+      :ets.insert(@fn_hash_table, {{file_path, entity_id}, hash})
+    end)
+
+    :ok
+  end
+
+  @doc """
+  Returns the subset of `entities` whose body hash has changed (or is new).
+
+  `entities` is a list of `{entity_id, body_text}` pairs matching the format
+  used by `record_entity_hashes/2`. Returns a `MapSet` of entity IDs for those
+  whose hash differs from the stored value, enabling callers to skip unchanged
+  ones.
+
+  When no hash has been stored for a file yet (first analysis) every entity is
+  considered stale so all embeddings are generated.
+  """
+  @spec stale_entities_for_file(String.t(), [{term(), String.t()}]) :: MapSet.t()
+  def stale_entities_for_file(file_path, entities) do
+    entities
+    |> Enum.filter(fn {entity_id, body} ->
+      new_hash = :crypto.hash(:sha256, body)
+
+      case :ets.lookup(@fn_hash_table, {file_path, entity_id}) do
+        [{{^file_path, ^entity_id}, stored_hash}] -> new_hash != stored_hash
+        [] -> true
+      end
+    end)
+    |> Enum.map(&elem(&1, 0))
+    |> MapSet.new()
+  end
+
+  @doc """
   Clears all tracked files.
 
   Used when performing a full refresh or clearing the cache.
   """
   def clear_all do
     :ets.delete_all_objects(@tracker_table)
+    :ets.delete_all_objects(@fn_hash_table)
     Logger.info("Cleared all file tracking data")
     :ok
   end

@@ -8,6 +8,15 @@ defmodule Ragex.Retrieval.QueryExpansion do
   - Expanding with related constructs
   - Building semantic context
 
+  ## HyDE (Hypothetical Document Embedding)
+
+  `hyde_embedding/2` generates a short hypothetical code snippet that would
+  answer the query (using the configured AI provider), embeds it, and returns
+  the embedding. The caller can then pass this embedding directly to
+  `VectorStore.search/2` instead of embedding the raw query — a technique that
+  often improves recall when the query is expressed in natural language but the
+  indexed documents are code.
+
   ## Examples
 
       # Basic expansion
@@ -17,8 +26,14 @@ defmodule Ragex.Retrieval.QueryExpansion do
       # Context-aware expansion
       QueryExpansion.expand("debug error", intent: :debug)
       # => "debug error exception failure bug issue problem"
+
+      # HyDE: generate a hypothetical answer, embed it, then search
+      {:ok, hypo_embedding} = QueryExpansion.hyde_embedding("function that retries on timeout")
+      results = VectorStore.search(hypo_embedding, limit: 10)
   """
 
+  alias Ragex.AI.Config
+  alias Ragex.Embeddings.Bumblebee
   alias Ragex.Retrieval.MetaASTRanker
 
   @doc """
@@ -350,4 +365,78 @@ defmodule Ragex.Retrieval.QueryExpansion do
   end
 
   defp get_construct_variations(_, _query), do: []
+
+  # ---------------------------------------------------------------------------
+  # HyDE — Hypothetical Document Embedding
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Generate a hypothetical code snippet that would answer `query`, then embed it.
+
+  Returns `{:ok, embedding}` where `embedding` is a list of floats that can be
+  passed directly to `VectorStore.search/2`. Returns `{:error, reason}` when the
+  AI provider or embedding model is unavailable.
+
+  The approach (HyDE, Gao et al. 2022) improves recall for natural-language
+  queries against code corpora by bridging the vocabulary gap between query and
+  document language.
+
+  ## Options
+
+  - `:provider`   - override AI provider (default: configured default)
+  - `:language`   - hint the language for the hypothetical snippet (default: "elixir")
+  - `:max_tokens` - tokens for the hypothetical snippet (default: 300)
+  - `:timeout`    - milliseconds for the LLM call (default: 10_000)
+  """
+  @spec hyde_embedding(String.t(), keyword()) :: {:ok, [float()]} | {:error, term()}
+  def hyde_embedding(query, opts \\ []) do
+    language = Keyword.get(opts, :language, "elixir")
+    max_tokens = Keyword.get(opts, :max_tokens, 300)
+    timeout = Keyword.get(opts, :timeout, 10_000)
+    provider = resolve_provider(opts)
+
+    prompt = hyde_prompt(query, language)
+
+    task =
+      Task.async(fn ->
+        provider.generate(prompt, %{}, temperature: 0.5, max_tokens: max_tokens)
+      end)
+
+    with {:task, {:ok, {:ok, %{content: content}}}} <-
+           {:task, Task.yield(task, timeout) || Task.shutdown(task)},
+         {:ok, embedding} <- Bumblebee.embed(content) do
+      {:ok, embedding}
+    else
+      {:task, nil} ->
+        {:error, :timeout}
+
+      {:task, {:ok, {:error, reason}}} ->
+        {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp hyde_prompt(query, language) do
+    """
+    Write a short #{language} code snippet (function or module excerpt) that would be
+    a direct answer to the following question or request. Output only the code, no explanation.
+
+    Question/request: #{query}
+    """
+  end
+
+  defp resolve_provider(opts) do
+    case Keyword.get(opts, :provider) do
+      nil -> Config.provider()
+      atom when is_atom(atom) -> provider_module(atom)
+    end
+  end
+
+  defp provider_module(:deepseek_r1), do: Ragex.AI.Provider.DeepSeekR1
+  defp provider_module(:openai), do: Ragex.AI.Provider.OpenAI
+  defp provider_module(:anthropic), do: Ragex.AI.Provider.Anthropic
+  defp provider_module(:ollama), do: Ragex.AI.Provider.Ollama
+  defp provider_module(_), do: Config.provider()
 end

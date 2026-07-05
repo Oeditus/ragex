@@ -92,7 +92,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "analyze_file",
             description:
-              "Analyzes a source file and extracts code structure into the knowledge graph",
+              "Parse a single source file into the knowledge graph. Use this before searching or querying a file that hasn't been indexed yet. Prefer analyze_directory for first-time project indexing. Returns extracted modules, functions, and relationships.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -116,7 +116,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "query_graph",
-            description: "Queries the knowledge graph for code entities and relationships",
+            description:
+              "Structured lookup of specific code entities by exact type and identifier. Use when you know the module name, function name, or want all callers/dependencies of a known entity. Better than semantic_search when the exact name is known. Returns typed graph nodes and edges.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -135,7 +136,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "list_nodes",
-            description: "Lists all nodes in the knowledge graph with optional filtering",
+            description:
+              "Enumerate all indexed entities of a given type (modules, functions, etc.). Use for discovery — e.g., listing all modules before deciding which to query. Faster than semantic_search for browsing; less precise for concept-based lookup.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -153,7 +155,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "analyze_directory",
-            description: "Recursively analyzes all supported files in a directory",
+            description:
+              "Index an entire project directory recursively. Use this once at the start of a session to populate the knowledge graph before searching or analyzing. Prefer this over repeated analyze_file calls. Returns a count of indexed files, modules, and functions.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -213,7 +216,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "semantic_search",
-            description: "Search codebase using natural language queries via semantic similarity",
+            description:
+              "Find code by meaning using embedding similarity — best for concept queries like 'function that retries HTTP requests' or 'error handling pattern'. Returns ranked results by cosine similarity only, no graph context. Use hybrid_search when you also want call-graph relationships, or rag_query when you need an AI-generated answer.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -254,7 +258,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "get_embeddings_stats",
-            description: "Get statistics about indexed embeddings",
+            description:
+              "Report the number of indexed embeddings, active model name, and vector dimensions. Use to verify that analyze_file/analyze_directory has successfully generated embeddings before running semantic or hybrid search.",
             inputSchema: %{
               type: "object",
               properties: %{}
@@ -298,7 +303,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "find_paths",
-            description: "Find all paths (call chains) between two functions or modules",
+            description:
+              "Find all call-chain paths between two specific functions or modules in the graph. Use to answer 'how does A reach B?' — useful for tracing data flow or understanding indirect dependencies. Returns all paths up to max_depth hops. Use find_callers if you only want direct callers, not full chains.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -321,7 +327,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "find_callers",
-            description: "Find all functions that call a specific function",
+            description:
+              "List every function that directly calls a given function (one hop only). Use before refactoring to understand blast radius, or to find all usage sites of an API. Returns caller identifiers with file and line. Use find_paths if you need transitive callers across multiple hops.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -345,7 +352,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "graph_stats",
             description:
-              "Get comprehensive graph statistics including PageRank and centrality metrics",
+              "Summary statistics of the knowledge graph: node/edge counts, top PageRank modules (most-depended-on), top betweenness nodes (architectural bottlenecks), and connected component count. Use to get a quick health check or identify structurally important modules without running a full analysis.",
             inputSchema: %{
               type: "object",
               properties: %{}
@@ -354,7 +361,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "hybrid_search",
             description:
-              "Advanced search combining symbolic graph queries with semantic similarity",
+              "Best-quality search combining embedding similarity + call-graph traversal via Reciprocal Rank Fusion. Use this as the default search tool when you need both conceptual relevance and structural context. Slower than semantic_search but returns richer results including callers, callees, and import chains. Use semantic_search for pure speed, metaast_search for cross-language structural matches.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -395,7 +402,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "metaast_search",
             description:
-              "Search for semantically equivalent code constructs across languages using MetaAST analysis",
+              "Find structurally equivalent code patterns across languages using the MetaAST universal representation. Use when you want 'the same construct but in Python' or 'all places where a map/transform pattern appears across Elixir and Ruby'. Different from hybrid_search (which searches by text similarity) and cross_language_alternatives (which generates new code). Returns matched nodes grouped by MetaAST equivalence.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -439,7 +446,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "cross_language_alternatives",
-            description: "Suggest cross-language alternatives for a code construct",
+            description:
+              "Generate new code showing how a given snippet would be written in other languages. Use when you want to translate or port code — not for searching existing code (use metaast_search for that). Returns generated code samples with explanations per target language.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -467,7 +475,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "expand_query",
-            description: "Expand a search query with semantic synonyms and cross-language terms",
+            description:
+              "Augment a search query with synonyms, intent-specific terms, and cross-language equivalents before passing it to semantic_search or hybrid_search. Use as a preprocessing step when initial search results are sparse. Returns the expanded query string — you must then pass it to a search tool.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -501,7 +510,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "find_metaast_pattern",
-            description: "Find all implementations of a MetaAST pattern across all languages",
+            description:
+              "Find every place in the codebase where a specific MetaAST node type appears (e.g., all 'lambda' nodes, all 'loop:for' nodes). Use for audit-style questions like 'where do we use async patterns?' or 'all recursive functions'. Broader than metaast_search (which compares to a specific source construct). Returns a flat list of matching nodes with file locations.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -940,7 +950,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "rag_query",
-            description: "Query codebase using RAG (Retrieval-Augmented Generation) with AI",
+            description:
+              "Ask a free-form question about the codebase and get an AI-generated answer grounded in retrieved code. Use this when you need synthesis — an explanation, a summary, or reasoning over multiple files. More expensive than semantic_search (requires an LLM call) but returns prose answers with citations. Use semantic_search or hybrid_search when you just need matching code snippets.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -969,7 +980,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "rag_explain",
-            description: "Explain code using RAG with AI assistance",
+            description:
+              "Generate an AI explanation of a specific module or function. Retrieves the target's source and related context automatically — you only need the identifier. Returns a structured prose explanation covering purpose, behavior, dependencies, and caveats. Prefer this over rag_query when you have a specific target in mind.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -989,7 +1001,8 @@ defmodule Ragex.MCP.Handlers.Tools do
           },
           %{
             name: "rag_suggest",
-            description: "Suggest code improvements using RAG with AI",
+            description:
+              "Generate targeted improvement suggestions for a specific file or function using AI. Focuses on a named improvement dimension (performance, readability, testing, security). Returns actionable recommendations with code examples. Use rag_query for open-ended questions; use this when you want a focused review of a known target.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1010,7 +1023,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "rag_query_stream",
             description:
-              "Query codebase using RAG with streaming AI response (internally uses streaming, returns complete result)",
+              "Same as rag_query but uses the streaming AI provider internally for lower time-to-first-token. Returns the same complete result as rag_query — there is no difference in the final output, only in internal transport. Use this for long queries where you want to reduce latency.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1045,7 +1058,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "rag_explain_stream",
             description:
-              "Explain code using RAG with streaming AI response (internally uses streaming, returns complete result)",
+              "Same as rag_explain but uses streaming AI internally for lower latency. Identical output to rag_explain. Prefer for interactive sessions where you want faster time-to-first-response.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1071,7 +1084,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "rag_suggest_stream",
             description:
-              "Suggest code improvements using RAG with streaming AI (internally uses streaming, returns complete result)",
+              "Same as rag_suggest but uses streaming AI internally. Identical output to rag_suggest. Prefer for interactive sessions where you want faster time-to-first-response.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1223,7 +1236,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "analyze_quality",
             description:
-              "Analyze code quality metrics for a file or directory using Metastatic - provides complexity, purity, and other code quality indicators",
+              "Compute per-function quality metrics (cyclomatic complexity, cognitive complexity, Halstead volume, nesting depth, purity) for a file or directory. Use to establish baseline metrics or identify which functions are candidates for refactoring. Results are stored for later querying via quality_report. Use find_complex_code to filter by threshold after running this.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1265,7 +1278,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "quality_report",
             description:
-              "Generate a comprehensive quality report for analyzed files - includes statistics, trends, and language-specific breakdowns",
+              "Summarize or trend quality metrics previously computed by analyze_quality. Use after analyze_quality to get aggregated statistics, language breakdowns, or trend comparisons. Returns no useful data if analyze_quality has not been run first.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1369,7 +1382,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "find_complex_code",
             description:
-              "Find files or functions exceeding complexity thresholds - useful for identifying refactoring candidates",
+              "Filter previously-computed quality results to find functions or files exceeding a complexity threshold. Requires analyze_quality to have been run first. Returns a ranked list of the worst offenders. Use to prioritize refactoring work or enforce complexity budgets.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1413,7 +1426,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "analyze_dependencies",
             description:
-              "Analyze module dependencies - shows coupling metrics, circular dependencies, and dependency relationships",
+              "Build a dependency graph for a file or directory and compute coupling metrics. Returns afferent/efferent coupling per module and flags circular dependencies. Use before refactoring to understand what a module depends on and what depends on it. Use coupling_report for a pre-formatted summary, or find_circular_dependencies to focus only on cycles.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1465,7 +1478,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "find_dead_code",
             description:
-              "Find potentially unused code (functions with no callers) - includes confidence scoring to distinguish callbacks from truly dead code",
+              "Find functions with no callers in the knowledge graph. Assigns a confidence score that distinguishes truly unreachable code from framework callbacks (GenServer, Phoenix handlers) that appear unused but are called by the runtime. Use before deleting code to avoid removing live callbacks. Requires the codebase to be indexed first.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1502,7 +1515,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "analyze_dead_code_patterns",
             description:
-              "Analyze files for intraprocedural dead code patterns (unreachable code, constant conditionals) using AST analysis - complements find_dead_code which finds unused functions",
+              "Detect unreachable code and constant conditionals inside function bodies using AST analysis. Complements find_dead_code (which finds whole unused functions) by looking at unreachable branches within live functions — e.g., code after early returns, or branches that always evaluate to the same result.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1529,7 +1542,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "coupling_report",
             description:
-              "Generate coupling metrics report - shows afferent/efferent coupling and instability for all modules",
+              "Pre-formatted summary of afferent coupling (Ca: how many modules depend on this), efferent coupling (Ce: how many modules this depends on), and Martin's instability metric (Ce / Ca+Ce) for every module. Use to identify unstable modules (high instability + high Ce) or god modules (high Ca). Requires analyze_dependencies to have been run first.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1562,7 +1575,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "find_duplicates",
             description:
-              "Find code duplicates using AST-based clone detection (Type I-IV) - works across different languages via Metastatic",
+              "Detect copy-paste code clones using AST structural comparison (Type I: exact, Type II: renamed identifiers, Type III: modified statements, Type IV: semantic equivalents via MetaAST). Works across languages because comparison uses the Metastatic universal AST. Returns clone groups with similarity scores. Use find_similar_code for embedding-based similarity when AST is unavailable.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1600,7 +1613,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "find_similar_code",
             description:
-              "Find semantically similar code using embedding-based similarity - complements AST-based duplicate detection",
+              "Find code that is semantically similar to a given snippet using embedding similarity, even if structurally different. Use when find_duplicates misses cases because the code was refactored or written differently in different languages. Returns results ranked by embedding cosine similarity.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1632,7 +1645,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "analyze_impact",
             description:
-              "Analyze the impact of changing a function or module - finds all affected code via graph traversal",
+              "Find all code affected by a proposed change to specific files via graph traversal. Returns direct and transitive dependents up to a configurable depth. Use before making a change to understand blast radius. Pair with risk_assessment to get a combined impact + risk score.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1664,7 +1677,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "estimate_refactoring_effort",
             description:
-              "Estimate effort required for a refactoring operation - provides time estimates and recommendations",
+              "Estimate the developer-hours and risk level of a refactoring operation based on graph metrics (coupling, impact radius, complexity). Use when scoping a refactoring task to give stakeholders a realistic effort range. Returns low/medium/high effort tier with contributing factors.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1698,7 +1711,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "risk_assessment",
             description:
-              "Calculate risk score for changing a function or module - combines importance, coupling, and complexity",
+              "Score the risk of modifying a specific function or module by combining its PageRank importance, coupling (Ca+Ce), and cyclomatic complexity. Returns a 0-100 risk score with component breakdown. Use before editing high-traffic functions to understand whether extra testing or review is warranted.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1720,7 +1733,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "suggest_refactorings",
             description:
-              "Analyze code and generate prioritized refactoring suggestions using pattern detection and AI - Phase 11G",
+              "Detect refactoring opportunities in a file or module using pattern analysis and AI, ranked by priority. Returns actionable suggestions with expected benefit. Use explain_suggestion to get a detailed breakdown of any individual suggestion returned here.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1775,7 +1788,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "explain_suggestion",
             description:
-              "Get detailed explanation for a specific refactoring suggestion - Phase 11G",
+              "Get a detailed before/after explanation for a specific refactoring suggestion ID returned by suggest_refactorings. Returns rationale, concrete code change, expected improvement, and estimated effort. Requires a suggestion ID from suggest_refactorings — do not call without one.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1800,7 +1813,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "validate_with_ai",
             description:
-              "Validate code with AI-enhanced error explanations and fix suggestions - Phase B",
+              "Validate code syntax and semantics, then pass any errors through AI to generate human-readable explanations and fix suggestions. Use after edit_file if you want more than a pass/fail — the AI explains what the error means and how to resolve it.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1834,7 +1847,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "scan_security",
             description:
-              "Scan file or directory for security vulnerabilities (injection, unsafe deserialization, hardcoded secrets, weak crypto) - Phase 1",
+              "Scan source files for common vulnerability patterns: injection, unsafe deserialization, hardcoded secrets, weak crypto. Returns findings with file:line, severity, and CWE reference. Use for a quick pass on new or changed files. Use security_audit for a project-wide report with recommendations, or analyze_security_issues for the full 13-analyzer CWE-mapped pass.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1874,7 +1887,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "security_audit",
             description:
-              "Generate comprehensive security audit report for project with CWE mapping and recommendations - Phase 1",
+              "Generate a structured security audit report for an entire project: all findings from scan_security, grouped by CWE, with remediation recommendations and overall risk summary. Use for a pre-release security review or compliance report. Slower than scan_security — avoid for quick targeted checks.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1901,7 +1914,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "check_secrets",
             description:
-              "Scan for hardcoded secrets (API keys, passwords, tokens) in source code - Phase 1",
+              "Scan source files for hardcoded secrets: API keys, passwords, connection strings, tokens. Focused narrowly on secret exposure — use scan_security for broader vulnerability scanning. Returns file:line locations with the matched pattern type. Run before committing code to catch accidental credential commits.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1921,7 +1934,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "detect_smells",
             description:
-              "Detect code smells (long functions, deep nesting, magic numbers, complex conditionals) - Phase 3",
+              "Detect structural code smells: long functions, deep nesting, magic numbers, complex conditionals, large modules. Use to find readability and maintainability issues that don't rise to the level of bugs. Complements analyze_quality (which gives metrics) and find_complex_code (which filters by threshold) — detect_smells identifies named anti-patterns rather than raw numbers.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -1988,7 +2001,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "semantic_operations",
             description:
-              "Extract semantic operations (OpKind) from code - identifies database, auth, HTTP, cache, queue, file, and external API operations with framework-specific patterns",
+              "Extract what a module or function *does* in terms of semantic operation categories: database (Ecto), HTTP calls, cache reads/writes, queue operations, file I/O, external API calls. Uses MetaAST OpKind annotations. Use to understand side-effect profile of code without reading it line-by-line. Returns a categorized list of operations with call sites.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -2028,7 +2041,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "analyze_security_issues",
             description:
-              "Run all 13 CWE-based security analyzers to find vulnerabilities - SQL injection, XSS, SSRF, path traversal, authentication/authorization issues, CSRF, data exposure, etc.",
+              "Run all 13 CWE-mapped analyzers (SQL injection, XSS, SSRF, path traversal, IDOR, missing auth/authz, CSRF, data exposure, file upload, input validation, TOCTOU) on a file or directory. More comprehensive than scan_security but slower. Use for thorough security review of a specific component; use scan_security for a fast initial pass.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -2075,7 +2088,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "semantic_analysis",
             description:
-              "Full semantic analysis combining OpKind extraction with security assessment - provides comprehensive view of code behavior and risks",
+              "Combined semantic operation extraction + security assessment in one call. Returns both the OpKind operation profile (what the code does) and security findings (what risks it carries). Use instead of calling semantic_operations and scan_security separately when you want both views at once.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -2112,7 +2125,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "agent_analyze",
             description:
-              "Analyze a project and generate AI-polished report with issues, recommendations, and suggestions. Creates a session for follow-up conversation.",
+              "Run a full multi-pass analysis of a project (quality, dead code, security, duplicates, coupling) and generate an AI-polished narrative report. Creates a persistent session ID you can use with agent_chat for follow-up questions. Expensive — runs all analyzers plus LLM generation. Use analyze_quality, scan_security, or find_dead_code for targeted single-pass analysis.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -2142,7 +2155,7 @@ defmodule Ragex.MCP.Handlers.Tools do
           %{
             name: "agent_chat",
             description:
-              "Continue conversation with the agent in an existing session. Use after agent_analyze to ask follow-up questions.",
+              "Send a follow-up message in an existing agent session created by agent_analyze. The agent retains full context from the prior analysis and conversation history. Use for questions like 'explain the worst issue you found' or 'show me the fix for that coupling problem'. Requires a session_id from a previous agent_analyze call.",
             inputSchema: %{
               type: "object",
               properties: %{
@@ -4452,9 +4465,33 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp rag_suggest_tool(_), do: {:error, "Missing 'target' parameter"}
 
-  # Streaming RAG tool implementations
+  @doc """
+  Executes a streaming tool call, pushing partial chunks via `progress_fn`.
+
+  `progress_fn` has signature `(partial_text :: String.t(), done :: boolean()) -> any()`.
+  It is called once per content chunk from the underlying AI stream, and once
+  with `done: true` after the final chunk. Non-streaming tools fall back to
+  `call_tool/2`.
+  """
+  def call_tool_streaming(tool_name, arguments, progress_fn) do
+    case tool_name do
+      "rag_query_stream" ->
+        rag_query_stream_tool_live(arguments, progress_fn)
+
+      "rag_explain_stream" ->
+        rag_explain_stream_tool_live(arguments, progress_fn)
+
+      "rag_suggest_stream" ->
+        rag_suggest_stream_tool_live(arguments, progress_fn)
+
+      other ->
+        call_tool(other, arguments)
+    end
+  end
+
+  # Live streaming RAG tool implementations
   # Note: These collect all chunks and return complete response
-  # Full MCP streaming protocol support will be added in Phase 5C
+  # Full MCP streaming protocol support — Phase 5C implemented
 
   defp rag_query_stream_tool(%{"query" => query} = params) do
     limit = Map.get(params, "limit", 10)
@@ -4554,6 +4591,153 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp rag_suggest_stream_tool(_), do: {:error, "Missing 'target' parameter"}
+
+  # ---------------------------------------------------------------------------
+  # Live streaming variants — emit each chunk via progress_fn as it arrives
+  # ---------------------------------------------------------------------------
+
+  defp rag_query_stream_tool_live(%{"query" => query} = params, progress_fn) do
+    limit = Map.get(params, "limit", 10)
+    include_code = Map.get(params, "include_code", true)
+    provider = parse_provider(Map.get(params, "provider"))
+    show_chunks = Map.get(params, "show_chunks", false)
+    show_thinking = Map.get(params, "show_thinking", false)
+
+    opts = [limit: limit, include_code: include_code]
+    opts = if provider, do: Keyword.put(opts, :provider, provider), else: opts
+
+    case Pipeline.stream_query(query, opts) do
+      {:ok, stream} ->
+        result = collect_stream_chunks_live(stream, show_chunks, progress_fn)
+
+        {:ok,
+         %{
+           status: "success",
+           query: query,
+           response: result.content,
+           sources_count: result.sources_count,
+           model_used: result.model,
+           streaming: true,
+           chunks_count: result.chunks_count
+         }
+         |> maybe_add_thinking(result, show_thinking)
+         |> maybe_add_chunks(result, show_chunks)}
+
+      {:error, reason} ->
+        {:error, "RAG streaming query failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp rag_query_stream_tool_live(_, _progress_fn), do: {:error, "Missing 'query' parameter"}
+
+  defp rag_explain_stream_tool_live(%{"target" => target} = params, progress_fn) do
+    aspect = String.to_atom(Map.get(params, "aspect", "all"))
+    show_chunks = Map.get(params, "show_chunks", false)
+    opts = [aspect: aspect]
+
+    case Pipeline.stream_explain(target, aspect, opts) do
+      {:ok, stream} ->
+        result = collect_stream_chunks_live(stream, show_chunks, progress_fn)
+
+        {:ok,
+         %{
+           status: "success",
+           target: target,
+           explanation: result.content,
+           aspect: Atom.to_string(aspect),
+           sources_count: result.sources_count,
+           model_used: result.model,
+           streaming: true,
+           chunks_count: result.chunks_count
+         }
+         |> maybe_add_chunks(result, show_chunks)}
+
+      {:error, reason} ->
+        {:error, "RAG streaming explain failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp rag_explain_stream_tool_live(_, _progress_fn), do: {:error, "Missing 'target' parameter"}
+
+  defp rag_suggest_stream_tool_live(%{"target" => target} = params, progress_fn) do
+    focus = String.to_atom(Map.get(params, "focus", "all"))
+    show_chunks = Map.get(params, "show_chunks", false)
+    opts = [focus: focus]
+
+    case Pipeline.stream_suggest(target, focus, opts) do
+      {:ok, stream} ->
+        result = collect_stream_chunks_live(stream, show_chunks, progress_fn)
+
+        {:ok,
+         %{
+           status: "success",
+           target: target,
+           suggestions: result.content,
+           focus: Atom.to_string(focus),
+           sources_count: result.sources_count,
+           model_used: result.model,
+           streaming: true,
+           chunks_count: result.chunks_count
+         }
+         |> maybe_add_chunks(result, show_chunks)}
+
+      {:error, reason} ->
+        {:error, "RAG streaming suggest failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp rag_suggest_stream_tool_live(_, _progress_fn), do: {:error, "Missing 'target' parameter"}
+
+  # Like collect_stream_chunks/2 but calls progress_fn.(text, done) for each chunk.
+  defp collect_stream_chunks_live(stream, show_chunks, progress_fn) do
+    chunks = if show_chunks, do: [], else: nil
+
+    {content, thinking, metadata, collected_chunks} =
+      Enum.reduce(stream, {"", "", nil, chunks}, fn
+        %{done: false, content: chunk_content, thinking: chunk_thinking} = chunk,
+        {acc_content, acc_thinking, _meta, acc_chunks} ->
+          new_chunks = if show_chunks, do: [chunk | acc_chunks], else: acc_chunks
+          new_thinking = if chunk_thinking, do: acc_thinking <> chunk_thinking, else: acc_thinking
+
+          new_content =
+            if chunk_content != "", do: acc_content <> chunk_content, else: acc_content
+
+          notify_ai_progress(chunk)
+          if chunk_content != "", do: progress_fn.(chunk_content, false)
+
+          {new_content, new_thinking, nil, new_chunks}
+
+        %{done: false, content: chunk_content} = chunk,
+        {acc_content, acc_thinking, _meta, acc_chunks} ->
+          new_chunks = if show_chunks, do: [chunk | acc_chunks], else: acc_chunks
+          notify_ai_progress(chunk)
+          if chunk_content != "", do: progress_fn.(chunk_content, false)
+          {acc_content <> chunk_content, acc_thinking, nil, new_chunks}
+
+        %{done: true, metadata: final_meta}, {acc_content, acc_thinking, _meta, acc_chunks} ->
+          progress_fn.("", true)
+          {acc_content, acc_thinking, final_meta, acc_chunks}
+
+        {:error, reason}, {acc_content, acc_thinking, meta, acc_chunks} ->
+          new_meta = if meta, do: Map.put(meta, :error, reason), else: %{error: reason}
+          {acc_content, acc_thinking, new_meta, acc_chunks}
+
+        _other, acc ->
+          acc
+      end)
+
+    metadata = metadata || %{}
+
+    %{
+      content: content,
+      thinking: if(thinking == "", do: nil, else: thinking),
+      model: metadata[:model],
+      sources_count: length(metadata[:sources] || []),
+      chunks_count: if(show_chunks, do: length(collected_chunks), else: :not_tracked),
+      chunks: if(show_chunks, do: Enum.reverse(collected_chunks), else: nil),
+      metadata: metadata
+    }
+  end
 
   defp collect_stream_chunks(stream, show_chunks) do
     chunks = if show_chunks, do: [], else: nil
