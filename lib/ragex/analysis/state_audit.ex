@@ -17,7 +17,7 @@ defmodule Ragex.Analysis.StateAudit do
 
   @type audit_result :: %{
           file: String.t(),
-          is_genserver?: boolean(),
+          genserver?: boolean(),
           issues: [audit_issue()],
           has_issues?: boolean()
         }
@@ -32,12 +32,12 @@ defmodule Ragex.Analysis.StateAudit do
         case Code.string_to_quoted(source) do
           {:ok, quoted} ->
             issues = run_audit(quoted)
-            is_genserver = is_genserver?(quoted)
+            genserver? = genserver?(quoted)
 
             {:ok,
              %{
                file: path,
-               is_genserver?: is_genserver,
+               genserver?: genserver?,
                issues: issues,
                has_issues?: not Enum.empty?(issues)
              }}
@@ -59,21 +59,19 @@ defmodule Ragex.Analysis.StateAudit do
     files = find_elixir_files(dir_path)
 
     results =
-      files
-      |> Enum.map(fn file ->
+      Enum.flat_map(files, fn file ->
         case audit_file(file) do
-          {:ok, res} -> res
-          _ -> nil
+          {:ok, res} -> [res]
+          _ -> []
         end
       end)
-      |> Enum.reject(&is_nil/1)
 
     {:ok, results}
   end
 
   # AST Traversal and Audit Logic
 
-  defp is_genserver?(quoted) do
+  defp genserver?(quoted) do
     ref = :erlang.make_ref()
 
     try do
@@ -110,22 +108,22 @@ defmodule Ragex.Analysis.StateAudit do
           returns = find_returns(body)
 
           node_issues =
-            returns
-            |> Enum.map(fn {state_val, line} ->
-              if is_raw_map?(state_val) do
-                %{
-                  type: :unstructured_state,
-                  severity: :warning,
-                  description: "GenServer state initialized as a raw map instead of a struct",
-                  suggestion:
-                    "Define a struct (e.g. %State{}) to represent the GenServer's state for safety and type specs.",
-                  line: line || Keyword.get(meta, :line, 1)
-                }
+            Enum.flat_map(returns, fn {state_val, line} ->
+              if raw_map?(state_val) do
+                [
+                  %{
+                    type: :unstructured_state,
+                    severity: :warning,
+                    description: "GenServer state initialized as a raw map instead of a struct",
+                    suggestion:
+                      "Define a struct (e.g. %State{}) to represent the GenServer's state for safety and type specs.",
+                    line: line || Keyword.get(meta, :line, 1)
+                  }
+                ]
               else
-                nil
+                []
               end
             end)
-            |> Enum.reject(&is_nil/1)
 
           {node, acc ++ node_issues}
 
@@ -136,14 +134,9 @@ defmodule Ragex.Analysis.StateAudit do
     collected
   end
 
-  defp is_raw_map?({:%{}, _, []}), do: true
-
-  defp is_raw_map?({:%{}, _, _fields}) do
-    # Check if it is a raw map and not a struct
-    true
-  end
-
-  defp is_raw_map?(_), do: false
+  defp raw_map?({:%{}, _, []}), do: true
+  defp raw_map?({:%{}, _, [_ | _] = _fields}), do: true
+  defp raw_map?(_), do: false
 
   defp find_returns(body) do
     case body do

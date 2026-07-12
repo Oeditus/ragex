@@ -52,7 +52,7 @@ defmodule Ragex.Analysis.StateAuditTest do
       File.write!(tmp_file, @clean_genserver)
 
       assert {:ok, result} = StateAudit.audit_file(tmp_file)
-      assert result.is_genserver? == true
+      assert result.genserver? == true
       refute result.has_issues?
       assert result.issues == []
 
@@ -64,7 +64,7 @@ defmodule Ragex.Analysis.StateAuditTest do
       File.write!(tmp_file, @bad_state_genserver)
 
       assert {:ok, result} = StateAudit.audit_file(tmp_file)
-      assert result.is_genserver? == true
+      assert result.genserver? == true
       assert result.has_issues?
       assert Enum.any?(result.issues, &(&1.type == :unstructured_state))
 
@@ -76,7 +76,7 @@ defmodule Ragex.Analysis.StateAuditTest do
       File.write!(tmp_file, @deadlock_genserver)
 
       assert {:ok, result} = StateAudit.audit_file(tmp_file)
-      assert result.is_genserver? == true
+      assert result.genserver? == true
       assert result.has_issues?
       assert Enum.any?(result.issues, &(&1.type == :sync_call_in_callback))
 

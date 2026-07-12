@@ -392,9 +392,7 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   defp auto_index_scip(project_dir) do
-    alias Ragex.Analyzers.SCIP.Indexer
-    alias Ragex.Analyzers.SCIP.Parser
-    alias Ragex.Analyzers.SCIP.Adapter
+    alias Ragex.Analyzers.SCIP.{Adapter, Indexer, Parser}
 
     try do
       {:ok, results} = Indexer.index_all(project_dir)
@@ -402,12 +400,15 @@ defmodule Ragex.Analyzers.Directory do
       Enum.each(results, fn
         {lang, {:ok, json}} ->
           Logger.info("SCIP: Auto-indexing of #{lang} succeeded, ingesting...")
+
           case Parser.parse(json, project_dir) do
             {:ok, analysis} ->
               Adapter.ingest(analysis, generate_embeddings: true)
+
             {:error, err} ->
               Logger.warning("SCIP: Auto-parse failed for #{lang}: #{inspect(err)}")
           end
+
         {lang, {:error, reason}} ->
           Logger.debug("SCIP: Auto-indexing skipped/failed for #{lang}: #{inspect(reason)}")
       end)

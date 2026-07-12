@@ -1,6 +1,7 @@
 defmodule Ragex.Analyzers.SCIPTest do
   use ExUnit.Case, async: true
 
+  alias Ragex.Analyzers.Directory
   alias Ragex.Analyzers.SCIP.{Adapter, Parser, Registry}
   alias Ragex.MCP.Handlers.SCIPTools
 
@@ -180,7 +181,7 @@ defmodule Ragex.Analyzers.SCIPTest do
       dir = Path.join(System.tmp_dir!(), "scip_auto_#{:rand.uniform(100_000)}")
       File.mkdir_p!(dir)
       File.write!(Path.join(dir, "go.mod"), "module example.com/test")
-      
+
       # Also add one elixir file so directory analysis completes normally
       File.write!(Path.join(dir, "lib.ex"), "defmodule Lib do; end")
 
@@ -188,7 +189,7 @@ defmodule Ragex.Analyzers.SCIPTest do
       Application.put_env(:ragex, :enable_auto_scip, true)
 
       # Directory analysis should complete without crashing even if scip-go is missing
-      assert {:ok, result} = Ragex.Analyzers.Directory.analyze_directory(dir, notify: false)
+      assert {:ok, result} = Directory.analyze_directory(dir, notify: false)
       assert result.success >= 1
 
       File.rm_rf!(dir)

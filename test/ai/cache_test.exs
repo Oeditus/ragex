@@ -9,7 +9,7 @@ defmodule Ragex.AI.CacheTest do
 
     # Ensure cache is enabled for testing
     Application.put_env(:ragex, :ai_cache, enabled: true)
-    
+
     # Configure a test cache directory
     test_cache_dir = Path.join(System.tmp_dir!(), "ragex_cache_test_#{:rand.uniform(100_000)}")
     Application.put_env(:ragex, :cache, dir: test_cache_dir, enabled: true)
@@ -19,8 +19,13 @@ defmodule Ragex.AI.CacheTest do
 
     on_exit(fn ->
       # Restore original config
-      if orig_ai_cache, do: Application.put_env(:ragex, :ai_cache, orig_ai_cache), else: Application.delete_env(:ragex, :ai_cache)
-      if orig_cache, do: Application.put_env(:ragex, :cache, orig_cache), else: Application.delete_env(:ragex, :cache)
+      if orig_ai_cache,
+        do: Application.put_env(:ragex, :ai_cache, orig_ai_cache),
+        else: Application.delete_env(:ragex, :ai_cache)
+
+      if orig_cache,
+        do: Application.put_env(:ragex, :cache, orig_cache),
+        else: Application.delete_env(:ragex, :cache)
 
       # Restart the Cache supervisor child to pick up the restored config
       Supervisor.terminate_child(Ragex.Supervisor, Ragex.AI.Cache)
@@ -55,13 +60,13 @@ defmodule Ragex.AI.CacheTest do
 
       # Clear the in-memory ETS table and simulate full restart via Supervisor
       Supervisor.terminate_child(Ragex.Supervisor, Ragex.AI.Cache)
-      
+
       # Verify table does not exist
       assert :ets.info(:ragex_ai_cache) == :undefined
 
       # Restart the child
       assert {:ok, _pid} = Supervisor.restart_child(Ragex.Supervisor, Ragex.AI.Cache)
-      
+
       # Entry should be restored!
       assert {:ok, "Concurrency and fault tolerance"} = Cache.get(:query, "why elixir?", nil)
     end

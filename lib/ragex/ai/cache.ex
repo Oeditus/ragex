@@ -191,9 +191,11 @@ defmodule Ragex.AI.Cache do
   @impl true
   def handle_info(:cleanup, state) do
     cleanup_expired()
+
     if enabled?() do
       save_cache_to_disk()
     end
+
     schedule_cleanup()
     {:noreply, state}
   end
@@ -203,6 +205,7 @@ defmodule Ragex.AI.Cache do
     if enabled?() do
       save_cache_to_disk()
     end
+
     :ok
   end
 

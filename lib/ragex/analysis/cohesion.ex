@@ -91,7 +91,8 @@ defmodule Ragex.Analysis.Cohesion do
     Store.list_edges(edge_type: :calls)
     |> Enum.filter(fn edge ->
       case {edge.from, edge.to} do
-        {{:function, ^module_name, name_from, arity_from}, {:function, ^module_name, name_to, arity_to}} ->
+        {{:function, ^module_name, name_from, arity_from},
+         {:function, ^module_name, name_to, arity_to}} ->
           key_from = {module_name, name_from, arity_from}
           key_to = {module_name, name_to, arity_to}
           MapSet.member?(funcs_set, key_from) and MapSet.member?(funcs_set, key_to)

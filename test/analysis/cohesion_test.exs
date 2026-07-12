@@ -13,7 +13,8 @@ defmodule Ragex.Analysis.CohesionTest do
 
   describe "analyze_module/1" do
     test "returns error for nonexistent module" do
-      assert {:error, {:module_not_found, :NonexistentModule}} = Cohesion.analyze_module(:NonexistentModule)
+      assert {:error, {:module_not_found, :NonexistentModule}} =
+               Cohesion.analyze_module(:NonexistentModule)
     end
 
     test "handles empty module gracefully" do
@@ -32,13 +33,37 @@ defmodule Ragex.Analysis.CohesionTest do
       Store.add_node(:module, :ConnectedModule, %{file: "lib/connected.ex", language: :elixir})
 
       # Functions: f1, f2, f3
-      Store.add_node(:function, {:ConnectedModule, :f1, 0}, %{name: :f1, arity: 0, module: :ConnectedModule})
-      Store.add_node(:function, {:ConnectedModule, :f2, 0}, %{name: :f2, arity: 0, module: :ConnectedModule})
-      Store.add_node(:function, {:ConnectedModule, :f3, 0}, %{name: :f3, arity: 0, module: :ConnectedModule})
+      Store.add_node(:function, {:ConnectedModule, :f1, 0}, %{
+        name: :f1,
+        arity: 0,
+        module: :ConnectedModule
+      })
+
+      Store.add_node(:function, {:ConnectedModule, :f2, 0}, %{
+        name: :f2,
+        arity: 0,
+        module: :ConnectedModule
+      })
+
+      Store.add_node(:function, {:ConnectedModule, :f3, 0}, %{
+        name: :f3,
+        arity: 0,
+        module: :ConnectedModule
+      })
 
       # Internal calls: f1 -> f2, f2 -> f3
-      Store.add_edge({:function, :ConnectedModule, :f1, 0}, {:function, :ConnectedModule, :f2, 0}, :calls)
-      Store.add_edge({:function, :ConnectedModule, :f2, 0}, {:function, :ConnectedModule, :f3, 0}, :calls)
+      Store.add_edge(
+        {:function, :ConnectedModule, :f1, 0},
+        {:function, :ConnectedModule, :f2, 0},
+        :calls
+      )
+
+      Store.add_edge(
+        {:function, :ConnectedModule, :f2, 0},
+        {:function, :ConnectedModule, :f3, 0},
+        :calls
+      )
+
       Store.sync()
 
       assert {:ok, result} = Cohesion.analyze_module(:ConnectedModule)
@@ -54,10 +79,29 @@ defmodule Ragex.Analysis.CohesionTest do
       Store.add_node(:module, :SplitModule, %{file: "lib/split.ex", language: :elixir})
 
       # Functions: f1, f2, f3, f4
-      Store.add_node(:function, {:SplitModule, :f1, 0}, %{name: :f1, arity: 0, module: :SplitModule})
-      Store.add_node(:function, {:SplitModule, :f2, 0}, %{name: :f2, arity: 0, module: :SplitModule})
-      Store.add_node(:function, {:SplitModule, :f3, 0}, %{name: :f3, arity: 0, module: :SplitModule})
-      Store.add_node(:function, {:SplitModule, :f4, 0}, %{name: :f4, arity: 0, module: :SplitModule})
+      Store.add_node(:function, {:SplitModule, :f1, 0}, %{
+        name: :f1,
+        arity: 0,
+        module: :SplitModule
+      })
+
+      Store.add_node(:function, {:SplitModule, :f2, 0}, %{
+        name: :f2,
+        arity: 0,
+        module: :SplitModule
+      })
+
+      Store.add_node(:function, {:SplitModule, :f3, 0}, %{
+        name: :f3,
+        arity: 0,
+        module: :SplitModule
+      })
+
+      Store.add_node(:function, {:SplitModule, :f4, 0}, %{
+        name: :f4,
+        arity: 0,
+        module: :SplitModule
+      })
 
       # Internal calls: f1 -> f2 (Component 1), f3 -> f4 (Component 2)
       Store.add_edge({:function, :SplitModule, :f1, 0}, {:function, :SplitModule, :f2, 0}, :calls)
