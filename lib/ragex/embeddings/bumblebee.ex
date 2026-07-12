@@ -183,7 +183,9 @@ defmodule Ragex.Embeddings.Bumblebee do
     {:ok, tokenizer} = Bumblebee.load_tokenizer({:hf, model_info.repo})
 
     # Load the model
-    {:ok, model} = Bumblebee.load_model({:hf, model_info.repo})
+    low_memory = Application.get_env(:ragex, :low_memory, false)
+    model_opts = if low_memory, do: [type: {:f, 16}], else: []
+    {:ok, model} = Bumblebee.load_model({:hf, model_info.repo}, model_opts)
 
     # Create a serving for embeddings
     # Adjust sequence length based on model's max_tokens

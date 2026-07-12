@@ -132,7 +132,8 @@ defmodule Ragex.AI.Cache do
   """
   def stats do
     case :ets.lookup(@stats_table, :stats) do
-      [{:stats, stats_map}] ->
+      [{:stats, hits, misses, puts, evictions}] ->
+        stats_map = %{hits: hits, misses: misses, puts: puts, evictions: evictions}
         size = :ets.info(@table_name, :size)
         max_size = get_max_size()
         ttl = Application.get_env(:ragex, :ai_cache, []) |> Keyword.get(:ttl, 3600)
@@ -172,7 +173,12 @@ defmodule Ragex.AI.Cache do
     :ets.new(@stats_table, [:named_table, :public, :set])
 
     # Initialize stats
-    :ets.insert(@stats_table, {:stats, %{hits: 0, misses: 0, puts: 0, evictions: 0}})
+    :ets.insert(@stats_table, {:stats, 0, 0, 0, 0})
+
+    # Load cache from disk if enabled
+    if enabled?() do
+      load_cache_from_disk()
+    end
 
     # Schedule periodic cleanup of expired entries
     schedule_cleanup()
@@ -185,8 +191,19 @@ defmodule Ragex.AI.Cache do
   @impl true
   def handle_info(:cleanup, state) do
     cleanup_expired()
+    if enabled?() do
+      save_cache_to_disk()
+    end
     schedule_cleanup()
     {:noreply, state}
+  end
+
+  @impl true
+  def terminate(_reason, _state) do
+    if enabled?() do
+      save_cache_to_disk()
+    end
+    :ok
   end
 
   # Private functions
@@ -288,12 +305,12 @@ defmodule Ragex.AI.Cache do
          stat_name,
          2
        ), 1},
-      {:stats, %{hits: 0, misses: 0, puts: 0, evictions: 0}}
+      {:stats, 0, 0, 0, 0}
     )
   end
 
   defp reset_stats do
-    :ets.insert(@stats_table, {:stats, %{hits: 0, misses: 0, puts: 0, evictions: 0}})
+    :ets.insert(@stats_table, {:stats, 0, 0, 0, 0})
   end
 
   defp calculate_hit_rate(%{hits: hits, misses: misses}) do
@@ -303,6 +320,43 @@ defmodule Ragex.AI.Cache do
       Float.round(hits / total, 3)
     else
       0.0
+    end
+  end
+
+  defp cache_file_path do
+    cache_config = Application.get_env(:ragex, :cache, [])
+    cache_dir = Keyword.get(cache_config, :dir, Path.expand("~/.cache/ragex"))
+    File.mkdir_p!(cache_dir)
+    Path.join(cache_dir, "ai_cache.tab")
+  end
+
+  defp load_cache_from_disk do
+    path = cache_file_path()
+
+    if File.exists?(path) do
+      :ets.delete(@table_name)
+
+      case :ets.file2tab(String.to_charlist(path)) do
+        {:ok, @table_name} ->
+          Logger.info("AI Cache loaded from disk: #{path}")
+          cleanup_expired()
+
+        err ->
+          Logger.warning("Failed to load AI Cache from disk: #{inspect(err)}")
+          :ets.new(@table_name, [:named_table, :public, :set, read_concurrency: true])
+      end
+    end
+  end
+
+  defp save_cache_to_disk do
+    path = cache_file_path()
+
+    case :ets.tab2file(@table_name, String.to_charlist(path)) do
+      :ok ->
+        Logger.info("AI Cache saved to disk: #{path}")
+
+      err ->
+        Logger.warning("Failed to save AI Cache to disk: #{inspect(err)}")
     end
   end
 end

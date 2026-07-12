@@ -40,6 +40,10 @@ defmodule Ragex.Analyzers.Directory do
 
     case File.stat(path) do
       {:ok, %File.Stat{type: :directory}} ->
+        if Application.get_env(:ragex, :enable_auto_scip, true) do
+          auto_index_scip(path)
+        end
+
         files = find_supported_files(path, max_depth, exclude_patterns)
 
         analyze_files(files,
@@ -384,6 +388,31 @@ defmodule Ragex.Analyzers.Directory do
         params: params,
         timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
       })
+    end
+  end
+
+  defp auto_index_scip(project_dir) do
+    alias Ragex.Analyzers.SCIP.Indexer
+    alias Ragex.Analyzers.SCIP.Parser
+    alias Ragex.Analyzers.SCIP.Adapter
+
+    try do
+      {:ok, results} = Indexer.index_all(project_dir)
+
+      Enum.each(results, fn
+        {lang, {:ok, json}} ->
+          Logger.info("SCIP: Auto-indexing of #{lang} succeeded, ingesting...")
+          case Parser.parse(json, project_dir) do
+            {:ok, analysis} ->
+              Adapter.ingest(analysis, generate_embeddings: true)
+            {:error, err} ->
+              Logger.warning("SCIP: Auto-parse failed for #{lang}: #{inspect(err)}")
+          end
+        {lang, {:error, reason}} ->
+          Logger.debug("SCIP: Auto-indexing skipped/failed for #{lang}: #{inspect(reason)}")
+      end)
+    rescue
+      e -> Logger.warning("SCIP: Auto-indexing failed: #{Exception.message(e)}")
     end
   end
 end

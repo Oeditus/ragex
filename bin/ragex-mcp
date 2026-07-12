@@ -17,6 +17,8 @@
 
 set -euo pipefail
 
+ORIGINAL_PWD="$PWD"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -68,6 +70,27 @@ EOF
       ;;
   esac
 done
+
+# -- Auto-detect Elixir project if not explicitly set -----------------------
+if [[ -z "$PROJECT" ]]; then
+  find_mix_exs() {
+    local dir="$1"
+    while [[ "$dir" != "/" ]]; do
+      if [[ -f "$dir/mix.exs" ]]; then
+        echo "$dir"
+        return 0
+      fi
+      dir="$(dirname "$dir")"
+    done
+    return 1
+  }
+
+  PROJECT="$(find_mix_exs "$ORIGINAL_PWD" || true)"
+  if [[ -z "$PROJECT" ]]; then
+    echo "[ragex-mcp] Not an Elixir project (no mix.exs found in $ORIGINAL_PWD or parents). Skipping startup." >&2
+    exit 0
+  fi
+fi
 
 # -- Environment for MCP stdio mode -----------------------------------------
 export MIX_ENV=prod

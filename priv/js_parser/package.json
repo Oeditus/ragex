@@ -1,0 +1,9 @@
+{
+  "name": "js-parser",
+  "version": "1.0.0",
+  "description": "JS/TS AST parser for Ragex",
+  "main": "parser.js",
+  "dependencies": {
+    "@babel/parser": "^7.24.0"
+  }
+}

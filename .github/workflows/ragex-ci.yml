@@ -1,0 +1,51 @@
+name: Ragex CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  analyze:
+    name: Code Quality & Security Audit
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for diff-based analysis
+          
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '27.0'
+          
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+            
+      - name: Install dependencies
+        run: mix deps.get
+        
+      - name: Compile codebase
+        run: mix compile
+        
+      - name: Run Ragex CI Audit
+        # Use GITHUB_BASE_REF when running on PRs to run differential analysis,
+        # otherwise compare with HEAD~1 on push.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+            mix ragex.ci --base ${{ github.base_ref }} --format github
+          else
+            mix ragex.ci --base HEAD~1 --format github
+          fi

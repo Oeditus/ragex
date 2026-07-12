@@ -46,11 +46,7 @@ defmodule Ragex.Editor.FormatterTest do
       # Should not crash, may return error or ok
       result = Formatter.format(test_file)
 
-      case result do
-        :ok -> assert true
-        {:error, _} -> assert true
-        _ -> flunk("Expected :ok or {:error, _}, got #{inspect(result)}")
-      end
+      assert result == :ok or match?({:error, _}, result)
     end
 
     test "supports language override", %{test_dir: dir} do

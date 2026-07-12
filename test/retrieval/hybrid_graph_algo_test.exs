@@ -16,9 +16,8 @@ defmodule Ragex.Retrieval.HybridGraphAlgoTest do
     end
 
     test "does not raise" do
-      assert (fn ->
-                Hybrid.search("important module", strategy: :graph_algo, limit: 3)
-              end).() != :raised
+      result = Hybrid.search("important module", strategy: :graph_algo, limit: 3)
+      assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
   end
 

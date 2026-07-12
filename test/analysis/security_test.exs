@@ -132,7 +132,7 @@ defmodule Ragex.Analysis.SecurityTest do
       assert {:ok, result} = Security.analyze_file(file)
       assert result.file == file
       assert result.language == :elixir
-      assert result.timestamp != nil
+      assert match?(%DateTime{}, result.timestamp)
     end
   end
 

@@ -37,3 +37,4 @@ oeditus.json
 audit.json
 
 .env
+node_modules/

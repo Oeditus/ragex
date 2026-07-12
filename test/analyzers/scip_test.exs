@@ -171,4 +171,27 @@ defmodule Ragex.Analyzers.SCIPTest do
       assert {:error, _} = SCIPTools.call_tool("nonexistent", %{})
     end
   end
+
+  # ── Auto-SCIP Indexing Integration ───────────────────────────────────
+
+  describe "directory auto-SCIP indexing" do
+    test "analyze_directory/2 triggers auto_index_scip and handles missing binary gracefully" do
+      # Create a temp directory with a go.mod file (SCIP marker)
+      dir = Path.join(System.tmp_dir!(), "scip_auto_#{:rand.uniform(100_000)}")
+      File.mkdir_p!(dir)
+      File.write!(Path.join(dir, "go.mod"), "module example.com/test")
+      
+      # Also add one elixir file so directory analysis completes normally
+      File.write!(Path.join(dir, "lib.ex"), "defmodule Lib do; end")
+
+      # Enable auto SCIP in config
+      Application.put_env(:ragex, :enable_auto_scip, true)
+
+      # Directory analysis should complete without crashing even if scip-go is missing
+      assert {:ok, result} = Ragex.Analyzers.Directory.analyze_directory(dir, notify: false)
+      assert result.success >= 1
+
+      File.rm_rf!(dir)
+    end
+  end
 end

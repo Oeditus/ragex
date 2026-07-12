@@ -1,40 +1,27 @@
 defmodule Ragex.Analyzers.JavaScript do
   @moduledoc """
-  Analyzes JavaScript code to extract modules, functions, calls, and dependencies.
+  Analyzes JavaScript and TypeScript code to extract modules, functions, calls, and dependencies.
 
-  Uses regex-based parsing for basic JavaScript/TypeScript patterns.
-  This is a simplified analyzer that works for common cases.
+  Uses `@babel/parser` inside a Node.js process to perform high-fidelity AST parsing,
+  extracting information from the returned JSON.
   """
 
   @behaviour Ragex.Analyzers.Behaviour
 
   @impl true
   def analyze(source, file_path) do
-    module_name = Path.basename(file_path, Path.extname(file_path)) |> String.to_atom()
+    case run_js_analyzer(source) do
+      {:ok, data} ->
+        if Map.has_key?(data, "error") do
+          {:error, {:javascript_syntax_error, data["error"]}}
+        else
+          result = transform_js_result(data, file_path)
+          {:ok, result}
+        end
 
-    context = %{
-      file: file_path,
-      module_name: module_name,
-      modules: [],
-      functions: [],
-      calls: [],
-      imports: []
-    }
-
-    lines = String.split(source, "\n")
-    context = analyze_lines(lines, context, 1)
-
-    # Add file-level module
-    context = add_file_module(context)
-
-    result = %{
-      modules: Enum.reverse(context.modules),
-      functions: Enum.reverse(context.functions),
-      calls: Enum.reverse(context.calls),
-      imports: Enum.reverse(context.imports)
-    }
-
-    {:ok, result}
+      {:error, reason} ->
+        {:error, reason}
+    end
   rescue
     e -> {:error, {:analysis_error, Exception.message(e)}}
   end
@@ -44,238 +31,138 @@ defmodule Ragex.Analyzers.JavaScript do
 
   # Private functions
 
-  defp analyze_lines([], context, _line_num), do: context
+  defp run_js_analyzer(source) do
+    priv_dir =
+      try do
+        Application.app_dir(:ragex, "priv")
+      rescue
+        _ -> "priv"
+      end
 
-  defp analyze_lines([line | rest], context, line_num) do
-    context =
-      context
-      |> extract_imports(line, line_num)
-      |> extract_class(line, line_num)
-      |> extract_functions(line, line_num)
-      |> extract_calls(line, line_num)
+    parser_script = Path.join([priv_dir, "js_parser", "parser.js"])
 
-    analyze_lines(rest, context, line_num + 1)
-  end
+    source_file =
+      System.tmp_dir!() |> Path.join("ragex_source_#{:erlang.unique_integer([:positive])}.js")
 
-  defp add_file_module(context) do
-    module_info = %{
-      name: context.module_name,
-      file: context.file,
-      line: 1,
-      doc: nil,
-      metadata: %{type: :file}
-    }
+    try do
+      File.write!(source_file, source)
 
-    %{context | modules: [module_info | context.modules]}
-  end
-
-  # Extract ES6 imports and require statements
-  defp extract_imports(context, line, _line_num) do
-    cond do
-      # import ... from '...'
-      Regex.match?(~r/^\s*import\s+.*\s+from\s+['"](.+)['"]/, line) ->
-        case Regex.run(~r/^\s*import\s+.*\s+from\s+['"](.+)['"]/, line) do
-          [_, module] ->
-            import_info = %{
-              from_module: context.module_name,
-              to_module: sanitize_module_name(module),
-              type: :import
-            }
-
-            %{context | imports: [import_info | context.imports]}
-
-          _ ->
-            context
-        end
-
-      # const ... = require('...')
-      Regex.match?(~r/require\s*\(\s*['"](.+)['"]\s*\)/, line) ->
-        case Regex.run(~r/require\s*\(\s*['"](.+)['"]\s*\)/, line) do
-          [_, module] ->
-            import_info = %{
-              from_module: context.module_name,
-              to_module: sanitize_module_name(module),
-              type: :require
-            }
-
-            %{context | imports: [import_info | context.imports]}
-
-          _ ->
-            context
-        end
-
-      true ->
-        context
-    end
-  end
-
-  # Extract class declarations
-  defp extract_class(context, line, line_num) do
-    case Regex.run(~r/^\s*(?:export\s+)?class\s+(\w+)/, line) do
-      [_, class_name] ->
-        module_info = %{
-          name: String.to_atom(class_name),
-          file: context.file,
-          line: line_num,
-          doc: nil,
-          metadata: %{type: :class}
-        }
-
-        %{context | modules: [module_info | context.modules]}
-
-      _ ->
-        context
-    end
-  end
-
-  # Extract function declarations
-  defp extract_functions(context, line, line_num) do
-    cond do
-      Regex.match?(~r/^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/, line) ->
-        extract_function_declaration(context, line, line_num)
-
-      Regex.match?(
-        ~r/^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)(?::[^=]+)?\s*=>/,
-        line
-      ) ->
-        extract_arrow_function(context, line, line_num)
-
-      Regex.match?(~r/^\s*(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*\{/, line) and
-          not Regex.match?(~r/^\s*(?:if|for|while|switch|catch)\s*\(/, line) ->
-        extract_class_method(context, line, line_num)
-
-      true ->
-        context
-    end
-  end
-
-  defp extract_function_declaration(context, line, line_num) do
-    case Regex.run(~r/^\s*(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/, line) do
-      [_, func_name, params] ->
-        arity = count_params(params)
-
-        func_info = %{
-          name: String.to_atom(func_name),
-          arity: arity,
-          module: context.module_name,
-          file: context.file,
-          line: line_num,
-          doc: nil,
-          visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
-          metadata: %{}
-        }
-
-        %{context | functions: [func_info | context.functions]}
-
-      _ ->
-        context
-    end
-  end
-
-  defp extract_arrow_function(context, line, line_num) do
-    case Regex.run(
-           ~r/^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)(?::[^=]+)?\s*=>/,
-           line
-         ) do
-      [_, func_name, params] ->
-        arity = count_params(params)
-
-        func_info = %{
-          name: String.to_atom(func_name),
-          arity: arity,
-          module: context.module_name,
-          file: context.file,
-          line: line_num,
-          doc: nil,
-          visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
-          metadata: %{arrow_function: true}
-        }
-
-        %{context | functions: [func_info | context.functions]}
-
-      _ ->
-        context
-    end
-  end
-
-  defp extract_class_method(context, line, line_num) do
-    case Regex.run(~r/^\s*(?:async\s+)?(\w+)\s*\(([^)]*)\)\s*\{/, line) do
-      [_, func_name, params] ->
-        arity = count_params(params)
-
-        func_info = %{
-          name: String.to_atom(func_name),
-          arity: arity,
-          module: context.module_name,
-          file: context.file,
-          line: line_num,
-          doc: nil,
-          visibility: if(String.starts_with?(func_name, "_"), do: :private, else: :public),
-          metadata: %{}
-        }
-
-        %{context | functions: [func_info | context.functions]}
-
-      _ ->
-        context
-    end
-  end
-
-  # Extract function calls
-  defp extract_calls(context, line, line_num) do
-    # Match patterns like: functionName(...) or object.method(...)
-    regex = ~r/(\w+)(?:\.(\w+))?\s*\(/
-
-    Regex.scan(regex, line)
-    |> Enum.reduce(context, fn match, ctx ->
-      case match do
-        [_, obj, method] when method != "" ->
-          call_info = %{
-            from_module: ctx.module_name,
-            from_function: :unknown,
-            from_arity: 0,
-            to_module: String.to_atom(obj),
-            to_function: String.to_atom(method),
-            to_arity: 0,
-            line: line_num
-          }
-
-          %{ctx | calls: [call_info | ctx.calls]}
-
-        [_, func] ->
-          # Skip common control flow keywords
-          if func in ["if", "for", "while", "switch", "catch", "return"] do
-            ctx
-          else
-            call_info = %{
-              from_module: ctx.module_name,
-              from_function: :unknown,
-              from_arity: 0,
-              to_module: ctx.module_name,
-              to_function: String.to_atom(func),
-              to_arity: 0,
-              line: line_num
-            }
-
-            %{ctx | calls: [call_info | ctx.calls]}
+      case System.cmd("sh", ["-c", "node #{parser_script} < #{source_file}"],
+             stderr_to_stdout: true
+           ) do
+        {output, 0} ->
+          try do
+            data = :json.decode(output)
+            {:ok, data}
+          rescue
+            e -> {:error, {:json_decode_error, e}}
           end
 
-        _ ->
-          ctx
+        {error_output, _exit_code} ->
+          {:error, {:node_error, error_output}}
       end
-    end)
+    after
+      File.rm(source_file)
+    end
+  rescue
+    e -> {:error, {:system_cmd_error, Exception.message(e)}}
   end
 
-  defp count_params(""), do: 0
+  defp transform_js_result(data, file_path) do
+    module_name = Path.basename(file_path, Path.extname(file_path)) |> String.to_atom()
 
-  defp count_params(params) do
-    params
-    |> String.trim()
-    |> String.split(",")
-    |> Enum.count()
+    # Transform modules (classes)
+    modules =
+      data["modules"]
+      |> Enum.map(fn mod ->
+        %{
+          name: String.to_atom(mod["name"]),
+          file: file_path,
+          line: mod["line"],
+          doc: mod["doc"],
+          metadata: %{type: :class}
+        }
+      end)
+
+    # Always add file-level module
+    modules = [
+      %{
+        name: module_name,
+        file: file_path,
+        line: 1,
+        doc: nil,
+        metadata: %{type: :file}
+      }
+      | modules
+    ]
+
+    # Transform functions
+    functions =
+      data["functions"]
+      |> Enum.map(fn func ->
+        module =
+          if func["module"] == "__main__" do
+            module_name
+          else
+            String.to_atom(func["module"])
+          end
+
+        metadata = if func["arrow"], do: %{arrow_function: true}, else: %{}
+
+        %{
+          name: String.to_atom(func["name"]),
+          arity: func["arity"],
+          module: module,
+          file: file_path,
+          line: func["line"],
+          doc: func["doc"],
+          visibility: String.to_atom(func["visibility"]),
+          metadata: metadata
+        }
+      end)
+
+    # Transform imports
+    imports =
+      data["imports"]
+      |> Enum.map(fn imp ->
+        %{
+          from_module: module_name,
+          to_module: sanitize_module_name(imp["to_module"]),
+          type: String.to_atom(imp["type"])
+        }
+      end)
+
+    # Transform calls
+    calls =
+      data["calls"]
+      |> Enum.map(fn call ->
+        to_module =
+          case call["to_module"] do
+            nil -> module_name
+            mod when is_binary(mod) -> String.to_atom(mod)
+            _ -> module_name
+          end
+
+        %{
+          from_module: module_name,
+          from_function: :unknown,
+          from_arity: 0,
+          to_module: to_module,
+          to_function: String.to_atom(call["to_function"]),
+          to_arity: 0,
+          line: call["line"]
+        }
+      end)
+
+    %{
+      modules: modules,
+      functions: functions,
+      calls: calls,
+      imports: imports
+    }
   end
 
-  defp sanitize_module_name(module) do
+  defp sanitize_module_name(module) when is_binary(module) do
     module
     |> String.replace(~r/^[@.\/]+/, "")
     |> String.replace("/", ".")

@@ -274,6 +274,42 @@ defmodule Ragex.Analyzers.JavaScriptTest do
       refute Enum.any?(result.calls, &(&1.to_function == :while))
       refute Enum.any?(result.calls, &(&1.to_function == :switch))
     end
+
+    test "handles advanced TS and nested functions" do
+      source = """
+      @frozen
+      class Greeter<T> {
+        greeting: T;
+        constructor(message: T) {
+          this.greeting = message;
+        }
+
+        @format("Hello, %s")
+        greet() {
+          const helper = () => {
+            return this.greeting;
+          };
+          return helper();
+        }
+      }
+      """
+
+      assert {:ok, result} = JavaScriptAnalyzer.analyze(source, "test.ts")
+
+      # Should extract the class MyClass
+      greeter = Enum.find(result.modules, &(&1.name == :Greeter))
+      assert greeter != nil
+
+      # Should extract methods constructor and greet
+      greet = Enum.find(result.functions, &(&1.name == :greet))
+      assert greet != nil
+      assert greet.module == :Greeter
+
+      # Should extract nested helper function
+      helper = Enum.find(result.functions, &(&1.name == :helper))
+      assert helper != nil
+      assert helper.module == :Greeter
+    end
   end
 
   describe "supported_extensions/0" do

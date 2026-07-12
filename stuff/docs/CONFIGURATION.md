@@ -581,12 +581,17 @@ mix ragex.embeddings.migrate --model codebert_base --force
    config :ragex, :embedding_model, :all_minilm_l6_v2
    ```
 
-2. Limit batch size (in Bumblebee adapter):
+2. Enable low-memory mode (loads the model in float16 precision, reducing RAM usage by 50%):
+   ```elixir
+   config :ragex, :low_memory, true
+   ```
+
+3. Limit batch size (in Bumblebee adapter):
    ```elixir
    compile: [batch_size: 16, sequence_length: 256]  # Reduce from 32
    ```
 
-3. Disable cache if needed:
+4. Disable cache if needed:
    ```elixir
    config :ragex, :cache, enabled: false
    ```
@@ -717,6 +722,18 @@ mix ragex.embeddings.migrate --check
 ---
 
 ## Advanced Configuration
+
+### Zero-Config Auto-SCIP Indexing
+
+Ragex automatically detects directory structures with marker files (e.g. `go.mod`, `Cargo.toml`) and runs the appropriate SCIP indexer if enabled. 
+
+To enable/disable auto-SCIP indexing during directory analysis:
+```elixir
+# config/config.exs or config/runtime.exs
+config :ragex, :enable_auto_scip, true  # Default is true
+```
+
+---
 
 ### Custom Model (Advanced)
 
