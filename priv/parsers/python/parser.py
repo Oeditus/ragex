@@ -88,8 +88,12 @@ def parse_source(source: str) -> Dict[str, Any]:
 
 
 def main():
-    """Main entry point - read source from stdin, output JSON to stdout."""
-    source = sys.stdin.read()
+    """Main entry point - read source from stdin or file, output JSON to stdout."""
+    if len(sys.argv) > 1:
+        with open(sys.argv[1], 'r', encoding='utf-8') as f:
+            source = f.read()
+    else:
+        source = sys.stdin.read()
     result = parse_source(source)
     print(json.dumps(result))
 

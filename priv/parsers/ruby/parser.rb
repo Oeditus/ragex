@@ -76,7 +76,11 @@ end
 
 # CLI interface: read from STDIN, write JSON to STDOUT
 if __FILE__ == $PROGRAM_NAME
-  source = $stdin.read
+  source = if ARGV.any?
+             File.read(ARGV[0])
+           else
+             $stdin.read
+           end
   result = Metastatic::RubyParser.parse(source)
   puts JSON.generate(result)
 end
