@@ -257,7 +257,11 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
         type: "function",
         function: %{
           name: tc[:name] || tc["name"] || tc[:function][:name] || tc["function"]["name"],
-          arguments: format_api_tool_args(tc[:arguments] || tc["arguments"] || tc[:function][:arguments] || tc["function"]["arguments"])
+          arguments:
+            format_api_tool_args(
+              tc[:arguments] || tc["arguments"] || tc[:function][:arguments] ||
+                tc["function"]["arguments"]
+            )
         }
       }
     end)

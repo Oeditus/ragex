@@ -165,7 +165,8 @@ defmodule Ragex.AI.Provider.OpenAI do
   end
 
   defp build_messages(_prompt, %{messages: messages} = _context, opts) when is_list(messages) do
-    system_prompt = Keyword.get(opts, :system_prompt, "You are a helpful AI assistant for code analysis.")
+    system_prompt =
+      Keyword.get(opts, :system_prompt, "You are a helpful AI assistant for code analysis.")
 
     system_messages =
       if system_prompt do
@@ -235,7 +236,11 @@ defmodule Ragex.AI.Provider.OpenAI do
         type: "function",
         function: %{
           name: tc[:name] || tc["name"] || tc[:function][:name] || tc["function"]["name"],
-          arguments: format_api_tool_args(tc[:arguments] || tc["arguments"] || tc[:function][:arguments] || tc["function"]["arguments"])
+          arguments:
+            format_api_tool_args(
+              tc[:arguments] || tc["arguments"] || tc[:function][:arguments] ||
+                tc["function"]["arguments"]
+            )
         }
       }
     end)

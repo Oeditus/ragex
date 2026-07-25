@@ -37,13 +37,12 @@ defmodule Mix.Tasks.Ragex.Assess do
 
   use Mix.Task
 
-  alias Ragex.Agent.{Core, Memory, Report, ToolSchema}
+  alias Ragex.Agent.{Core, Executor, Memory, Report, ToolSchema}
   alias Ragex.AI.Config, as: AIConfig
   alias Ragex.Analysis.Runner
   alias Ragex.CLI.Progress
   alias Ragex.Git.Repo
   alias Ragex.MCP.Client
-
 
   # Check if CLI modules are available (not available when installed as archive)
   @has_cli_modules match?({:ok, _}, Code.ensure_compiled(Ragex.CLI.Colors))
@@ -100,12 +99,17 @@ defmodule Mix.Tasks.Ragex.Assess do
 
     # Resolve base and head branch/refs
     base = opts[:base] || "origin/main"
+
     head =
       case positional do
-        [branch | _] -> branch
+        [branch | _] ->
+          branch
+
         [] ->
           case Repo.current_branch(repo_root) do
-            {:ok, branch} -> branch
+            {:ok, branch} ->
+              branch
+
             {:error, reason} ->
               IO.puts(:stderr, "Error resolving current branch: #{inspect(reason)}")
               System.halt(1)
@@ -125,10 +129,21 @@ defmodule Mix.Tasks.Ragex.Assess do
         if show_progress do
           warning_msg("No files changed between #{base} and #{head}.")
         end
+
         :ok
 
       {:ok, changed_files} ->
-        run_analysis_and_report(repo_root, base, head, changed_files, opts, format, output_file, show_progress, verbose)
+        run_analysis_and_report(
+          repo_root,
+          base,
+          head,
+          changed_files,
+          opts,
+          format,
+          output_file,
+          show_progress,
+          verbose
+        )
 
       {:error, reason} ->
         IO.puts(:stderr, "Error resolving changed files: #{inspect(reason)}")
@@ -136,7 +151,18 @@ defmodule Mix.Tasks.Ragex.Assess do
     end
   end
 
-  defp run_analysis_and_report(repo_root, base, head, changed_files, opts, format, output_file, show_progress, verbose) do
+  # credo:disable-for-next-line
+  defp run_analysis_and_report(
+         repo_root,
+         base,
+         head,
+         changed_files,
+         opts,
+         format,
+         output_file,
+         show_progress,
+         verbose
+       ) do
     assess_start = System.monotonic_time(:millisecond)
 
     # Step 2: Analyze codebase & load graph (incremental)
@@ -147,7 +173,7 @@ defmodule Mix.Tasks.Ragex.Assess do
       skip_report: true,
       verbose: false
     ]
-    
+
     # We want to analyze the project (this handles cache loading & update graph for changed files on disk)
     case Core.analyze_project(repo_root, core_opts) do
       {:ok, result} ->
@@ -155,7 +181,9 @@ defmodule Mix.Tasks.Ragex.Assess do
         analysis_elapsed = System.monotonic_time(:millisecond) - assess_start
 
         if show_progress do
-          success_msg("✓ Project analysis complete (#{Progress.format_elapsed(analysis_elapsed)})")
+          success_msg(
+            "✓ Project analysis complete (#{Progress.format_elapsed(analysis_elapsed)})"
+          )
         end
 
         # Filter the issues detected to only those in the changed files of the PR/branch
@@ -164,11 +192,13 @@ defmodule Mix.Tasks.Ragex.Assess do
 
         # Step 3: Get Git Diff content
         diff_spinner = if show_progress, do: start_stderr_spinner("Fetching git diff")
+
         diff_text =
           case get_git_diff(repo_root, base, head) do
             {:ok, diff} ->
               stop_stderr_spinner(diff_spinner)
               truncate_diff(diff)
+
             {:error, reason} ->
               stop_stderr_spinner(diff_spinner)
               IO.puts(:stderr, "Failed to get git diff: #{inspect(reason)}")
@@ -186,9 +216,13 @@ defmodule Mix.Tasks.Ragex.Assess do
             issues: filtered_issues,
             summary: build_summary(filtered_issues)
           }
+
           encoded = Jason.encode!(json_data, pretty: true)
+
           case output_file do
-            nil -> IO.puts(encoded)
+            nil ->
+              IO.puts(encoded)
+
             file ->
               File.write!(file, encoded)
               if verbose, do: progress("Assessment report written to #{file}")
@@ -197,7 +231,15 @@ defmodule Mix.Tasks.Ragex.Assess do
           # Generate AI Markdown assessment
           ai_spinner = if show_progress, do: start_stderr_spinner("Generating AI PR assessment")
 
-          case generate_ai_assessment(repo_root, base, head, changed_files, filtered_issues, diff_text, opts) do
+          case generate_ai_assessment(
+                 repo_root,
+                 base,
+                 head,
+                 changed_files,
+                 filtered_issues,
+                 diff_text,
+                 opts
+               ) do
             {:ok, markdown_report} ->
               stop_stderr_spinner(ai_spinner)
               total_elapsed = System.monotonic_time(:millisecond) - assess_start
@@ -231,11 +273,14 @@ defmodule Mix.Tasks.Ragex.Assess do
 
   defp get_git_changed_files(repo_root, base, head) do
     args = ["diff", "--name-only", "--diff-filter=ACMR", "#{base}...#{head}"]
+
     case System.cmd("git", args, cd: repo_root) do
       {output, 0} ->
         files = String.split(output, "\n", trim: true)
         {:ok, files}
-      {err, _} -> {:error, err}
+
+      {err, _} ->
+        {:error, err}
     end
   end
 
@@ -247,7 +292,15 @@ defmodule Mix.Tasks.Ragex.Assess do
     end
   end
 
-  defp generate_ai_assessment(repo_root, base, head, changed_files, filtered_issues, diff_text, opts) do
+  defp generate_ai_assessment(
+         repo_root,
+         base,
+         head,
+         changed_files,
+         filtered_issues,
+         diff_text,
+         opts
+       ) do
     provider_name = parse_provider(opts[:provider]) || AIConfig.provider_name()
     config = AIConfig.api_config(provider_name)
 
@@ -267,7 +320,9 @@ defmodule Mix.Tasks.Ragex.Assess do
           system_prompt = pr_assess_system_prompt(repo_root)
           Memory.add_message(session.id, :system, system_prompt)
 
-          user_prompt = pr_assess_user_prompt(base, head, changed_files, filtered_issues, diff_text)
+          user_prompt =
+            pr_assess_user_prompt(base, head, changed_files, filtered_issues, diff_text)
+
           Memory.add_message(session.id, :user, user_prompt)
 
           # Equip the agent with read-only RAG/MCP tools so it can query the codebase context
@@ -284,7 +339,7 @@ defmodule Mix.Tasks.Ragex.Assess do
             |> maybe_put(:provider, parse_provider(opts[:provider]))
             |> maybe_put(:model, opts[:model])
 
-          case Ragex.Agent.Executor.run(session.id, report_opts) do
+          case Executor.run(session.id, report_opts) do
             {:ok, result} ->
               # Cleanup session
               Memory.clear_session(session.id)
@@ -360,7 +415,7 @@ defmodule Mix.Tasks.Ragex.Assess do
     - Base branch/ref: #{base}
     - Head branch/ref: #{head}
     - Changed files:
-    #{Enum.map(changed_files, &("- `#{&1}`")) |> Enum.join("\n")}
+    #{Enum.map_join(changed_files, "\n", &"- `#{&1}`")}
 
     ## Static Analysis Findings in Changed Files
     #{issues_summary}
@@ -451,7 +506,7 @@ defmodule Mix.Tasks.Ragex.Assess do
   # Helpers for colored output
   defp header_msg(text) do
     if @has_cli_modules do
-      Mix.shell().info(apply(Ragex.CLI.Colors, :header, [text]))
+      colored_info(:header, [text])
     else
       Mix.shell().info(text)
     end
@@ -459,7 +514,7 @@ defmodule Mix.Tasks.Ragex.Assess do
 
   defp success_msg(text) do
     if @has_cli_modules do
-      Mix.shell().info(apply(Ragex.CLI.Colors, :success, [text]))
+      colored_info(:success, [text])
     else
       Mix.shell().info(text)
     end
@@ -467,10 +522,15 @@ defmodule Mix.Tasks.Ragex.Assess do
 
   defp warning_msg(text) do
     if @has_cli_modules do
-      Mix.shell().info(apply(Ragex.CLI.Colors, :warning, [text]))
+      colored_info(:warning, [text])
     else
       Mix.shell().info(text)
     end
+  end
+
+  defp colored_info(type, text) do
+    # credo:disable-for-next-line
+    Mix.shell().info(apply(Ragex.CLI.Colors, type, [text]))
   end
 
   defp build_summary(issues) when is_map(issues) do

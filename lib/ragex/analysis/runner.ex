@@ -20,6 +20,7 @@ defmodule Ragex.Analysis.Runner do
   }
 
   alias Ragex.Analyzers.Directory
+  alias Ragex.Graph.Store
 
   require Logger
 
@@ -385,8 +386,10 @@ defmodule Ragex.Analysis.Runner do
   end
 
   defp module_in_files?(module, files) do
-    case Ragex.Graph.Store.get_node({:module, module}) do
-      nil -> false
+    case Store.get_node({:module, module}) do
+      nil ->
+        false
+
       node ->
         file = node[:file] || node["file"] || node[:path] || node["path"]
         file_in_set?(file, files)

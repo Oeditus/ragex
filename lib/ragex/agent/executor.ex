@@ -457,6 +457,7 @@ defmodule Ragex.Agent.Executor do
       max_tokens: Keyword.get(state.opts, :max_tokens, @default_max_tokens),
       tool_choice: Keyword.get(state.opts, :tool_choice, "auto")
     ]
+
     opts = if model = Keyword.get(state.opts, :model), do: [{:model, model} | opts], else: opts
 
     # Format messages for provider
@@ -485,6 +486,7 @@ defmodule Ragex.Agent.Executor do
       max_tokens: Keyword.get(state.opts, :max_tokens, @default_max_tokens),
       tool_choice: Keyword.get(state.opts, :tool_choice, "auto")
     ]
+
     opts = if model = Keyword.get(state.opts, :model), do: [{:model, model} | opts], else: opts
 
     formatted_messages = format_messages_for_provider(messages, state.provider_name)
@@ -625,11 +627,13 @@ defmodule Ragex.Agent.Executor do
 
     with {:ok, messages} <- Memory.get_context(state.session_id, context_opts(state)) do
       File.write!("/tmp/forced_messages.json", Jason.encode!(messages, pretty: true))
+
       case call_llm(%{state | tools: []}, messages) do
         {:ok, response} ->
           content = response.content || ""
           Memory.add_message(state.session_id, :assistant, content)
           {:done, content, state}
+
         {:error, reason} ->
           {:error, reason}
       end

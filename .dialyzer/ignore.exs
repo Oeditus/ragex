@@ -13,6 +13,7 @@
   ~r/lib\/ragex\/mcp\/single_request\.ex/,
 
   # --- Core.analyze_project cascade ---
+  ~r/lib\/mix\/tasks\/ragex\.assess\.ex/,
   ~r/lib\/mix\/tasks\/ragex\.audit\.ex/,
   ~r/lib\/mix\/tasks\/ragex\.cache\.refresh\.ex/,
   ~r/lib\/ragex\/cli\/chat\.ex:328/,
@@ -30,9 +31,6 @@
 
   # --- Application.compile_env false positive (OTP 29) ---
   ~r/:1:pattern_match.*true/,
-
-  # --- tools.ex remaining cascading from modify_attributes/change_signature ---
-  ~r/tools\.ex:(3830|3865|3933|2762|6263)/,
 
   # --- Remaining pattern_match in refactor/elixir.ex parse_code ---
   ~r/refactor\/elixir\.ex:104.*pattern_match_cov/,
