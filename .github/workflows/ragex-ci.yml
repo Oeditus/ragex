@@ -33,11 +33,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-mix-
             
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgit2-dev
+
       - name: Install dependencies
         run: mix deps.get
         
       - name: Compile codebase
         run: mix compile
+        
+      - name: Install Node parser dependencies
+        run: cd priv/js_parser && npm ci
         
       - name: Run Ragex CI Audit
         # Use GITHUB_BASE_REF when running on PRs to run differential analysis,

@@ -130,6 +130,9 @@ jobs:
     - name: Install Ruby parser gem
       run: gem install --user-install parser
 
+    - name: Install Node parser dependencies
+      run: cd priv/js_parser && npm ci
+
     - name: Run tests with coverage
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -163,6 +166,9 @@ jobs:
 
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libgit2-dev
+
+    - name: Install Node parser dependencies
+      run: cd priv/js_parser && npm ci
 
     - name: Run diff analysis
       run: mix ragex.ci --base origin/${{ github.base_ref }} --format github
