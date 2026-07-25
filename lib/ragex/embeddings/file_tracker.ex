@@ -180,7 +180,7 @@ defmodule Ragex.Embeddings.FileTracker do
   @spec record_entity_hashes(String.t(), [{term(), String.t()}]) :: :ok
   def record_entity_hashes(file_path, entities) do
     Enum.each(entities, fn {entity_id, body} ->
-      hash = :crypto.hash(:sha256, body)
+      hash = :crypto.hash(:sha256, normalize_body(body))
       :ets.insert(@fn_hash_table, {{file_path, entity_id}, hash})
     end)
 
@@ -202,7 +202,7 @@ defmodule Ragex.Embeddings.FileTracker do
   def stale_entities_for_file(file_path, entities) do
     entities
     |> Enum.filter(fn {entity_id, body} ->
-      new_hash = :crypto.hash(:sha256, body)
+      new_hash = :crypto.hash(:sha256, normalize_body(body))
 
       case :ets.lookup(@fn_hash_table, {file_path, entity_id}) do
         [{{^file_path, ^entity_id}, stored_hash}] -> new_hash != stored_hash
@@ -346,5 +346,13 @@ defmodule Ragex.Embeddings.FileTracker do
 
     # Unix epoch offset
     gregorian_seconds - 62_167_219_200
+  end
+
+  defp normalize_body(body) do
+    cond do
+      is_binary(body) -> body
+      is_list(body) -> body
+      true -> inspect(body)
+    end
   end
 end

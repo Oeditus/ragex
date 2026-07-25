@@ -208,6 +208,10 @@ defmodule Ragex.Agent.Report do
     format_section(title, items, formatter)
   end
 
+  defp format_section(title, %{suggestions: suggestions}, formatter) when is_list(suggestions) do
+    format_section(title, suggestions, formatter)
+  end
+
   defp format_section(_title, _other, _formatter), do: nil
 
   defp format_dead_code(item) when is_map(item) do

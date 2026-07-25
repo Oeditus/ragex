@@ -512,28 +512,43 @@ defmodule Ragex.Agent.Memory do
     # preserved so the AI retains the analysis context.  Only tool results
     # and assistant turns that accumulate during execution are candidates for
     # dropping when the budget is tight.
-    {pinned, evictable} =
-      Enum.split_with(messages, &(&1.role in [:system, :user]))
+    pinned_indices =
+      messages
+      |> Enum.with_index()
+      |> Enum.filter(fn {msg, _idx} -> msg.role in [:system, :user] end)
+      |> Enum.map(fn {_msg, idx} -> idx end)
+      |> MapSet.new()
 
-    pinned_chars = Enum.reduce(pinned, 0, &(String.length(&1.content || "") + &2))
+    pinned_chars =
+      messages
+      |> Enum.filter(&(&1.role in [:system, :user]))
+      |> Enum.reduce(0, &(String.length(&1.content || "") + &2))
+
     budget = max(0, max_chars - pinned_chars)
 
     # Fill the remaining budget with the most-recent evictable messages.
-    {kept_evictable, _} =
-      evictable
+    {kept_evictable_indices, _} =
+      messages
+      |> Enum.with_index()
+      |> Enum.reject(fn {msg, _idx} -> msg.role in [:system, :user] end)
       |> Enum.reverse()
-      |> Enum.reduce_while({[], 0}, fn msg, {acc, total} ->
+      |> Enum.reduce_while({MapSet.new(), 0}, fn {msg, idx}, {acc, total} ->
         chars = String.length(msg.content || "")
 
         if total + chars <= budget do
-          {:cont, {[msg | acc], total + chars}}
+          {:cont, {MapSet.put(acc, idx), total + chars}}
         else
           {:halt, {acc, total}}
         end
       end)
 
-    # Rebuild in original order: pinned (system/user) first, then evictable.
-    pinned ++ kept_evictable
+    # Rebuild in original order: preserve chronological order of all kept messages.
+    messages
+    |> Enum.with_index()
+    |> Enum.filter(fn {_msg, idx} ->
+      MapSet.member?(pinned_indices, idx) or MapSet.member?(kept_evictable_indices, idx)
+    end)
+    |> Enum.map(fn {msg, _idx} -> msg end)
   end
 
   defp format_for_provider(messages, :openai) do

@@ -199,11 +199,14 @@ defmodule Ragex.Agent.Executor do
     Logger.warning("Agent reached max iterations (#{max_iterations})")
 
     case Memory.get_messages(state.session_id, limit: 1) do
-      {:ok, [%{role: :assistant, content: content}]} when not is_nil(content) ->
+      {:ok, [%{role: :assistant, content: content}]} when not is_nil(content) and content != "" ->
         {:ok, state, content}
 
-      other ->
-        {:error, {:max_iterations_exceeded, other}}
+      _ ->
+        case force_text_response(state) do
+          {:done, content, updated_state} -> {:ok, updated_state, content}
+          other -> other
+        end
     end
   end
 
@@ -339,11 +342,14 @@ defmodule Ragex.Agent.Executor do
     Logger.warning("Agent reached max iterations (#{max_iterations})")
     # Return last assistant message or error
     case Memory.get_messages(state.session_id, limit: 1) do
-      {:ok, [%{role: :assistant, content: content}]} when not is_nil(content) ->
+      {:ok, [%{role: :assistant, content: content}]} when not is_nil(content) and content != "" ->
         {:ok, state, content}
 
-      other ->
-        {:error, {:max_iterations_exceeded, other}}
+      _ ->
+        case force_text_response(state) do
+          {:done, content, updated_state} -> {:ok, updated_state, content}
+          other -> other
+        end
     end
   end
 
@@ -451,6 +457,7 @@ defmodule Ragex.Agent.Executor do
       max_tokens: Keyword.get(state.opts, :max_tokens, @default_max_tokens),
       tool_choice: Keyword.get(state.opts, :tool_choice, "auto")
     ]
+    opts = if model = Keyword.get(state.opts, :model), do: [{:model, model} | opts], else: opts
 
     # Format messages for provider
     formatted_messages = format_messages_for_provider(messages, state.provider_name)
@@ -478,6 +485,7 @@ defmodule Ragex.Agent.Executor do
       max_tokens: Keyword.get(state.opts, :max_tokens, @default_max_tokens),
       tool_choice: Keyword.get(state.opts, :tool_choice, "auto")
     ]
+    opts = if model = Keyword.get(state.opts, :model), do: [{:model, model} | opts], else: opts
 
     formatted_messages = format_messages_for_provider(messages, state.provider_name)
 
@@ -615,11 +623,16 @@ defmodule Ragex.Agent.Executor do
           "now using all of that information. Do not mention tool call issues."
       )
 
-    with {:ok, messages} <- Memory.get_context(state.session_id, context_opts(state)),
-         {:ok, response} <- call_llm(%{state | tools: []}, messages) do
-      content = response.content || ""
-      Memory.add_message(state.session_id, :assistant, content)
-      {:done, content, state}
+    with {:ok, messages} <- Memory.get_context(state.session_id, context_opts(state)) do
+      File.write!("/tmp/forced_messages.json", Jason.encode!(messages, pretty: true))
+      case call_llm(%{state | tools: []}, messages) do
+        {:ok, response} ->
+          content = response.content || ""
+          Memory.add_message(state.session_id, :assistant, content)
+          {:done, content, state}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 

@@ -181,6 +181,20 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
     [%{role: "user", content: prompt}]
   end
 
+  defp build_messages(_prompt, %{messages: messages} = _context, opts) when is_list(messages) do
+    system_prompt = Keyword.get(opts, :system_prompt)
+
+    system_messages =
+      if system_prompt do
+        [%{role: "system", content: system_prompt}]
+      else
+        []
+      end
+
+    api_messages = Enum.map(messages, &to_api_message/1)
+    system_messages ++ api_messages
+  end
+
   defp build_messages(prompt, context, opts) when is_map(context) do
     context_content = format_context(context, opts)
 
@@ -199,6 +213,59 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
         %{role: "user", content: prompt}
       ]
   end
+
+  defp to_api_message(msg) do
+    role = msg[:role] || msg["role"]
+    content = msg[:content] || msg["content"]
+    tool_calls = msg[:tool_calls] || msg["tool_calls"]
+    tool_call_id = msg[:tool_call_id] || msg["tool_call_id"]
+    name = msg[:name] || msg["name"]
+
+    api_msg = %{
+      role: to_string(role),
+      content: content || ""
+    }
+
+    api_msg =
+      if tool_calls do
+        Map.put(api_msg, :tool_calls, format_api_tool_calls(tool_calls))
+      else
+        api_msg
+      end
+
+    api_msg =
+      if tool_call_id do
+        Map.put(api_msg, :tool_call_id, tool_call_id)
+      else
+        api_msg
+      end
+
+    api_msg =
+      if name do
+        Map.put(api_msg, :name, name)
+      else
+        api_msg
+      end
+
+    api_msg
+  end
+
+  defp format_api_tool_calls(tool_calls) when is_list(tool_calls) do
+    Enum.map(tool_calls, fn tc ->
+      %{
+        id: tc[:id] || tc["id"],
+        type: "function",
+        function: %{
+          name: tc[:name] || tc["name"] || tc[:function][:name] || tc["function"]["name"],
+          arguments: format_api_tool_args(tc[:arguments] || tc["arguments"] || tc[:function][:arguments] || tc["function"]["arguments"])
+        }
+      }
+    end)
+  end
+
+  defp format_api_tool_args(args) when is_binary(args), do: args
+  defp format_api_tool_args(args) when is_map(args), do: Jason.encode!(args)
+  defp format_api_tool_args(_), do: "{}"
 
   defp format_context(context, _opts) do
     """
@@ -258,7 +325,7 @@ defmodule Ragex.AI.Provider.DeepSeekR1 do
       method: :post,
       headers: headers,
       json: body,
-      receive_timeout: 60_000
+      receive_timeout: 300_000
     ]
 
     req_opts =

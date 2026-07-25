@@ -353,8 +353,45 @@ defmodule Ragex.Analysis.Runner do
     %{data | dead_functions: Enum.filter(funcs, &file_in_set?(&1[:file] || &1[:path], files))}
   end
 
+  defp filter_type(:suggestions, %{suggestions: suggestions} = data, files) do
+    filtered = Enum.filter(suggestions, &suggestion_in_files?(&1, files))
+    %{data | suggestions: filtered, summary: %{data.summary | total: length(filtered)}}
+  end
+
+  defp filter_type(:suggestions, items, files) when is_list(items) do
+    Enum.filter(items, &suggestion_in_files?(&1, files))
+  end
+
   # Structural / whole-project analyses pass through unfiltered
   defp filter_type(_type, data, _files), do: data
+
+  defp suggestion_in_files?(suggestion, files) do
+    target = suggestion[:target] || suggestion["target"] || %{}
+
+    cond do
+      is_binary(target) ->
+        file_in_set?(target, files)
+
+      is_map(target) ->
+        file_in_set?(target[:file] || target["file"], files) or
+          file_in_set?(target[:path] || target["path"], files) or
+          file_in_set?(target[:file1] || target["file1"], files) or
+          file_in_set?(target[:file2] || target["file2"], files) or
+          (target[:module] && module_in_files?(target[:module], files))
+
+      true ->
+        false
+    end
+  end
+
+  defp module_in_files?(module, files) do
+    case Ragex.Graph.Store.get_node({:module, module}) do
+      nil -> false
+      node ->
+        file = node[:file] || node["file"] || node[:path] || node["path"]
+        file_in_set?(file, files)
+    end
+  end
 
   defp file_in_set?(nil, _files), do: false
 
