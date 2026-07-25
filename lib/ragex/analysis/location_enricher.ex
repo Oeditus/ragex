@@ -34,6 +34,9 @@ defmodule Ragex.Analysis.LocationEnricher do
 
   alias Ragex.Graph.Store
 
+  @cache_key_file_index :location_enricher_file_index
+  @cache_key_name_index :location_enricher_name_index
+
   @type location :: %{
           optional(:file) => String.t(),
           optional(:line) => non_neg_integer() | nil,
@@ -91,6 +94,18 @@ defmodule Ragex.Analysis.LocationEnricher do
   @spec enrich_issues([issue()], String.t() | nil) :: [issue()]
   def enrich_issues(issues, file_path \\ nil) when is_list(issues) do
     Enum.map(issues, &enrich_issue(&1, file_path))
+  end
+
+  @doc """
+  Clears the process-dictionary caches used by the location enricher.
+
+  Call this between analysis runs to ensure stale data is not reused.
+  """
+  @spec clear_cache() :: :ok
+  def clear_cache do
+    Process.delete(@cache_key_file_index)
+    Process.delete(@cache_key_name_index)
+    :ok
   end
 
   @doc """
@@ -243,16 +258,8 @@ defmodule Ragex.Analysis.LocationEnricher do
     normalized_path = Path.expand(file_path)
 
     try do
-      # Find all functions in this file
-      functions =
-        Store.list_functions(limit: 100_000)
-        |> Enum.filter(fn
-          %{data: %{file: file}} when is_binary(file) ->
-            Path.expand(file) == normalized_path
-
-          _ ->
-            false
-        end)
+      file_index = get_file_index()
+      functions = Map.get(file_index, normalized_path, [])
 
       # Find function with matching name (any arity)
       functions
@@ -279,16 +286,9 @@ defmodule Ragex.Analysis.LocationEnricher do
     normalized_path = Path.expand(file_path)
 
     try do
-      functions =
-        Store.list_functions(limit: 100_000)
-        |> Enum.filter(fn
-          %{data: %{file: file, line: line}} when is_binary(file) and not is_nil(line) ->
-            Path.expand(file) == normalized_path
-
-          _ ->
-            false
-        end)
-        |> Enum.sort_by(& &1.data.line, :asc)
+      file_index = get_file_index()
+      # Functions in the index are already sorted by line asc
+      functions = Map.get(file_index, normalized_path, [])
 
       # Find function that contains this line
       # (function whose line is <= target line and is the closest)
@@ -335,12 +335,11 @@ defmodule Ragex.Analysis.LocationEnricher do
   end
 
   defp find_function_by_name_no_arity(module, function) do
-    # Search for any arity
-    Store.list_functions(limit: 100_000)
-    |> Enum.find(fn func_node ->
-      {mod, func, _arity} = func_node.id
-      mod == module && func == function
-    end)
+    # Search for any arity using the name index
+    name_index = get_name_index()
+
+    Map.get(name_index, function, [])
+    |> Enum.find(fn %{id: {mod, _func, _arity}} -> mod == module end)
     |> case do
       nil -> {:error, :not_found}
       func_node -> {:ok, build_function_info(func_node)}
@@ -348,6 +347,51 @@ defmodule Ragex.Analysis.LocationEnricher do
   catch
     :exit, _ ->
       {:error, :not_found}
+  end
+
+  # -- Process-dictionary cache helpers --
+
+  defp get_file_index do
+    case Process.get(@cache_key_file_index) do
+      nil -> build_and_cache_file_index()
+      index -> index
+    end
+  end
+
+  defp get_name_index do
+    case Process.get(@cache_key_name_index) do
+      nil -> build_and_cache_name_index()
+      index -> index
+    end
+  end
+
+  defp build_and_cache_file_index do
+    all_functions = Store.list_functions(limit: 500_000)
+
+    index =
+      all_functions
+      |> Enum.filter(fn
+        %{data: %{file: file}} when is_binary(file) -> true
+        _ -> false
+      end)
+      |> Enum.group_by(fn %{data: %{file: file}} -> Path.expand(file) end)
+      |> Map.new(fn {path, funcs} ->
+        {path, Enum.sort_by(funcs, fn f -> Map.get(f.data, :line, 0) end, :asc)}
+      end)
+
+    Process.put(@cache_key_file_index, index)
+    index
+  end
+
+  defp build_and_cache_name_index do
+    all_functions = Store.list_functions(limit: 500_000)
+
+    index =
+      all_functions
+      |> Enum.group_by(fn %{id: {_mod, func, _arity}} -> func end)
+
+    Process.put(@cache_key_name_index, index)
+    index
   end
 
   defp build_function_info(%{id: {module, function, arity}, data: data}) do

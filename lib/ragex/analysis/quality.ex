@@ -958,8 +958,52 @@ defmodule Ragex.Analysis.Quality do
     with {:ok, _stats} <- analyze_directory(path, opts) do
       min_complexity = Keyword.get(opts, :min_complexity, 10)
 
-      # Get all functions from knowledge graph
-      functions = Store.list_functions(limit: 100_000)
+      if Ragex.Store.Backend.module() == Ragex.Store.Backend.Dllb do
+        limit = Keyword.get(opts, :limit, 100_000)
+        query_opts = [limit: limit]
+
+        query_opts =
+          if path && path != "" do
+            Keyword.put(query_opts, :project_path, Path.expand(path))
+          else
+            query_opts
+          end
+
+        query_string = Dllb.MetaAST.Query.complex_functions(min_complexity, query_opts)
+
+        case Dllb.MetaAST.Query.exec(query_string, &Dllb.query/1) do
+          {:ok, rows} ->
+            res =
+              Enum.map(rows, fn row ->
+                mod = row[:module]
+                name = row[:name]
+                file = row[:file_path]
+                line = row[:line_start]
+
+                mod_atom = if is_binary(mod), do: String.to_atom("Elixir." <> mod), else: mod
+                name_atom = if is_binary(name), do: String.to_atom(name), else: name
+
+                %{
+                  module: mod_atom,
+                  name: name_atom,
+                  arity: row[:arity] || 0,
+                  file: file,
+                  line: line,
+                  cyclomatic_complexity: row[:complexity] || 0,
+                  cognitive_complexity: nil,
+                  max_nesting: nil,
+                  location: if(line, do: "#{file}:#{line}", else: file)
+                }
+              end)
+
+            {:ok, res}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      else
+        # Get all functions from knowledge graph
+        functions = Store.list_functions(limit: 100_000)
 
       # Filter by complexity and enrich with full metadata
       complex_functions =
@@ -1025,6 +1069,7 @@ defmodule Ragex.Analysis.Quality do
         |> Enum.sort_by(& &1.cyclomatic_complexity, :desc)
 
       {:ok, complex_functions}
+      end
     end
   end
 

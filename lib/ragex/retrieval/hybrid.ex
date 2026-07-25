@@ -258,7 +258,7 @@ defmodule Ragex.Retrieval.Hybrid do
     # Run semantic + graph legs, then optionally add FTS and graph-algo legs.
     case {semantic_first_search(query, opts), graph_first_search(query, opts)} do
       {{:ok, semantic_results}, {:ok, graph_results}} ->
-        fts_results = fts_search(query, limit * 2)
+        fts_results = fts_search(query, limit * 2, opts)
 
         algo_results =
           if Keyword.get(opts, :graph_algo_boost, false) do
@@ -452,8 +452,9 @@ defmodule Ragex.Retrieval.Hybrid do
   # Run a BM25 full-text search via dllb and convert results to the same map
   # shape used by the semantic/graph legs so they can be fused with RRF.
   # Returns an empty list when dllb is disabled or the query fails.
-  defp fts_search(query, limit) do
-    fts_query = Dllb.Query.search("ast_node", "source_text", query, limit: limit)
+  defp fts_search(query, limit, opts) do
+    where = scope_where(opts)
+    fts_query = Dllb.Query.search("ast_node", "source_text", query, limit: limit, where: where)
 
     case DllbAdapter.query(fts_query) do
       {:ok, %Dllb.Result.Rows{data: rows}} when is_list(rows) and rows != [] ->
@@ -470,6 +471,25 @@ defmodule Ragex.Retrieval.Hybrid do
       {:error, reason} ->
         Logger.debug("FTS search failed (ignored in fusion): #{inspect(reason)}")
         []
+    end
+  end
+
+  defp scope_where(opts) do
+    []
+    |> maybe_add_filter(:project_path, opts)
+    |> maybe_add_filter(:language, opts)
+    |> maybe_add_filter(:file_path, opts)
+    |> maybe_add_filter(:kind, opts)
+    |> case do
+      [] -> nil
+      filters -> Enum.join(filters, " AND ")
+    end
+  end
+
+  defp maybe_add_filter(filters, key, opts) do
+    case Keyword.get(opts, key) do
+      nil -> filters
+      value -> ["#{key} = '#{to_string(value)}'" | filters]
     end
   end
 

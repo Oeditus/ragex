@@ -290,7 +290,8 @@ defmodule Ragex.Analysis.Smells do
         end
       end,
       max_concurrency: max_concurrency,
-      timeout: :infinity
+      timeout: 60_000,
+      on_timeout: :kill_task
     )
     |> Enum.map(fn
       {:ok, result} -> result

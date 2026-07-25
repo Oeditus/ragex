@@ -320,11 +320,50 @@ defmodule Ragex.Analyzers.Directory do
   defp analyze_file(file_path) do
     case File.read(file_path) do
       {:ok, content} ->
+        content = sanitize_utf8(content)
         MetastaticAnalyzer.analyze(content, file_path)
 
       {:error, reason} ->
         {:error, {:file_read_error, reason}}
     end
+  end
+
+  # Ensures the binary is valid UTF-8. Files saved with legacy encodings
+  # (e.g. Latin-1) contain bytes that are invalid UTF-8 and cause
+  # `Code.string_to_quoted/2` to raise `UnicodeConversionError`.
+  # We replace invalid byte sequences with the Unicode replacement character
+  # (U+FFFD) so the parser can proceed without crashing.
+  defp sanitize_utf8(binary) when is_binary(binary) do
+    if String.valid?(binary) do
+      binary
+    else
+      Logger.debug("Sanitizing non-UTF-8 content (replacing invalid bytes)")
+
+      binary
+      |> :unicode.characters_to_binary(:utf8)
+      |> case do
+        result when is_binary(result) ->
+          result
+
+        {:error, good, _rest} ->
+          # Partial conversion succeeded up to `good`; fall back to byte-by-byte
+          sanitize_utf8_bytes(binary, good)
+
+        {:incomplete, good, _rest} ->
+          sanitize_utf8_bytes(binary, good)
+      end
+    end
+  end
+
+  defp sanitize_utf8_bytes(<<>>, acc), do: acc
+
+  defp sanitize_utf8_bytes(<<c::utf8, rest::binary>>, acc) do
+    sanitize_utf8_bytes(rest, <<acc::binary, c::utf8>>)
+  end
+
+  defp sanitize_utf8_bytes(<<_byte, rest::binary>>, acc) do
+    # Replace invalid byte with U+FFFD REPLACEMENT CHARACTER
+    sanitize_utf8_bytes(rest, <<acc::binary, 0xEF, 0xBF, 0xBD>>)
   end
 
   defp store_analysis(%{modules: modules, functions: functions, calls: calls, imports: imports}) do

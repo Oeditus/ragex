@@ -101,6 +101,30 @@ defmodule Ragex.Analysis.MetastaticBridgeTest do
       assert reason == :enoent
     end
 
+    test "handles file with invalid UTF-8 encoding (e.g. Latin-1 tilde)" do
+      tmp_dir = System.tmp_dir!()
+      bad_encoding_file = Path.join(tmp_dir, "bad_encoding_#{:rand.uniform(10000)}.ex")
+
+      # 0xF1 is Latin-1 small n with tilde (ñ), which is invalid UTF-8
+      invalid_utf8_content = <<
+        "defmodule BadEncoding do\n",
+        "  # Tallak",
+        241,
+        " Tveide\n",
+        "  def test, do: :ok\n",
+        "end"
+      >>
+
+      File.write!(bad_encoding_file, invalid_utf8_content)
+
+      on_exit(fn -> File.rm(bad_encoding_file) end)
+
+      # analyze_file should succeed by sanitizing it to valid UTF-8
+      assert {:ok, result} = MetastaticBridge.analyze_file(bad_encoding_file)
+      assert result.language == :elixir
+      assert is_map(result.complexity)
+    end
+
     test "handles invalid Elixir syntax" do
       tmp_dir = System.tmp_dir!()
       invalid_file = Path.join(tmp_dir, "invalid_#{:rand.uniform(10000)}.ex")

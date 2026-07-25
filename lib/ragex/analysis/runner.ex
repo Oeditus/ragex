@@ -21,6 +21,8 @@ defmodule Ragex.Analysis.Runner do
 
   alias Ragex.Analyzers.Directory
 
+  require Logger
+
   @type config :: %{
           required(:path) => String.t(),
           required(:severity) => [atom()],
@@ -115,9 +117,18 @@ defmodule Ragex.Analysis.Runner do
   defp maybe_run(results, key, analyses, on_progress, fun) do
     if Map.get(analyses, key, false) do
       on_progress.(key, :start)
-      result = fun.()
-      on_progress.(key, {:done, extract_issue_count(result)})
-      Map.put(results, key, result)
+      task = Task.async(fn -> fun.() end)
+
+      case Task.yield(task, 300_000) || Task.shutdown(task) do
+        {:ok, result} ->
+          on_progress.(key, {:done, extract_issue_count(result)})
+          Map.put(results, key, result)
+
+        nil ->
+          on_progress.(key, {:done, 0})
+          Logger.warning("Analysis pass #{key} timed out after 5 minutes")
+          results
+      end
     else
       results
     end

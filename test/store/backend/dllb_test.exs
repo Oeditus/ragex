@@ -48,12 +48,12 @@ defmodule Ragex.Store.Backend.DllbTest do
       assert joined =~ "DEFINE FULLTEXT INDEX idx_docstring ON TABLE ast_node FIELDS docstring"
     end
 
-    test "defines exactly one vector index (source_embedding only)" do
+    test "defines exactly two vector indexes (source and structure embeddings)" do
       vector_indexes =
         Dllb.schema_statements()
         |> Enum.filter(&String.contains?(&1, "DEFINE VECTOR INDEX"))
 
-      assert [_] = vector_indexes
+      assert [_, _] = vector_indexes
     end
   end
 

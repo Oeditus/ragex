@@ -23,7 +23,8 @@ defmodule Ragex.Analysis.MetaCredoBridge do
   def parse_file(path) do
     language = Ragex.LanguageSupport.detect_language(path)
 
-    with {:ok, content} <- File.read(path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, content} <- ensure_utf8(content, path) do
       SourceFile.parse(content, path, language)
     end
   end
@@ -34,7 +35,9 @@ defmodule Ragex.Analysis.MetaCredoBridge do
   @spec parse_source_file(String.t(), String.t(), atom()) ::
           {:ok, SourceFile.t()} | {:error, term()}
   def parse_source_file(content, filename, language) do
-    SourceFile.parse(content, filename, language)
+    with {:ok, content} <- ensure_utf8(content, filename) do
+      SourceFile.parse(content, filename, language)
+    end
   end
 
   # -- Running checks --
@@ -126,6 +129,18 @@ defmodule Ragex.Analysis.MetaCredoBridge do
   end
 
   # -- Helpers --
+
+  # Validates that file content is valid UTF-8. Files with other encodings
+  # (e.g. Latin-1) will crash Code.string_to_quoted via String.to_charlist.
+  defp ensure_utf8(content, path) when is_binary(content) do
+    if String.valid?(content) do
+      {:ok, content}
+    else
+      Logger.warning("Skipping #{path}: file contains invalid UTF-8 encoding")
+      {:error, {:invalid_utf8, path}}
+    end
+  end
+
 
   # Map MetaCredo check module to Ragex analyzer atom
   defp check_to_analyzer_atom(check_module) do

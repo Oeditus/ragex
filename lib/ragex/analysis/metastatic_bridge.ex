@@ -198,16 +198,26 @@ defmodule Ragex.Analysis.MetastaticBridge do
     thresholds = Keyword.get(opts, :thresholds, %{})
     language = Keyword.get(opts, :language, detect_language(path))
 
-    with {:ok, content} <- File.read(path),
-         {:ok, adapter} <- get_adapter(language),
-         {:ok, doc} <- parse_document(adapter, content, language),
-         {:ok, complexity_result} <- analyze_complexity(doc, metrics, thresholds),
-         {:ok, purity_result} <- analyze_purity(doc, metrics) do
-      {:ok, build_result(path, language, complexity_result, purity_result)}
-    else
-      {:error, reason} = error ->
-        Logger.warning("Analysis failed for #{path}: #{inspect(reason)}")
-        error
+    try do
+      with {:ok, content} <- File.read(path),
+           content = sanitize_utf8(content),
+           {:ok, adapter} <- get_adapter(language),
+           {:ok, doc} <- parse_document(adapter, content, language),
+           {:ok, complexity_result} <- analyze_complexity(doc, metrics, thresholds),
+           {:ok, purity_result} <- analyze_purity(doc, metrics) do
+        {:ok, build_result(path, language, complexity_result, purity_result)}
+      else
+        {:error, reason} = error ->
+          Logger.warning("Analysis failed for #{path}: #{inspect(reason)}")
+          error
+      end
+    rescue
+      error ->
+        Logger.error(
+          "Exception raised during analysis of #{path}: #{Exception.message(error)}\n#{Exception.format_stacktrace(__STACKTRACE__)}"
+        )
+
+        {:error, error}
     end
   end
 
@@ -384,7 +394,8 @@ defmodule Ragex.Analysis.MetastaticBridge do
         end
       end,
       max_concurrency: max_concurrency,
-      timeout: :infinity
+      timeout: 60_000,
+      on_timeout: :kill_task
     )
     |> Enum.map(fn
       {:ok, result} -> result
@@ -443,5 +454,43 @@ defmodule Ragex.Analysis.MetastaticBridge do
           line: Keyword.get(meta, :line)
         }
     end
+  end
+
+  # Ensures the binary is valid UTF-8. Files saved with legacy encodings
+  # (e.g. Latin-1) contain bytes that are invalid UTF-8 and cause
+  # `Code.string_to_quoted/2` to raise `UnicodeConversionError`.
+  # We replace invalid byte sequences with the Unicode replacement character
+  # (U+FFFD) so the parser can proceed without crashing.
+  defp sanitize_utf8(binary) when is_binary(binary) do
+    if String.valid?(binary) do
+      binary
+    else
+      Logger.debug("Sanitizing non-UTF-8 content (replacing invalid bytes)")
+
+      binary
+      |> :unicode.characters_to_binary(:utf8)
+      |> case do
+        result when is_binary(result) ->
+          result
+
+        {:error, good, _rest} ->
+          # Partial conversion succeeded up to `good`; fall back to byte-by-byte
+          sanitize_utf8_bytes(binary, good)
+
+        {:incomplete, good, _rest} ->
+          sanitize_utf8_bytes(binary, good)
+      end
+    end
+  end
+
+  defp sanitize_utf8_bytes(<<>>, acc), do: acc
+
+  defp sanitize_utf8_bytes(<<c::utf8, rest::binary>>, acc) do
+    sanitize_utf8_bytes(rest, <<acc::binary, c::utf8>>)
+  end
+
+  defp sanitize_utf8_bytes(<<_byte, rest::binary>>, acc) do
+    # Replace invalid byte with U+FFFD REPLACEMENT CHARACTER
+    sanitize_utf8_bytes(rest, <<acc::binary, 0xEF, 0xBF, 0xBD>>)
   end
 end

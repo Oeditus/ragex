@@ -95,8 +95,14 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def store_node(node_type, node_id, data) do
+    normalized_data =
+      data
+      |> map_key(:file, :file_path)
+      |> map_key(:line, :line_start)
+      |> map_key(:doc, :docstring)
+
     fields =
-      Map.merge(data, %{kind: to_string(node_type), name: extract_name(node_type, node_id)})
+      Map.merge(normalized_data, %{kind: to_string(node_type), name: extract_name(node_type, node_id)})
 
     id = node_to_dllb_id({node_type, node_id})
     query_string = Dllb.Query.upsert("ast_node", id, fields)
@@ -134,7 +140,7 @@ defmodule Ragex.Store.Backend.Dllb do
     case MQ.exec(query_string, query_fn()) do
       {:ok, rows} ->
         Enum.map(rows, fn row ->
-          %{type: row[:kind], id: row[:name], data: row}
+          %{type: row[:kind], id: row[:name], data: dllb_row_to_node_data(row)}
         end)
 
       {:error, _} ->
@@ -159,7 +165,7 @@ defmodule Ragex.Store.Backend.Dllb do
     case MQ.exec(query_string, query_fn()) do
       {:ok, rows} ->
         Enum.find_value(rows, fn row ->
-          if row[:name] == to_string(func_name), do: row
+          if row[:name] == to_string(func_name), do: dllb_row_to_node_data(row)
         end)
 
       {:error, _} ->
@@ -288,10 +294,87 @@ defmodule Ragex.Store.Backend.Dllb do
   def store_embedding(_node_type, _node_id, _embedding, _text), do: :ok
 
   @impl true
-  def get_embedding(_node_type, _node_id), do: nil
+  def get_embedding(node_type, node_id) do
+    case embedding_match_attrs({node_type, node_id}) do
+      attrs when map_size(attrs) == 0 ->
+        nil
+
+      attrs ->
+        where =
+          attrs
+          |> Enum.reject(fn {_k, v} -> is_nil(v) end)
+          |> Enum.sort_by(fn {k, _v} -> to_string(k) end)
+          |> Enum.map_join(" AND ", fn {k, v} -> "#{k} = #{escape_value(v)}" end)
+
+        query_string = Dllb.Query.select("ast_node", where: where, limit: 1)
+
+        case MQ.exec(query_string, query_fn()) do
+          {:ok, [row | _]} ->
+            embedding = row[:source_embedding]
+            text = row[:source_text] || row[:signature] || to_string(row[:name])
+            if is_list(embedding), do: {embedding, text}, else: nil
+
+          _ ->
+            nil
+        end
+    end
+  end
 
   @impl true
-  def list_embeddings(_node_type \\ nil, _limit \\ 1_000), do: []
+  def list_embeddings(node_type \\ nil, limit \\ 1_000) do
+    kind_str =
+      case node_type do
+        nil -> nil
+        :function -> "function_def"
+        :module -> "container"
+        other -> to_string(other)
+      end
+
+    where_clause =
+      case kind_str do
+        nil -> "source_embedding IS NOT NULL"
+        kind -> "kind = '#{kind}' AND source_embedding IS NOT NULL"
+      end
+
+    query_string = Dllb.Query.select("ast_node", where: where_clause, limit: effective_limit(limit))
+
+    case MQ.exec(query_string, query_fn()) do
+      {:ok, rows} ->
+        Enum.map(rows, fn row ->
+          nt =
+            case row[:kind] do
+              :function_def -> :function
+              :container -> :module
+              other when is_atom(other) -> other
+              other -> String.to_atom(to_string(other))
+            end
+
+          nid =
+            case nt do
+              :function ->
+                mod = row[:module]
+                name = row[:name]
+                arity = row[:arity]
+                mod_atom = if is_binary(mod), do: String.to_atom("Elixir." <> mod), else: mod
+                name_atom = if is_binary(name), do: String.to_atom(name), else: name
+                {mod_atom, name_atom, arity}
+
+              :module ->
+                mod = row[:name]
+                if is_binary(mod), do: String.to_atom("Elixir." <> mod), else: mod
+
+              _ ->
+                row[:name]
+            end
+
+          text = row[:source_text] || row[:signature] || to_string(row[:name])
+          {nt, nid, row[:source_embedding], text}
+        end)
+
+      {:error, _} ->
+        []
+    end
+  end
 
   @impl true
   def count_embeddings do
@@ -343,6 +426,13 @@ defmodule Ragex.Store.Backend.Dllb do
         "idx_source_embedding",
         "source_embedding",
         source_embedding_dim(),
+        metric: "cosine"
+      ),
+      Dllb.Query.define_vector_index(
+        "ast_node",
+        "idx_structure_embedding",
+        "structure_embedding",
+        384,
         metric: "cosine"
       )
     ]
@@ -406,7 +496,30 @@ defmodule Ragex.Store.Backend.Dllb do
   end
 
   defp dllb_row_to_node_data(row) do
-    Map.drop(row, [:id])
+    row
+    |> Map.drop([:id])
+    |> add_backwards_compatible_keys()
+  end
+
+  defp add_backwards_compatible_keys(row) do
+    row
+    |> maybe_copy_key(:file_path, :file)
+    |> maybe_copy_key(:line_start, :line)
+    |> maybe_copy_key(:docstring, :doc)
+  end
+
+  defp maybe_copy_key(map, src, dst) do
+    case Map.get(map, src) do
+      nil -> map
+      val -> Map.put(map, dst, val)
+    end
+  end
+
+  defp map_key(map, old_key, new_key) do
+    case Map.pop(map, old_key) do
+      {nil, _} -> map
+      {value, updated_map} -> Map.put(updated_map, new_key, value)
+    end
   end
 
   defp effective_limit(:infinity), do: nil
@@ -424,4 +537,10 @@ defmodule Ragex.Store.Backend.Dllb do
   defp safe_to_edge_atom("imports"), do: :imports
   defp safe_to_edge_atom(other) when is_binary(other), do: String.to_atom(other)
   defp safe_to_edge_atom(other), do: other
+
+  defp escape_value(v) when is_binary(v), do: "'#{String.replace(v, "'", "''")}'"
+  defp escape_value(v) when is_integer(v), do: Integer.to_string(v)
+  defp escape_value(v) when is_float(v), do: Float.to_string(v)
+  defp escape_value(v) when is_atom(v), do: "'#{Atom.to_string(v)}'"
+  defp escape_value(v), do: "'#{inspect(v)}'"
 end
