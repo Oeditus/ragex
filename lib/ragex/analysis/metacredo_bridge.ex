@@ -141,7 +141,6 @@ defmodule Ragex.Analysis.MetaCredoBridge do
     end
   end
 
-
   # Map MetaCredo check module to Ragex analyzer atom
   defp check_to_analyzer_atom(check_module) do
     check_module

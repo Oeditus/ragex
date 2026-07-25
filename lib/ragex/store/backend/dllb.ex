@@ -102,7 +102,10 @@ defmodule Ragex.Store.Backend.Dllb do
       |> map_key(:doc, :docstring)
 
     fields =
-      Map.merge(normalized_data, %{kind: to_string(node_type), name: extract_name(node_type, node_id)})
+      Map.merge(normalized_data, %{
+        kind: to_string(node_type),
+        name: extract_name(node_type, node_id)
+      })
 
     id = node_to_dllb_id({node_type, node_id})
     query_string = Dllb.Query.upsert("ast_node", id, fields)
@@ -336,7 +339,8 @@ defmodule Ragex.Store.Backend.Dllb do
         kind -> "kind = '#{kind}' AND source_embedding IS NOT NULL"
       end
 
-    query_string = Dllb.Query.select("ast_node", where: where_clause, limit: effective_limit(limit))
+    query_string =
+      Dllb.Query.select("ast_node", where: where_clause, limit: effective_limit(limit))
 
     case MQ.exec(query_string, query_fn()) do
       {:ok, rows} ->

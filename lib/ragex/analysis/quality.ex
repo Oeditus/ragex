@@ -36,7 +36,10 @@ defmodule Ragex.Analysis.Quality do
       complex = Quality.find_complex(metric: :cyclomatic, threshold: 10)
   """
 
+  alias Dllb.MetaAST.Query
   alias Ragex.Analysis.{MetastaticBridge, QualityStore, Security}
+  alias Ragex.Store.Backend
+
   require Logger
 
   @type analysis_result :: %{
@@ -958,20 +961,12 @@ defmodule Ragex.Analysis.Quality do
     with {:ok, _stats} <- analyze_directory(path, opts) do
       min_complexity = Keyword.get(opts, :min_complexity, 10)
 
-      if Ragex.Store.Backend.module() == Ragex.Store.Backend.Dllb do
+      if Backend.module() == Backend.Dllb do
         limit = Keyword.get(opts, :limit, 100_000)
-        query_opts = [limit: limit]
+        query_opts = [limit: limit, project_path: Path.expand(path)]
+        query_string = Query.complex_functions(min_complexity, query_opts)
 
-        query_opts =
-          if path && path != "" do
-            Keyword.put(query_opts, :project_path, Path.expand(path))
-          else
-            query_opts
-          end
-
-        query_string = Dllb.MetaAST.Query.complex_functions(min_complexity, query_opts)
-
-        case Dllb.MetaAST.Query.exec(query_string, &Dllb.query/1) do
+        case Query.exec(query_string, &Dllb.query/1) do
           {:ok, rows} ->
             res =
               Enum.map(rows, fn row ->
@@ -1002,76 +997,60 @@ defmodule Ragex.Analysis.Quality do
             {:error, reason}
         end
       else
-        # Get all functions from knowledge graph
-        functions = Store.list_functions(limit: 100_000)
+        complex_functions =
+          [limit: 100_000]
+          |> Store.list_functions()
+          |> Enum.flat_map(&do_file_metrics(&1, min_complexity))
+          |> Enum.sort_by(& &1.cyclomatic_complexity, :desc)
 
-      # Filter by complexity and enrich with full metadata
-      complex_functions =
-        functions
-        |> Enum.filter(fn func_node ->
-          # Check if this function's file was analyzed
-          file = Map.get(func_node.data, :file)
-
-          if file do
-            # Get metrics for this file
-            case QualityStore.get_metrics(file) do
-              {:ok, metrics} ->
-                # Get per-function metrics
-                {module, name, arity} = func_node.id
-
-                complexity =
-                  metrics
-                  |> Map.get(:per_function, [])
-                  |> Enum.reduce(0, fn per_func, acc ->
-                    per_func
-                    |> Map.get({module, name, arity}, %{})
-                    |> Map.get(:cyclomatic, 0)
-                    |> Kernel.+(acc)
-                  end)
-
-                complexity >= min_complexity
-
-              {:error, _} ->
-                false
-            end
-          else
-            false
-          end
-        end)
-        |> Enum.map(fn func_node ->
-          {module, name, arity} = func_node.id
-          file = Map.get(func_node.data, :file)
-          line = Map.get(func_node.data, :line)
-
-          # Get metrics for detailed complexity info
-          func_metrics =
-            case QualityStore.get_metrics(file) do
-              {:ok, metrics} ->
-                per_func = Map.get(metrics, :per_function, %{})
-                Map.get(per_func, {module, name, arity}, %{})
-
-              {:error, _} ->
-                %{}
-            end
-
-          %{
-            module: module,
-            name: name,
-            arity: arity,
-            file: file,
-            line: line,
-            cyclomatic_complexity: Map.get(func_metrics, :cyclomatic, 0),
-            cognitive_complexity: Map.get(func_metrics, :cognitive),
-            max_nesting: Map.get(func_metrics, :max_nesting),
-            location: if(line, do: "#{file}:#{line}", else: file)
-          }
-        end)
-        |> Enum.sort_by(& &1.cyclomatic_complexity, :desc)
-
-      {:ok, complex_functions}
+        {:ok, complex_functions}
       end
     end
   end
+
+  # Check if this function's file was analyzed
+  defp file_metrics?(metrics, {module, name, arity}, min_complexity) do
+    complexity =
+      metrics
+      |> Map.get(:per_function, [])
+      |> Enum.reduce(0, fn per_func, acc ->
+        per_func
+        |> Map.get({module, name, arity}, %{})
+        |> Map.get(:cyclomatic, 0)
+        |> Kernel.+(acc)
+      end)
+
+    complexity >= min_complexity
+  end
+
+  defp do_file_metrics(
+         %{id: {module, name, arity}, data: %{file: file, line: line}},
+         min_complexity
+       )
+       when not is_nil(file) do
+    with {:ok, metrics} <- QualityStore.get_metrics(file),
+         true <- file_metrics?(metrics, {module, name, arity}, min_complexity),
+         %{} = per_func <- Map.get(metrics, :per_function),
+         %{} = func_metrics <- Map.get(per_func, {module, name, arity}) do
+      [
+        %{
+          module: module,
+          name: name,
+          arity: arity,
+          file: file,
+          line: line,
+          cyclomatic_complexity: Map.get(func_metrics, :cyclomatic, 0),
+          cognitive_complexity: Map.get(func_metrics, :cognitive),
+          max_nesting: Map.get(func_metrics, :max_nesting),
+          location: if(line, do: "#{file}:#{line}", else: file)
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  defp do_file_metrics(_, _), do: []
 
   @doc """
   Analyzes directory quality metrics.
