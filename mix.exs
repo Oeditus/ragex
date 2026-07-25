@@ -206,6 +206,7 @@ defmodule Ragex.MixProject do
       "stuff/docs/TOOLS.md": [title: "MCP Tools Reference"],
       "stuff/docs/TROUBLESHOOTING.md": [title: "Troubleshooting"],
       "stuff/docs/ZED.md": [title: "Zed Editor Integration"],
+      "SERVER_GUIDE.md": [title: "Socket Server Guide"],
       "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md": [title: "Using Ragex as MCP Server"],
       "stuff/docs/CI.md": [title: "CI / Diff-Based Analysis"],
       "stuff/docs/RAGEX-VS-CICADA.md": [title: "Ragex vs Cicada"],
