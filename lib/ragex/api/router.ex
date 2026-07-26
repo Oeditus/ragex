@@ -117,6 +117,12 @@ defmodule Ragex.API.Router do
   end
 
   # Convert Elixir terms to JSON-safe structures
+  defp json_safe(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+  defp json_safe(%NaiveDateTime{} = dt), do: NaiveDateTime.to_iso8601(dt)
+  defp json_safe(%Date{} = d), do: Date.to_iso8601(d)
+  defp json_safe(%Time{} = t), do: Time.to_iso8601(t)
+  defp json_safe(value) when is_struct(value), do: inspect(value)
+
   defp json_safe(value) when is_map(value) do
     Enum.into(value, %{}, fn {k, v} ->
       key = if is_atom(k), do: Atom.to_string(k), else: k

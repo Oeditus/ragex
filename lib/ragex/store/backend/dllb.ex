@@ -313,9 +313,9 @@ defmodule Ragex.Store.Backend.Dllb do
 
         case MQ.exec(query_string, query_fn()) do
           {:ok, [row | _]} ->
-            embedding = row[:source_embedding]
+            embedding = unwrap_embedding(row[:source_embedding])
             text = row[:source_text] || row[:signature] || to_string(row[:name])
-            if is_list(embedding), do: {embedding, text}, else: nil
+            if is_list(embedding) and embedding != [], do: {embedding, text}, else: nil
 
           _ ->
             nil
@@ -344,7 +344,8 @@ defmodule Ragex.Store.Backend.Dllb do
 
     case MQ.exec(query_string, query_fn()) do
       {:ok, rows} ->
-        Enum.map(rows, fn row ->
+        rows
+        |> Enum.map(fn row ->
           nt =
             case row[:kind] do
               :function_def -> :function
@@ -372,8 +373,9 @@ defmodule Ragex.Store.Backend.Dllb do
             end
 
           text = row[:source_text] || row[:signature] || to_string(row[:name])
-          {nt, nid, row[:source_embedding], text}
+          {nt, nid, unwrap_embedding(row[:source_embedding]), text}
         end)
+        |> Enum.reject(fn {_, _, emb, _} -> is_nil(emb) end)
 
       {:error, _} ->
         []
@@ -535,6 +537,21 @@ defmodule Ragex.Store.Backend.Dllb do
   defp unwrap_typed(%{"Float" => v}), do: v
   defp unwrap_typed(%{"Bool" => v}), do: v
   defp unwrap_typed(v), do: v
+
+  # dllb returns embedding vectors as %{"Array" => [%{"Float" => v}, ...]}.
+  # Unwrap to a plain list of floats so callers can use Enum functions and length/1.
+  defp unwrap_embedding(%{"Array" => items}) when is_list(items) do
+    Enum.map(items, fn
+      %{"Float" => f} -> f
+      %{"Int" => i} -> i / 1
+      v when is_float(v) -> v
+      v when is_integer(v) -> v / 1
+      _ -> 0.0
+    end)
+  end
+
+  defp unwrap_embedding(v) when is_list(v), do: v
+  defp unwrap_embedding(_), do: nil
 
   defp safe_to_edge_atom("calls"), do: :calls
   defp safe_to_edge_atom("contains"), do: :contains

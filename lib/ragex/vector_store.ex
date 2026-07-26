@@ -126,9 +126,15 @@ defmodule Ragex.VectorStore do
     # not list embeddings report 0 here (handled separately).
     embeddings = Store.list_embeddings()
 
+    dims =
+      case embeddings do
+        [{_, _, emb, _} | _] when is_list(emb) -> length(emb)
+        _ -> 0
+      end
+
     stats = %{
       total_embeddings: total,
-      dimensions: if(embeddings != [], do: length(elem(hd(embeddings), 2)), else: 0)
+      dimensions: dims
     }
 
     {:reply, stats, state}
