@@ -13,9 +13,10 @@ giving fast feedback without noise from pre-existing issues.
 5. [Output Formats](#output-formats)
 6. [GitHub Actions Integration](#github-actions-integration)
 7. [Other CI Systems](#other-ci-systems)
-8. [API Reference](#api-reference)
-9. [Configuration](#configuration)
-10. [Troubleshooting](#troubleshooting)
+8. [Graph & Embedding Caching in CI](#graph--embedding-caching-in-ci)
+9. [API Reference](#api-reference)
+10. [Configuration](#configuration)
+11. [Troubleshooting](#troubleshooting)
 
 ## Quick Start
 
@@ -270,6 +271,56 @@ ragex-analysis:
     - mix ragex.ci --base origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME
 ```
 
+### Bitbucket Pipelines
+
+```yaml
+pipelines:
+  pull-requests:
+    '**':
+      - step:
+          name: Ragex CI Analysis
+          script:
+            - mix deps.get
+            - mix ragex.ci --base origin/$BITBUCKET_PR_DESTINATION_BRANCH
+```
+
+### CircleCI
+
+```yaml
+version: 2.1
+jobs:
+  analyze-pr:
+    docker:
+      - image: cimg/elixir:1.18
+    steps:
+      - checkout
+      - run:
+          name: Run Ragex CI
+          command: mix ragex.ci --base origin/main
+```
+
+### Azure Pipelines
+
+```yaml
+trigger: none
+pr:
+  branches:
+    include:
+      - main
+
+jobs:
+  - job: RagexCI
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - checkout: self
+        fetchDepth: 0
+      - script: |
+          mix deps.get
+          mix ragex.ci --base origin/$(System.PullRequest.TargetBranch)
+        displayName: 'Run Ragex CI Analysis'
+```
+
 ### Generic (any CI)
 
 ```bash
@@ -298,6 +349,161 @@ if [ -n "$STAGED" ]; then
   mix ragex.analyze --diff --base HEAD~1 --head HEAD --ci
 fi
 ```
+
+## Graph & Embedding Caching in CI
+
+Building the AST knowledge graph and generating code embedding vectors from scratch for a medium-to-large project can take between 50 to 60 seconds. To drastically cut down invocation time in CI runs (bringing execution time down to **< 5 seconds**), Ragex includes a built-in ETS-based persistence layer.
+
+### How Caching Works
+
+Ragex isolates caches per project using a SHA256 hash of the absolute project directory path. Cache artifacts are stored at:
+
+```
+~/.cache/ragex/<project_hash>/
+├── graph.ets        # AST nodes, call-graph edges & cross-file dependencies
+└── embeddings.ets   # Serialized embedding vectors & file SHA256 hashes
+```
+
+*(Note: If `XDG_CACHE_HOME` is set, `$XDG_CACHE_HOME/ragex/<project_hash>/` is used instead).*
+
+When `mix ragex.ci` or `mix ragex.analyze --diff` runs with a cached graph present:
+
+1. **Instant Graph Restoring**: The base graph and embedding index load from disk in milliseconds.
+2. **Incremental Change Detection**: Only changed files (detected via diff & content hash) are parsed and updated in memory.
+3. **Filtered Analysis**: Whole-project rules run on the updated graph, and per-file warnings are filtered to PR changes.
+
+### Pre-Building / Warming Up the Cache
+
+You can manually or automatically pre-build the cache for your repository using the `mix ragex.cache.refresh` task:
+
+```bash
+# Perform a full scan and save graph + embeddings cache
+mix ragex.cache.refresh --full
+
+# Perform an incremental cache refresh (only re-analyzes modified files)
+mix ragex.cache.refresh
+```
+
+### Performance Impact
+
+| Scenario | Execution Time | Description |
+|----------|----------------|-------------|
+| **No Graph Cache (Cold Run)** | 50s – 60s | Full codebase parsing, graph generation, and ML embedding generation |
+| **Warm Graph Cache + Diff Mode** | **< 5s** | Restores graph from disk, parses only PR diff files (<5% of code) |
+
+### CI Caching Setup
+
+#### 1. Persisting Cache Across PRs (GitHub Actions)
+
+Add `actions/cache@v4` pointing to `~/.cache/ragex` in your CI workflow:
+
+```yaml
+- name: Restore Ragex Graph Cache
+  uses: actions/cache@v4
+  with:
+    path: ~/.cache/ragex
+    key: ${{ runner.os }}-ragex-graph-${{ github.sha }}
+    restore-keys: |
+      ${{ runner.os }}-ragex-graph-
+```
+
+#### 2. Base Branch Warmup Strategy (Recommended for Large Teams)
+
+To ensure PR branches always restore a warm graph base:
+
+1. **Main Branch Warmup Job**: Run `mix ragex.cache.refresh --full` whenever commits land on `main` (or via a nightly cron job), and save `~/.cache/ragex` under key `ragex-graph-main`.
+2. **PR Job**: Restore `ragex-graph-main`. When `mix ragex.ci --base origin/main` executes in the PR, it loads `main`'s graph cache instantly and only processes the diff introduced by the pull request.
+
+```yaml
+# .github/workflows/warm-cache.yml (Runs on push to main)
+name: Warm Ragex Cache
+on:
+  push:
+    branches: [main]
+
+jobs:
+  warmup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '27'
+      - run: mix deps.get
+      - name: Build graph & embedding cache
+        run: mix ragex.cache.refresh --full
+      - name: Save Cache
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ragex
+          key: ragex-graph-main-${{ github.sha }}
+```
+
+### Cache Management & Inspection
+
+- **Check Cache Status**: `mix ragex.cache.stats`
+- **Clear Project Cache**: `mix ragex.cache.clear --current`
+- **Clear All Caches**: `mix ragex.cache.clear --all --force`
+
+### Using the `dllb` Database Backend
+
+In addition to the default in-memory ETS file cache (`:ets`), Ragex supports **`dllb`** (`Ragex.Store.Backend.Dllb`)—a multi-model database backend featuring native HNSW vector search, full-text indexing, and graph query acceleration.
+
+#### When to use `dllb`
+- **Large Codebases**: Repositories with over 50,000 entities where HNSW vector indexing provides sub-millisecond search.
+- **Centralized CI / Graph Servers**: When multiple CI jobs or development machines connect to a persistent database server holding pre-indexed codebase graphs.
+
+#### Configuration
+
+To use `dllb` as the store and cache backend, update your Elixir configuration (`config/config.exs` or `config/runtime.exs`):
+
+```elixir
+# Set store backend to :dllb
+config :ragex, :store_backend, System.get_env("RAGEX_STORE_BACKEND", "ets") |> String.to_atom()
+
+# Configure dllb connection
+config :dllb,
+  enabled: true,
+  host: System.get_env("DLLB_HOST", "127.0.0.1"),
+  port: String.to_integer(System.get_env("DLLB_PORT", "3009")),
+  pool_size: 5,
+  outcome: :json,
+  timeout: 30_000
+```
+
+#### GitHub Actions with `dllb` Service
+
+If running `dllb` inside CI pipelines:
+
+```yaml
+analysis:
+  name: Diff Analysis with dllb Backend
+  if: github.event_name == 'pull_request'
+  runs-on: ubuntu-latest
+  services:
+    dllb:
+      image: oeditus/dllb:latest
+      ports:
+        - 3009:3009
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.18'
+        otp-version: '27'
+    - run: mix deps.get
+    - name: Run CI analysis
+      env:
+        RAGEX_STORE_BACKEND: dllb
+        DLLB_HOST: 127.0.0.1
+        DLLB_PORT: 3009
+      run: mix ragex.ci --base origin/${{ github.base_ref }} --format github
+```
+
+When `RAGEX_STORE_BACKEND=dllb` is specified, `mix ragex.ci` automatically bootstraps schema tables and HNSW vector indexes on initial connection and queries the `dllb` database directly.
 
 ## API Reference
 
@@ -387,6 +593,38 @@ mix ragex.analyze --diff --security --circulars --format github
 mix ragex.analyze --diff --severity high --format github
 ```
 
+### Suppressing MetaCredo Findings (e.g., Hardcoded URLs)
+
+To suppress specific MetaCredo findings (such as `Hardcoded URL found` / `MetaCredo.Check.Security.HardcodedValue`), create or update `.metacredo.exs` in your project root:
+
+```elixir
+# .metacredo.exs
+%{
+  configs: [
+    %{
+      name: "default",
+      files: %{
+        included: ["lib/", "src/", "web/"],
+        excluded: [~r"/_build/", ~r"/deps/"]
+      },
+      checks: %{
+        enabled: :all,
+        disabled: [
+          # Suppress hardcoded URL / IP value findings
+          {MetaCredo.Check.Security.HardcodedValue, []}
+        ]
+      }
+    }
+  ]
+}
+```
+
+When `mix ragex.ci` runs, MetaCredo automatically reads `.metacredo.exs` and skips suppressed checks. You can also pass a custom config path via `--config`:
+
+```bash
+mix ragex.ci --config config/.metacredo.exs --format github
+```
+
 ## Troubleshooting
 
 ### "fatal: bad revision 'origin/main...HEAD'"
@@ -429,5 +667,6 @@ Tips for faster CI:
 
 ---
 
-**Version:** Ragex 0.16.0
-**Last Updated:** May 2026
+**Version:** Ragex 0.23.1
+**Last Updated:** July 2026
+

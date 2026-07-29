@@ -383,6 +383,35 @@ Incremental updates integrate seamlessly:
 - **Compatible**: Works with all embedding models
 - **Transparent**: No code changes needed
 
+## dllb Multi-Model Database Backend
+
+In addition to the default ETS file-based storage backend (`:ets`), Ragex supports **`dllb`** (`Ragex.Store.Backend.Dllb`)—a high-performance multi-model database backend providing native HNSW vector indexing, full-text search, and MetaAST node/edge persistence.
+
+### Overview
+
+When configured to use `:dllb`:
+- **Native HNSW Vector Search**: Replaces in-memory brute-force cosine distance calculation with native HNSW index queries, offering sub-millisecond retrieval on large codebases.
+- **Server Persistence**: AST nodes, call-graph edges, and embedding vectors are persisted continuously inside the `dllb` server. `load_project/1` automatically bootstraps schema tables and indexes on connection.
+- **Idempotent Bootstrap**: On initialization, `bootstrap/0` dynamically creates `ast_node` tables, `edge_idx` tables, and HNSW vector search indexes matched to the dimension of the active `:embedding_model`.
+
+### Configuration
+
+Enable `dllb` in your application configuration (`config/config.exs` or `config/runtime.exs`):
+
+```elixir
+# Select the dllb store backend (defaults to :ets)
+config :ragex, :store_backend, :dllb
+
+# Configure connection to the dllb database server
+config :dllb,
+  enabled: true,
+  host: System.get_env("DLLB_HOST", "127.0.0.1"),
+  port: String.to_integer(System.get_env("DLLB_PORT", "3009")),
+  pool_size: 5,
+  outcome: :json,
+  timeout: 30_000
+```
+
 ## Future Enhancements
 
 Planned improvements:

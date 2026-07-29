@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.23.1"
+  @version "0.23.2"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -121,6 +121,7 @@ defmodule Ragex.MixProject do
         lib
         priv
         .formatter.exs
+        .metacredo.exs
         mix.exs
         README.md
         CHANGELOG.md
