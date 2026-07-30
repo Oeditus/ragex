@@ -340,21 +340,10 @@ defmodule Mix.Tasks.Ragex.Analyze do
         true -> false
       end
 
-    # Keys that are off by default unless explicitly set by flag or explicit --all
-    off_by_default_keys = [:god_modules, :unstable_modules, :unused_modules, :coupling]
-
     resolve = fn key ->
-      if key in off_by_default_keys do
-        cond do
-          Keyword.has_key?(opts, key) -> Keyword.get(opts, key)
-          all_analyses == true -> true
-          true -> false
-        end
-      else
-        if enable_all,
-          do: Keyword.get(opts, key, true),
-          else: Keyword.get(opts, key, false)
-      end
+      if enable_all,
+        do: Keyword.get(opts, key, true),
+        else: Keyword.get(opts, key, false)
     end
 
     diff = Keyword.get(opts, :diff, false)
