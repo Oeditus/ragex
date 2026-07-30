@@ -56,7 +56,7 @@ defmodule Ragex.CLI.Progress do
     parts = if show_fraction, do: [" (#{current}/#{total})" | parts], else: parts
 
     # Clear line and render
-    IO.write("\r" <> Enum.join(Enum.reverse(parts)))
+    IO.write("\r\e[K" <> Enum.join(Enum.reverse(parts)))
     if current >= total, do: IO.write("\n")
 
     :ok

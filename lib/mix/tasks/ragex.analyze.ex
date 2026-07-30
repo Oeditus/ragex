@@ -340,10 +340,21 @@ defmodule Mix.Tasks.Ragex.Analyze do
         true -> false
       end
 
+    # Keys that are off by default unless explicitly set by flag or explicit --all
+    off_by_default_keys = [:god_modules, :unstable_modules, :unused_modules, :coupling]
+
     resolve = fn key ->
-      if enable_all,
-        do: Keyword.get(opts, key, true),
-        else: Keyword.get(opts, key, false)
+      if key in off_by_default_keys do
+        cond do
+          Keyword.has_key?(opts, key) -> Keyword.get(opts, key)
+          all_analyses == true -> true
+          true -> false
+        end
+      else
+        if enable_all,
+          do: Keyword.get(opts, key, true),
+          else: Keyword.get(opts, key, false)
+      end
     end
 
     diff = Keyword.get(opts, :diff, false)
@@ -586,13 +597,19 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp github_lines_for(:complexity, %{complex_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      "::warning file=#{f[:file] || f[:path]},line=#{f[:line] || 1}::COMPLEXITY #{f.module}.#{f.name}/#{f.arity} cyclomatic=#{f.cyclomatic_complexity}"
+      file = Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]) || "unknown"
+      line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
+      cc = Map.get(f, :cyclomatic_complexity) || Map.get(f, :complexity) || 0
+      "::warning file=#{file},line=#{line}::COMPLEXITY #{format_func_name(f)} cyclomatic=#{cc}"
     end)
   end
 
   defp github_lines_for(:dead_code, %{dead_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      "::notice file=#{f[:file] || f[:path]},line=#{f[:line] || 1}::DEAD_CODE #{f.module}.#{f.name}/#{f.arity}: #{f.reason}"
+      file = Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]) || "unknown"
+      line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
+      reason = Map.get(f, :reason, "unused function")
+      "::notice file=#{file},line=#{line}::DEAD_CODE #{format_func_name(f)}: #{reason}"
     end)
   end
 
@@ -619,9 +636,19 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp ci_lines_for(:security, %{issues: issues}) do
     issues
-    |> Enum.flat_map(fn result -> Map.get(result, :vulnerabilities, []) end)
+    |> Enum.flat_map(fn
+      %{vulnerabilities: v} when is_list(v) -> v
+      v when is_map(v) -> [v]
+      _ -> []
+    end)
     |> Enum.map(fn vuln ->
-      "SECURITY: #{vuln.category} (#{vuln.severity}) #{vuln.file}:#{vuln.line} - #{vuln.description}"
+      cat = Map.get(vuln, :category) || Map.get(vuln, :type) || "security"
+      sev = Map.get(vuln, :severity, "unknown")
+      file = Map.get(vuln, :file) || get_in(vuln, [:location, :file]) || "unknown"
+      line = Map.get(vuln, :line) || get_in(vuln, [:location, :line]) || 1
+      desc = Map.get(vuln, :description, "")
+
+      "SECURITY: #{cat} (#{sev}) #{file}:#{line} - #{desc}"
     end)
   end
 
@@ -636,7 +663,8 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp ci_lines_for(:complexity, %{complex_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      "COMPLEXITY: #{f.module}.#{f.name}/#{f.arity} (cyclomatic=#{f.cyclomatic_complexity})"
+      cc = Map.get(f, :cyclomatic_complexity) || Map.get(f, :complexity) || 0
+      "COMPLEXITY: #{format_func_name(f)} (cyclomatic=#{cc})"
     end)
   end
 
@@ -665,7 +693,8 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp ci_lines_for(:dead_code, %{dead_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      "DEAD_CODE: #{f.module}.#{f.name}/#{f.arity} - #{f.reason}"
+      reason = Map.get(f, :reason, "unused function")
+      "DEAD_CODE: #{format_func_name(f)} - #{reason}"
     end)
   end
 
@@ -751,13 +780,46 @@ defmodule Mix.Tasks.Ragex.Analyze do
     end)
   end
 
-  defp format_markdown_security(%{issues: issues}) do
-    """
-    ## Security Issues (#{length(issues)})
+  defp format_markdown_security(data) when is_map(data) do
+    issues = Map.get(data, :issues, [])
 
-    #{Enum.map_join(issues, "\n", fn issue -> "- **#{issue.type}** (#{issue.severity}): #{issue.file}:#{issue.line} - #{issue.description}" end)}
+    vulns =
+      issues
+      |> Enum.flat_map(fn
+        %{vulnerabilities: v} when is_list(v) -> v
+        v when is_map(v) -> [v]
+        _ -> []
+      end)
+
+    formatted_vulns =
+      Enum.map_join(vulns, "\n", fn v ->
+        type =
+          Map.get(v, :type) || Map.get(v, :category) ||
+            if(cwe = Map.get(v, :cwe), do: "CWE-#{cwe}", else: "security")
+
+        sev = Map.get(v, :severity, "unknown")
+        file = Map.get(v, :file, "unknown")
+
+        line =
+          Map.get(v, :line) ||
+            case Map.get(v, :location) do
+              %{line: l} -> l
+              _ -> 1
+            end
+
+        desc = Map.get(v, :description, "")
+
+        "- **#{type}** (#{sev}): #{file}:#{line} - #{desc}"
+      end)
+
+    """
+    ## Security Issues (#{length(vulns)})
+
+    #{formatted_vulns}
     """
   end
+
+  defp format_markdown_security(_), do: ""
 
   defp format_markdown_business_logic(data) do
     total = Map.get(data, :total_issues, 0)
@@ -788,11 +850,33 @@ defmodule Mix.Tasks.Ragex.Analyze do
     """
   end
 
+  defp format_func_name(%{} = f) do
+    mod =
+      Map.get(f, :module) || get_in(f, [:function, :module]) || get_in(f, [:metadata, :module]) ||
+        "unknown"
+
+    name =
+      Map.get(f, :name) || get_in(f, [:function, :name]) || get_in(f, [:metadata, :name]) ||
+        "unknown"
+
+    arity =
+      Map.get(f, :arity) || get_in(f, [:function, :arity]) || get_in(f, [:metadata, :arity]) || 0
+
+    mod_str = format_module_name(mod)
+    "#{mod_str}.#{name}/#{arity}"
+  end
+
   defp format_markdown_complexity(%{complex_functions: functions}) do
+    formatted =
+      Enum.map_join(functions, "\n", fn func ->
+        cc = Map.get(func, :cyclomatic_complexity) || Map.get(func, :complexity) || 0
+        "- **#{format_func_name(func)}**: Complexity #{cc}"
+      end)
+
     """
     ## Complex Functions (#{length(functions)})
 
-    #{Enum.map_join(functions, "\n", fn func -> "- **#{func.module}.#{func.name}/#{func.arity}**: Complexity #{func.cyclomatic_complexity}" end)}
+    #{formatted}
     """
   end
 
@@ -928,10 +1012,16 @@ defmodule Mix.Tasks.Ragex.Analyze do
   end
 
   defp format_markdown_dead_code(%{dead_functions: functions}) do
+    formatted =
+      Enum.map_join(functions, "\n", fn func ->
+        reason = Map.get(func, :reason, "unused function")
+        "- **#{format_func_name(func)}**: #{reason}"
+      end)
+
     """
     ## Dead Code (#{length(functions)})
 
-    #{Enum.map_join(functions, "\n", fn func -> "- **#{func.module}.#{func.name}/#{func.arity}**: #{func.reason}" end)}
+    #{formatted}
     """
   end
 
