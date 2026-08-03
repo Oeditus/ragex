@@ -44,6 +44,14 @@ defmodule Ragex.Analysis.Cache do
   """
   @spec save(map(), String.t()) :: :ok | {:error, term()}
   def save(issues, path) do
+    if dllb_available?() do
+      save_dllb(issues, path)
+    end
+
+    save_file(issues, path)
+  end
+
+  defp save_file(issues, path) do
     cache_path = get_cache_path(path)
     cache_dir = Path.dirname(cache_path)
 
@@ -87,6 +95,18 @@ defmodule Ragex.Analysis.Cache do
   """
   @spec load(String.t()) :: {:ok, map()} | {:stale, map(), [String.t()]} | {:error, term()}
   def load(path) do
+    if dllb_available?() do
+      case load_dllb(path) do
+        {:ok, issues} -> {:ok, issues}
+        {:stale, issues, changed} -> {:stale, issues, changed}
+        _ -> load_file(path)
+      end
+    else
+      load_file(path)
+    end
+  end
+
+  defp load_file(path) do
     cache_path = get_cache_path(path)
 
     if File.exists?(cache_path) do
@@ -231,5 +251,87 @@ defmodule Ragex.Analysis.Cache do
     project_hash = EmbeddingsPersistence.generate_project_hash(project_path)
 
     Path.join([cache_dir, project_hash, @cache_file_name])
+  end
+
+  defp dllb_available? do
+    Application.get_env(:ragex, :store_backend, :ets) == :dllb and
+      Application.get_env(:dllb, :enabled, false) and
+      match?({:ok, %Dllb.Result.Rows{}}, Dllb.query("SELECT * FROM _dllb_ping_"))
+  rescue
+    _ -> false
+  catch
+    _, _ -> false
+  end
+
+  defp save_dllb(issues, path) do
+    fingerprints = build_fingerprint_snapshot()
+
+    data = %{
+      version: @version,
+      timestamp: System.system_time(:second),
+      project_path: path,
+      fingerprints: fingerprints,
+      issues: issues
+    }
+
+    bin = :erlang.term_to_binary(data, [:compressed])
+    b64 = Base.encode64(bin)
+    id = EmbeddingsPersistence.generate_project_hash(path)
+
+    query = "CREATE _analysis_cache:#{id} SET payload = '#{b64}' ON CONFLICT UPDATE"
+    Dllb.query(query)
+    :ok
+  rescue
+    e ->
+      Logger.error("Failed to save analysis cache to dllb: #{Exception.message(e)}")
+      {:error, Exception.message(e)}
+  catch
+    _, _ -> :ok
+  end
+
+  defp load_dllb(path) do
+    id = EmbeddingsPersistence.generate_project_hash(path)
+    query = "SELECT * FROM _analysis_cache:#{id}"
+
+    case Dllb.query(query) do
+      {:ok, %Dllb.Result.Rows{data: [row | _]}} ->
+        payload_b64 = row["payload"] || row[:payload]
+
+        if payload_b64 && is_binary(payload_b64) do
+          case Base.decode64(payload_b64) do
+            {:ok, bin} ->
+              case :erlang.binary_to_term(bin) do
+                %{
+                  version: @version,
+                  project_path: ^path,
+                  fingerprints: fingerprints,
+                  issues: issues
+                } ->
+                  changed_files = find_changed_files(fingerprints)
+
+                  if changed_files == [] do
+                    {:ok, issues}
+                  else
+                    {:stale, issues, changed_files}
+                  end
+
+                _ ->
+                  {:error, :invalid_format}
+              end
+
+            _ ->
+              {:error, :invalid_format}
+          end
+        else
+          {:error, :not_found}
+        end
+
+      _ ->
+        {:error, :not_found}
+    end
+  rescue
+    _ -> {:error, :not_found}
+  catch
+    _, _ -> {:error, :not_found}
   end
 end

@@ -418,11 +418,33 @@ defmodule Ragex.Analysis.Impact do
     end
   end
 
-  defp get_complexity(_target) do
-    # Placeholder for complexity metrics
-    # Would integrate with quality metrics from Phase 11A
-    # For now, return default
-    0.5
+  defp get_complexity(target) do
+    if Application.get_env(:ragex, :store_backend, :ets) == :dllb and
+         Application.get_env(:dllb, :enabled, false) do
+      id =
+        case target do
+          {:function, {m, f, a}} -> "function:#{m}.#{f}/#{a}"
+          {:module, m} -> "module:#{m}"
+          {m, f, a} -> "function:#{m}.#{f}/#{a}"
+          other -> to_string(other)
+        end
+
+      query = "SELECT ast::complexity(meta_ast) AS c FROM ast_node:#{id}"
+
+      case Dllb.query(query) do
+        {:ok, %Dllb.Result.Rows{data: [%{"c" => val} | _]}} when is_number(val) ->
+          min(val / 10.0, 1.0)
+
+        _ ->
+          0.5
+      end
+    else
+      0.5
+    end
+  rescue
+    _ -> 0.5
+  catch
+    _, _ -> 0.5
   end
 
   defp test_module?(module) when is_atom(module) do

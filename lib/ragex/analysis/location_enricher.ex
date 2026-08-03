@@ -349,6 +349,8 @@ defmodule Ragex.Analysis.LocationEnricher do
       {:error, :not_found}
   end
 
+  @max_function_index 25_000
+
   # -- Process-dictionary cache helpers --
 
   defp get_file_index do
@@ -366,7 +368,7 @@ defmodule Ragex.Analysis.LocationEnricher do
   end
 
   defp build_and_cache_file_index do
-    all_functions = Store.list_functions(limit: 500_000)
+    all_functions = Store.list_functions(limit: @max_function_index)
 
     index =
       all_functions
@@ -384,7 +386,7 @@ defmodule Ragex.Analysis.LocationEnricher do
   end
 
   defp build_and_cache_name_index do
-    all_functions = Store.list_functions(limit: 500_000)
+    all_functions = Store.list_functions(limit: @max_function_index)
 
     index =
       all_functions

@@ -26,6 +26,17 @@ defmodule Ragex.Graph.Algorithms do
   Map of node_id => pagerank_score
   """
   def pagerank(opts \\ []) do
+    if dllb_backend?() do
+      case pagerank_via_dllb(opts) do
+        {:ok, scores} -> scores
+        _ -> pagerank_elixir(opts)
+      end
+    else
+      pagerank_elixir(opts)
+    end
+  end
+
+  defp pagerank_elixir(opts) do
     damping = Keyword.get(opts, :damping_factor, 0.85)
     max_iter = Keyword.get(opts, :max_iterations, 100)
     tolerance = Keyword.get(opts, :tolerance, 0.0001)
@@ -120,6 +131,17 @@ defmodule Ragex.Graph.Algorithms do
   - `total_degree`: Sum of in and out degree
   """
   def degree_centrality do
+    if dllb_backend?() do
+      case degree_centrality_via_dllb() do
+        {:ok, metrics} -> metrics
+        _ -> degree_centrality_elixir()
+      end
+    else
+      degree_centrality_elixir()
+    end
+  end
+
+  defp degree_centrality_elixir do
     edges = get_call_edges()
 
     in_degrees =
@@ -514,12 +536,115 @@ defmodule Ragex.Graph.Algorithms do
     end
   end
 
+  defp pagerank_via_dllb(opts) do
+    damping = Keyword.get(opts, :damping_factor, 0.85)
+    max_iter = Keyword.get(opts, :max_iterations, 100)
+
+    query = Dllb.Query.graph_pagerank("calls", damping: damping, max_iter: max_iter)
+
+    case Dllb.query(query) do
+      {:ok, %Dllb.Result.Rows{data: data}} ->
+        scores =
+          Map.new(data, fn row ->
+            id = unwrap_dllb_value(row["id"])
+            score = unwrap_dllb_value(row["score"]) || 0.0
+            {id, score}
+          end)
+
+        {:ok, scores}
+
+      _ ->
+        {:error, :fallback}
+    end
+  end
+
+  defp degree_centrality_via_dllb do
+    query = Dllb.Query.graph_centrality("calls", mode: :degree)
+
+    case Dllb.query(query) do
+      {:ok, %Dllb.Result.Rows{data: data}} ->
+        metrics =
+          Map.new(data, fn row ->
+            id = unwrap_dllb_value(row["id"])
+            in_deg = unwrap_dllb_value(row["in_degree"]) || 0
+            out_deg = unwrap_dllb_value(row["out_degree"]) || 0
+
+            {id,
+             %{
+               in_degree: in_deg,
+               out_degree: out_deg,
+               total_degree: in_deg + out_deg
+             }}
+          end)
+
+        {:ok, metrics}
+
+      _ ->
+        {:error, :fallback}
+    end
+  end
+
+  defp graph_stats_via_dllb do
+    node_counts_query = Dllb.Query.count("ast_node", group_by: "kind")
+    edge_count_query = Dllb.Query.count("_edge_idx")
+    pagerank_query = Dllb.Query.graph_pagerank("calls", limit: 10)
+
+    with {:ok, %Dllb.Result.Rows{data: type_rows}} <- Dllb.query(node_counts_query),
+         {:ok, %Dllb.Result.Count{count: edge_count}} <- Dllb.query(edge_count_query),
+         {:ok, %Dllb.Result.Rows{data: pr_rows}} <- Dllb.query(pagerank_query) do
+      node_counts_by_type =
+        Map.new(type_rows, fn row ->
+          type_atom = safe_type_atom(unwrap_dllb_value(row["kind"]))
+          cnt = unwrap_dllb_value(row["count"]) || 0
+          {type_atom, cnt}
+        end)
+
+      node_count = Enum.sum(Map.values(node_counts_by_type))
+
+      top_nodes =
+        Enum.map(pr_rows, fn row ->
+          id = unwrap_dllb_value(row["id"])
+          score = unwrap_dllb_value(row["score"]) || 0.0
+          {id, score}
+        end)
+
+      avg_degree = if node_count > 0, do: Float.round(2 * edge_count / node_count, 2), else: 0.0
+
+      density =
+        if node_count > 1,
+          do: Float.round(edge_count / (node_count * (node_count - 1)), 4),
+          else: 0.0
+
+      stats = %{
+        node_count: node_count,
+        node_counts_by_type: node_counts_by_type,
+        edge_count: edge_count,
+        average_degree: avg_degree,
+        density: density,
+        top_nodes: top_nodes
+      }
+
+      {:ok, stats}
+    else
+      _ -> {:error, :fallback}
+    end
+  end
+
   # Unwrap serde-tagged dllb JSON values: %{"String" => v}, %{"Int" => v}, etc.
   defp unwrap_dllb_value(%{"String" => v}), do: v
   defp unwrap_dllb_value(%{"Int" => v}), do: v
   defp unwrap_dllb_value(%{"Float" => v}), do: v
   defp unwrap_dllb_value(%{"Bool" => v}), do: v
   defp unwrap_dllb_value(v), do: v
+
+  defp safe_type_atom(nil), do: :unknown
+  defp safe_type_atom(atom) when is_atom(atom), do: atom
+
+  defp safe_type_atom(str) when is_binary(str) do
+    String.to_existing_atom(str)
+  rescue
+    _ -> String.to_atom(str)
+  end
 
   # Pure-Elixir Louvain fallback (used when dllb is not active or returns an
   # error, and always for hierarchical output).
@@ -819,6 +944,17 @@ defmodule Ragex.Graph.Algorithms do
   - Top nodes by PageRank
   """
   def graph_stats do
+    if dllb_backend?() do
+      case graph_stats_via_dllb() do
+        {:ok, stats} -> stats
+        _ -> graph_stats_elixir()
+      end
+    else
+      graph_stats_elixir()
+    end
+  end
+
+  defp graph_stats_elixir do
     nodes = Store.list_nodes(nil, :infinity)
     edges = get_call_edges()
 

@@ -367,35 +367,48 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   defp store_analysis(%{modules: modules, functions: functions, calls: calls, imports: imports}) do
-    # Store modules
-    Enum.each(modules, fn module ->
-      Store.add_node(:module, module.name, module)
-    end)
+    # Prepare node items
+    module_nodes = Enum.map(modules, fn module -> {:module, module.name, module} end)
 
-    # Store functions
-    Enum.each(functions, fn func ->
-      Store.add_node(:function, {func.module, func.name, func.arity}, func)
-      # Add edge from module to function
-      Store.add_edge(
-        {:module, func.module},
-        {:function, func.module, func.name, func.arity},
-        :defines
-      )
-    end)
+    function_nodes =
+      Enum.map(functions, fn func ->
+        {:function, {func.module, func.name, func.arity}, func}
+      end)
 
-    # Store call relationships
-    Enum.each(calls, fn call ->
-      Store.add_edge(
-        {:function, call.from_module, call.from_function, call.from_arity},
-        {:function, call.to_module, call.to_function, call.to_arity},
-        :calls
-      )
-    end)
+    Store.add_nodes(module_nodes ++ function_nodes)
 
-    # Store imports
-    Enum.each(imports, fn import ->
-      Store.add_edge({:module, import.from_module}, {:module, import.to_module}, :imports)
-    end)
+    # Prepare edge items
+    define_edges =
+      Enum.map(functions, fn func ->
+        {
+          {:module, func.module},
+          {:function, func.module, func.name, func.arity},
+          :defines,
+          []
+        }
+      end)
+
+    call_edges =
+      Enum.map(calls, fn call ->
+        {
+          {:function, call.from_module, call.from_function, call.from_arity},
+          {:function, call.to_module, call.to_function, call.to_arity},
+          :calls,
+          []
+        }
+      end)
+
+    import_edges =
+      Enum.map(imports, fn import ->
+        {
+          {:module, import.from_module},
+          {:module, import.to_module},
+          :imports,
+          []
+        }
+      end)
+
+    Store.add_edges(define_edges ++ call_edges ++ import_edges)
   end
 
   defp default_exclude_patterns do

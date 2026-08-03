@@ -119,6 +119,29 @@ defmodule Ragex.Store.Backend.Dllb do
   end
 
   @impl true
+  def store_nodes(nodes) when is_list(nodes) do
+    queries =
+      Enum.map(nodes, fn {node_type, node_id, data} ->
+        normalized_data =
+          data
+          |> map_key(:file, :file_path)
+          |> map_key(:line, :line_start)
+          |> map_key(:doc, :docstring)
+
+        fields =
+          Map.merge(normalized_data, %{
+            kind: to_string(node_type),
+            name: extract_name(node_type, node_id)
+          })
+
+        id = node_to_dllb_id({node_type, node_id})
+        Dllb.Query.upsert("ast_node", id, fields)
+      end)
+
+    exec_batch_queries(queries)
+  end
+
+  @impl true
   def get_node({node_type, node_id}), do: find_node(node_type, node_id)
 
   @impl true
@@ -153,11 +176,17 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def count_nodes_by_type(node_type) do
-    query_string = MQ.nodes_by_kind(to_string(node_type))
+    query_string = Dllb.Query.count("ast_node", where: "kind = '#{node_type}'")
 
-    case MQ.exec(query_string, query_fn()) do
-      {:ok, rows} -> length(rows)
-      {:error, _} -> 0
+    case Dllb.query(query_string) do
+      {:ok, %Dllb.Result.Count{count: count}} ->
+        count
+
+      _ ->
+        case MQ.exec(MQ.nodes_by_kind(to_string(node_type)), query_fn()) do
+          {:ok, rows} -> length(rows)
+          {:error, _} -> 0
+        end
     end
   end
 
@@ -210,14 +239,45 @@ defmodule Ragex.Store.Backend.Dllb do
   end
 
   @impl true
+  def store_edges(edges) when is_list(edges) do
+    queries =
+      Enum.map(edges, fn {from_node, to_node, edge_type, opts} ->
+        from_id = node_to_dllb_id(from_node)
+        to_id = node_to_dllb_id(to_node)
+        weight = Keyword.get(opts, :weight, 1.0)
+        metadata = Keyword.get(opts, :metadata, %{})
+        props = Map.put(metadata, :weight, weight)
+
+        Dllb.Query.relate("ast_node:#{from_id}", to_string(edge_type), "ast_node:#{to_id}", props)
+      end)
+
+    exec_batch_queries(queries)
+  end
+
+  defp exec_batch_queries([]), do: :ok
+
+  defp exec_batch_queries(queries) when is_list(queries) do
+    queries
+    |> Enum.chunk_every(250)
+    |> Enum.each(fn chunk ->
+      case Dllb.batch_transaction(chunk) do
+        {:ok, _} -> :ok
+        {:error, reason} -> Logger.debug("dllb batch execution failed: #{inspect(reason)}")
+      end
+    end)
+
+    :ok
+  end
+
+  @impl true
   def get_outgoing_edges(from_node, edge_type) do
     from_id = node_to_dllb_id(from_node)
-    query_string = MQ.callees_of("ast_node:#{from_id}")
+    query_string = "SELECT ->#{edge_type}->ast_node FROM ast_node:#{from_id}"
 
     case MQ.exec(query_string, query_fn()) do
       {:ok, rows} ->
         Enum.map(rows, fn row ->
-          %{to: row[:id], type: edge_type, metadata: %{}}
+          %{to: unwrap_typed(row[:id]), type: edge_type, metadata: %{}}
         end)
 
       {:error, _} ->
@@ -228,12 +288,12 @@ defmodule Ragex.Store.Backend.Dllb do
   @impl true
   def get_incoming_edges(to_node, edge_type) do
     to_id = node_to_dllb_id(to_node)
-    query_string = MQ.callers_of("ast_node:#{to_id}")
+    query_string = "SELECT <-#{edge_type}<-ast_node FROM ast_node:#{to_id}"
 
     case MQ.exec(query_string, query_fn()) do
       {:ok, rows} ->
         Enum.map(rows, fn row ->
-          %{from: row[:id], type: edge_type, metadata: %{}}
+          %{from: unwrap_typed(row[:id]), type: edge_type, metadata: %{}}
         end)
 
       {:error, _} ->
@@ -246,6 +306,31 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def list_edges(opts \\ []) do
+    edge_type = Keyword.get(opts, :edge_type)
+
+    if edge_type do
+      query_string = Dllb.Query.graph_edges(to_string(edge_type))
+
+      case Dllb.query(query_string) do
+        {:ok, %Dllb.Result.Rows{data: data}} ->
+          Enum.map(data, fn row ->
+            %{
+              from: unwrap_typed(row["src"] || row["from_id"]),
+              to: unwrap_typed(row["dst"] || row["to_id"]),
+              type: safe_to_edge_atom(unwrap_typed(row["edge_type"] || edge_type)),
+              metadata: %{}
+            }
+          end)
+
+        _ ->
+          list_edges_fallback(opts)
+      end
+    else
+      list_edges_fallback(opts)
+    end
+  end
+
+  defp list_edges_fallback(opts) do
     edge_type = Keyword.get(opts, :edge_type)
 
     where =

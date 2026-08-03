@@ -158,6 +158,13 @@ defmodule Ragex.Store.Backend.ETS do
     end
   end
 
+  @impl true
+  def store_nodes(nodes) when is_list(nodes) do
+    objects = Enum.map(nodes, fn {type, id, data} -> {{type, id}, data} end)
+    :ets.insert(@nodes_table, objects)
+    :ok
+  end
+
   # ---------------------------------------------------------------------------
   # Edges
   # ---------------------------------------------------------------------------
@@ -169,6 +176,20 @@ defmodule Ragex.Store.Backend.ETS do
     metadata = Keyword.get(opts, :metadata, %{})
     metadata_with_weight = Map.put(metadata, :weight, weight)
     :ets.insert(@edges_table, {key, metadata_with_weight})
+    :ok
+  end
+
+  @impl true
+  def store_edges(edges) when is_list(edges) do
+    objects =
+      Enum.map(edges, fn {from_node, to_node, edge_type, opts} ->
+        key = {from_node, to_node, edge_type}
+        weight = Keyword.get(opts, :weight, 1.0)
+        metadata = Keyword.get(opts, :metadata, %{})
+        {key, Map.put(metadata, :weight, weight)}
+      end)
+
+    :ets.insert(@edges_table, objects)
     :ok
   end
 

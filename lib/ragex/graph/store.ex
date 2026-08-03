@@ -47,6 +47,13 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Adds multiple nodes to the graph in bulk.
+  """
+  def add_nodes(nodes) when is_list(nodes) do
+    GenServer.cast(__MODULE__, {:add_nodes, nodes})
+  end
+
+  @doc """
   Retrieves a node by its composite key.
 
   ## Parameters
@@ -214,6 +221,13 @@ defmodule Ragex.Graph.Store do
   """
   def add_edge(from_node, to_node, edge_type, opts \\ []) do
     GenServer.cast(__MODULE__, {:add_edge, from_node, to_node, edge_type, opts})
+  end
+
+  @doc """
+  Adds multiple edges to the graph in bulk.
+  """
+  def add_edges(edges) when is_list(edges) do
+    GenServer.cast(__MODULE__, {:add_edges, edges})
   end
 
   @doc """
@@ -422,8 +436,20 @@ defmodule Ragex.Graph.Store do
   end
 
   @impl true
+  def handle_cast({:add_nodes, nodes}, state) do
+    backend().store_nodes(nodes)
+    {:noreply, state}
+  end
+
+  @impl true
   def handle_cast({:add_edge, from_node, to_node, edge_type, opts}, state) do
     backend().store_edge(from_node, to_node, edge_type, opts)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:add_edges, edges}, state) do
+    backend().store_edges(edges)
     {:noreply, state}
   end
 

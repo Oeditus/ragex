@@ -34,6 +34,7 @@ defmodule Ragex.Store.Backend do
   # ---------------------------------------------------------------------------
 
   @callback store_node(node_type :: atom(), node_id :: term(), data :: map()) :: :ok
+  @callback store_nodes(nodes :: [{atom(), term(), map()}]) :: :ok
   @callback get_node(node_key :: {atom(), term()}) :: map() | nil
   @callback find_node(node_type :: atom(), node_id :: term()) :: map() | nil
   @callback list_nodes(node_type :: atom() | nil, limit :: non_neg_integer() | :infinity) :: [
@@ -54,6 +55,7 @@ defmodule Ragex.Store.Backend do
               edge_type :: atom(),
               opts :: keyword()
             ) :: :ok
+  @callback store_edges(edges :: [{term(), term(), atom(), keyword()}]) :: :ok
   @callback get_outgoing_edges(from_node :: term(), edge_type :: atom()) :: [map()]
   @callback get_incoming_edges(to_node :: term(), edge_type :: atom()) :: [map()]
   @callback get_edge_weight(from_node :: term(), to_node :: term(), edge_type :: atom()) ::
