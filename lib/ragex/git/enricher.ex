@@ -28,6 +28,7 @@ defmodule Ragex.Git.Enricher do
   use GenServer
   require Logger
 
+  alias Ragex.Embeddings.FileTracker
   alias Ragex.Git.{Backend, CoChange, Repo}
   alias Ragex.Graph.Store
 
@@ -156,13 +157,15 @@ defmodule Ragex.Git.Enricher do
   end
 
   defp enrich_single_file(repo_root, file_id, file_path) do
-    relative_path = Path.relative_to(file_path, repo_root)
+    normalized_id = FileTracker.normalize_file_id(file_id || file_path)
+    fs_path = FileTracker.file_id_to_path(file_path || file_id)
+    relative_path = Path.relative_to(fs_path, repo_root)
 
     case Backend.active().log(repo_root, relative_path, max_count: 1) do
       {:ok, [commit | _]} ->
         # Update node metadata
-        Store.add_node(:file, file_id, %{
-          path: file_path,
+        Store.add_node(:file, normalized_id, %{
+          path: normalized_id,
           last_author: commit.author,
           last_modified: commit.date,
           last_sha: commit.sha
@@ -170,7 +173,7 @@ defmodule Ragex.Git.Enricher do
 
         # Add authored_by edge
         Store.add_edge(
-          {:file, file_id},
+          {:file, normalized_id},
           {:author, commit.author},
           :authored_by,
           metadata: %{date: commit.date, sha: commit.sha}
@@ -222,20 +225,27 @@ defmodule Ragex.Git.Enricher do
 
   defp add_cochange_edges(repo_root) do
     # Get files from the graph and add co-change edges
-    file_paths =
+    file_nodes =
       Store.list_nodes(:file)
-      |> Enum.map(fn %{data: data} -> data[:path] end)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.map(&Path.relative_to(&1, repo_root))
+      |> Enum.map(fn %{id: id, data: data} ->
+        path = data[:path] || id
+        fs_path = FileTracker.file_id_to_path(path)
+        file_id = FileTracker.normalize_file_id(path)
+        {file_id, Path.relative_to(fs_path, repo_root)}
+      end)
+      |> Enum.reject(fn {_, rel} -> is_nil(rel) end)
 
     count =
-      Enum.reduce(file_paths, 0, fn file_path, acc ->
-        co_files = CoChange.for_file(file_path, min_count: 3, limit: 10)
+      Enum.reduce(file_nodes, 0, fn {file_id, rel_path}, acc ->
+        co_files = CoChange.for_file(rel_path, min_count: 3, limit: 10)
 
-        Enum.each(co_files, fn {other_path, count} ->
+        Enum.each(co_files, fn {other_rel_path, count} ->
+          other_abs = Path.expand(other_rel_path, repo_root)
+          other_id = FileTracker.normalize_file_id(other_abs)
+
           Store.add_edge(
-            {:file, file_path},
-            {:file, other_path},
+            {:file, file_id},
+            {:file, other_id},
             :co_changes_with,
             weight: count / 1.0,
             metadata: %{co_change_count: count}

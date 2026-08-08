@@ -76,8 +76,13 @@ defmodule Ragex.Store.Backend.Dllb do
   @impl true
   def stats do
     case MQ.exec_stats(query_fn()) do
-      {:ok, stats} -> stats
-      {:error, _} -> %{total: 0, by_kind: %{}}
+      {:ok, stats} ->
+        total = Map.get(stats, :total, 0)
+        by_kind = Map.get(stats, :by_kind, %{})
+        Map.merge(%{nodes: total, total: total, edges: 0, embeddings: 0, by_kind: by_kind}, stats)
+
+      {:error, _} ->
+        %{nodes: 0, total: 0, edges: 0, embeddings: 0, by_kind: %{}}
     end
   end
 
@@ -382,6 +387,22 @@ defmodule Ragex.Store.Backend.Dllb do
   def store_embedding(_node_type, _node_id, _embedding, _text), do: :ok
 
   @impl true
+  def store_embeddings(embeddings) when is_list(embeddings) do
+    queries =
+      Enum.flat_map(embeddings, fn {node_type, node_id, embedding, _text} ->
+        case embedding_match_attrs({node_type, node_id}) do
+          attrs when map_size(attrs) == 0 ->
+            []
+
+          attrs ->
+            [MQ.set_source_embedding(attrs, embedding)]
+        end
+      end)
+
+    exec_batch_queries(queries)
+  end
+
+  @impl true
   def get_embedding(node_type, node_id) do
     case embedding_match_attrs({node_type, node_id}) do
       attrs when map_size(attrs) == 0 ->
@@ -486,12 +507,16 @@ defmodule Ragex.Store.Backend.Dllb do
     case MQ.exec(query_string, query_fn()) do
       {:ok, rows} ->
         Enum.map(rows, fn row ->
+          {nt, nid} = Dllb.MetaAST.to_node_ref(row)
+          score = Map.get(row, :score) || Map.get(row, :distance, 0.0)
+
           %{
-            node_type: row[:kind] || :unknown,
-            node_id: row[:name] || "",
-            score: Map.get(row, :score, 0.0),
-            text: row[:source_text] || "",
-            embedding: []
+            node_type: nt,
+            node_id: nid,
+            score: score,
+            text:
+              row[:source_text] || row["source_text"] || row[:signature] || row["signature"] || "",
+            embedding: unwrap_embedding(row[:source_embedding] || row["source_embedding"])
           }
         end)
 

@@ -72,6 +72,7 @@ defmodule Ragex.Store.Backend do
               embedding :: [float()],
               text :: String.t()
             ) :: :ok
+  @callback store_embeddings(embeddings :: [{atom(), term(), [float()], String.t()}]) :: :ok
   @callback get_embedding(node_type :: atom(), node_id :: term()) :: {[float()], String.t()} | nil
   @callback list_embeddings(node_type :: atom() | nil, limit :: non_neg_integer() | :infinity) ::
               [tuple()]
@@ -88,9 +89,32 @@ defmodule Ragex.Store.Backend do
   """
   @spec module() :: module()
   def module do
-    case Application.get_env(:ragex, :store_backend, :ets) do
-      :ets -> Ragex.Store.Backend.ETS
-      :dllb -> Ragex.Store.Backend.Dllb
+    case Application.get_env(:ragex, :store_backend, :auto) do
+      :ets ->
+        Ragex.Store.Backend.ETS
+
+      :dllb ->
+        Ragex.Store.Backend.Dllb
+
+      :auto ->
+        if dllb_available?() do
+          Ragex.Store.Backend.Dllb
+        else
+          Ragex.Store.Backend.ETS
+        end
+
+      _ ->
+        Ragex.Store.Backend.ETS
     end
+  end
+
+  defp dllb_available? do
+    Application.get_env(:dllb, :enabled, false) &&
+      Code.ensure_loaded?(Dllb) &&
+      match?({:ok, _}, Dllb.query("SELECT 1"))
+  rescue
+    _ -> false
+  catch
+    _, _ -> false
   end
 end

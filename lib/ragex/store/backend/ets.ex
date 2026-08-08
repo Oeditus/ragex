@@ -34,10 +34,16 @@ defmodule Ragex.Store.Backend.ETS do
 
   @impl true
   def stats do
+    nodes = :ets.info(@nodes_table, :size) || 0
+    edges = :ets.info(@edges_table, :size) || 0
+    embeddings = :ets.info(@embeddings_table, :size) || 0
+
     %{
-      nodes: :ets.info(@nodes_table, :size),
-      edges: :ets.info(@edges_table, :size),
-      embeddings: :ets.info(@embeddings_table, :size)
+      nodes: nodes,
+      total: nodes,
+      edges: edges,
+      embeddings: embeddings,
+      by_kind: %{}
     }
   end
 
@@ -252,6 +258,17 @@ defmodule Ragex.Store.Backend.ETS do
   def store_embedding(node_type, node_id, embedding, text) do
     key = {node_type, node_id}
     :ets.insert(@embeddings_table, {key, embedding, text})
+    :ok
+  end
+
+  @impl true
+  def store_embeddings(embeddings) when is_list(embeddings) do
+    objects =
+      Enum.map(embeddings, fn {node_type, node_id, embedding, text} ->
+        {{node_type, node_id}, embedding, text}
+      end)
+
+    :ets.insert(@embeddings_table, objects)
     :ok
   end
 

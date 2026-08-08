@@ -343,6 +343,13 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Stores a batch of embedding vectors.
+  """
+  def store_embeddings(embeddings) when is_list(embeddings) do
+    GenServer.cast(__MODULE__, {:store_embeddings, embeddings})
+  end
+
+  @doc """
   Retrieves the embedding for a node.
 
   Returns `{embedding, text}` tuple or `nil` if not found.
@@ -456,6 +463,12 @@ defmodule Ragex.Graph.Store do
   @impl true
   def handle_cast({:store_embedding, node_type, node_id, embedding, text}, state) do
     backend().store_embedding(node_type, node_id, embedding, text)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:store_embeddings, embeddings}, state) do
+    backend().store_embeddings(embeddings)
     {:noreply, state}
   end
 

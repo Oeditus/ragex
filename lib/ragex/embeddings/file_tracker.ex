@@ -75,11 +75,39 @@ defmodule Ragex.Embeddings.FileTracker do
   end
 
   @doc """
+  Normalizes a file path or URI into a canonical file URI (`file:///path/to/file`).
+  """
+  @spec normalize_file_id(String.t() | nil) :: String.t() | nil
+  def normalize_file_id(nil), do: nil
+  def normalize_file_id("file://" <> _ = uri), do: uri
+
+  def normalize_file_id(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    if String.starts_with?(expanded, "/") do
+      "file://" <> expanded
+    else
+      "file:///" <> expanded
+    end
+  end
+
+  def normalize_file_id(other), do: to_string(other)
+
+  @doc """
+  Extracts the local filesystem path from a file URI or path string.
+  """
+  @spec file_id_to_path(String.t() | nil) :: String.t() | nil
+  def file_id_to_path(nil), do: nil
+  def file_id_to_path("file://" <> path), do: path
+  def file_id_to_path(path) when is_binary(path), do: path
+  def file_id_to_path(other), do: to_string(other)
+
+  @doc """
   Tracks a file with its metadata and associated entities.
 
   ## Parameters
 
-  - `file_path` - Absolute path to the file
+  - `file_path` - Absolute path or file URI to the file
   - `analysis_result` - Analysis result containing modules and functions
 
   ## Returns
@@ -88,14 +116,17 @@ defmodule Ragex.Embeddings.FileTracker do
   - `{:error, reason}` on failure
   """
   def track_file(file_path, analysis_result) do
-    case compute_file_metadata(file_path, analysis_result) do
+    file_id = normalize_file_id(file_path)
+    fs_path = file_id_to_path(file_path)
+
+    case compute_file_metadata(fs_path, file_id, analysis_result) do
       {:ok, metadata} ->
-        :ets.insert(@tracker_table, {file_path, metadata})
-        Logger.debug("Tracked file: #{file_path} (#{length(metadata.entities)} entities)")
+        :ets.insert(@tracker_table, {file_id, metadata})
+        Logger.debug("Tracked file: #{file_id} (#{length(metadata.entities)} entities)")
         :ok
 
       {:error, reason} ->
-        Logger.warning("Failed to track file #{file_path}: #{inspect(reason)}")
+        Logger.warning("Failed to track file #{file_id}: #{inspect(reason)}")
         {:error, reason}
     end
   end
@@ -108,9 +139,12 @@ defmodule Ragex.Embeddings.FileTracker do
   `{:new, nil}` if the file was never tracked.
   """
   def has_changed?(file_path) do
-    case :ets.lookup(@tracker_table, file_path) do
-      [{^file_path, old_metadata}] ->
-        case compute_current_hash(file_path) do
+    file_id = normalize_file_id(file_path)
+    fs_path = file_id_to_path(file_path)
+
+    case :ets.lookup(@tracker_table, file_id) do
+      [{^file_id, old_metadata}] ->
+        case compute_current_hash(fs_path) do
           {:ok, current_hash} ->
             if current_hash == old_metadata.content_hash do
               {:unchanged, old_metadata}
@@ -164,8 +198,9 @@ defmodule Ragex.Embeddings.FileTracker do
   Used when files are deleted or need to be re-analyzed from scratch.
   """
   def untrack_file(file_path) do
-    :ets.delete(@tracker_table, file_path)
-    Logger.debug("Untracked file: #{file_path}")
+    file_id = normalize_file_id(file_path)
+    :ets.delete(@tracker_table, file_id)
+    Logger.debug("Untracked file: #{file_id}")
     :ok
   end
 
@@ -179,9 +214,11 @@ defmodule Ragex.Embeddings.FileTracker do
   """
   @spec record_entity_hashes(String.t(), [{term(), String.t()}]) :: :ok
   def record_entity_hashes(file_path, entities) do
+    file_id = normalize_file_id(file_path)
+
     Enum.each(entities, fn {entity_id, body} ->
       hash = :crypto.hash(:sha256, normalize_body(body))
-      :ets.insert(@fn_hash_table, {{file_path, entity_id}, hash})
+      :ets.insert(@fn_hash_table, {{file_id, entity_id}, hash})
     end)
 
     :ok
@@ -200,12 +237,14 @@ defmodule Ragex.Embeddings.FileTracker do
   """
   @spec stale_entities_for_file(String.t(), [{term(), String.t()}]) :: MapSet.t()
   def stale_entities_for_file(file_path, entities) do
+    file_id = normalize_file_id(file_path)
+
     entities
     |> Enum.filter(fn {entity_id, body} ->
       new_hash = :crypto.hash(:sha256, normalize_body(body))
 
-      case :ets.lookup(@fn_hash_table, {file_path, entity_id}) do
-        [{{^file_path, ^entity_id}, stored_hash}] -> new_hash != stored_hash
+      case :ets.lookup(@fn_hash_table, {file_id, entity_id}) do
+        [{{^file_id, ^entity_id}, stored_hash}] -> new_hash != stored_hash
         [] -> true
       end
     end)
@@ -293,9 +332,9 @@ defmodule Ragex.Embeddings.FileTracker do
 
   ## Private Functions
 
-  defp compute_file_metadata(file_path, analysis_result) do
-    with {:ok, content} <- File.read(file_path),
-         {:ok, stat} <- File.stat(file_path) do
+  defp compute_file_metadata(fs_path, file_id, analysis_result) do
+    with {:ok, content} <- File.read(fs_path),
+         {:ok, stat} <- File.stat(fs_path) do
       # Compute content hash
       content_hash = :crypto.hash(:sha256, content)
 
@@ -303,7 +342,7 @@ defmodule Ragex.Embeddings.FileTracker do
       entities = extract_entities(analysis_result)
 
       metadata = %{
-        path: file_path,
+        path: file_id,
         content_hash: content_hash,
         mtime: file_mtime_to_unix(stat.mtime),
         size: stat.size,

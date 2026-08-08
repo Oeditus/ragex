@@ -101,11 +101,12 @@ defmodule Ragex.Agent.Core do
       Store.load_project(abs_path)
 
       graph_stats = Store.stats()
+      node_count = Map.get(graph_stats, :nodes, Map.get(graph_stats, :total, 0))
 
-      case {graph_stats.nodes > 0, AnalysisCache.load(abs_path)} do
+      case {node_count > 0, AnalysisCache.load(abs_path)} do
         {true, {:ok, cached_issues}} ->
           # Graph loaded from cache + issues fresh -> skip everything
-          Logger.info("Using cached analysis (#{graph_stats.nodes} nodes, all files unchanged)")
+          Logger.info("Using cached analysis (#{node_count} nodes, all files unchanged)")
 
           finalize_analysis(abs_path, cached_issues, opts)
 
@@ -519,8 +520,8 @@ defmodule Ragex.Agent.Core do
     Memory.add_message(session_id, :system, system_prompt)
 
     graph_stats = Store.stats()
-    modules = Store.list_nodes(:module, :infinity)
-    functions = Store.list_nodes(:function, :infinity)
+    module_node_count = Store.count_nodes_by_type(:module)
+    func_count = Store.count_nodes_by_type(:function)
     issues_summary = Report.format_issues_for_llm(issues)
 
     # Derive file counts from the analysis results themselves because the
@@ -528,8 +529,7 @@ defmodule Ragex.Agent.Core do
     quality_total = get_in(issues, [:quality_metrics, :total_files]) || 0
     sec_count = length(issues[:security] || [])
 
-    module_count = max(length(modules), quality_total)
-    func_count = length(functions)
+    module_count = max(module_node_count, quality_total)
 
     user_prompt = """
     COMPLETE analysis data for the audit report is below.  Write the full
@@ -544,8 +544,8 @@ defmodule Ragex.Agent.Core do
     - Files scanned (security): #{sec_count}
     - Modules in knowledge graph: #{module_count}
     - Functions in knowledge graph: #{func_count}
-    - Graph edges: #{graph_stats.edges}
-    - Embeddings: #{graph_stats.embeddings}
+    - Graph edges: #{Map.get(graph_stats, :edges, 0)}
+    - Embeddings: #{Map.get(graph_stats, :embeddings, 0)}
     - Audit date: #{DateTime.utc_now() |> DateTime.to_date() |> Date.to_string()}
 
     ## Analysis Results

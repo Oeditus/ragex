@@ -222,7 +222,9 @@ defmodule Ragex.Analysis.Cache do
     # which may not yet be populated on fresh startup.
     cached_fingerprints
     |> Enum.filter(fn {path, cached_hash} ->
-      case File.read(path) do
+      fs_path = FileTracker.file_id_to_path(path)
+
+      case File.read(fs_path) do
         {:ok, content} -> :crypto.hash(:sha256, content) != cached_hash
         {:error, _} -> true
       end

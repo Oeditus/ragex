@@ -24,6 +24,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
   describe "track_file/2" do
     test "tracks a new file with its entities" do
       file_path = create_test_file("test.ex", "defmodule Test do\nend")
+      file_uri = FileTracker.normalize_file_id(file_path)
 
       analysis = %{
         modules: [%{name: "Test"}],
@@ -37,8 +38,8 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       tracked = FileTracker.list_tracked_files()
       assert Enum.count(tracked) == 1
 
-      {^file_path, metadata} = hd(tracked)
-      assert metadata.path == file_path
+      {^file_uri, metadata} = hd(tracked)
+      assert metadata.path == file_uri
       assert is_binary(metadata.content_hash)
       assert is_integer(metadata.mtime)
       assert is_integer(metadata.size)
@@ -49,6 +50,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
     test "updates tracking for existing file" do
       file_path = create_test_file("test.ex", "content v1")
+      file_uri = FileTracker.normalize_file_id(file_path)
 
       analysis = %{modules: [%{name: "Test"}], functions: [], calls: [], imports: []}
 
@@ -70,7 +72,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       tracked = FileTracker.list_tracked_files()
       assert Enum.count(tracked) == 1
 
-      {^file_path, metadata} = hd(tracked)
+      {^file_uri, metadata} = hd(tracked)
       assert length(metadata.entities) == 2
     end
   end
@@ -83,16 +85,18 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
     test "returns {:unchanged, metadata} for unchanged file" do
       file_path = create_test_file("unchanged.ex", "content")
+      file_uri = FileTracker.normalize_file_id(file_path)
 
       analysis = %{modules: [], functions: [], calls: [], imports: []}
       FileTracker.track_file(file_path, analysis)
 
       assert {:unchanged, metadata} = FileTracker.has_changed?(file_path)
-      assert metadata.path == file_path
+      assert metadata.path == file_uri
     end
 
     test "returns {:changed, old_metadata} for changed file" do
       file_path = create_test_file("changed.ex", "original content")
+      file_uri = FileTracker.normalize_file_id(file_path)
 
       analysis = %{modules: [], functions: [], calls: [], imports: []}
       FileTracker.track_file(file_path, analysis)
@@ -101,11 +105,12 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       File.write!(file_path, "modified content")
 
       assert {:changed, old_metadata} = FileTracker.has_changed?(file_path)
-      assert old_metadata.path == file_path
+      assert old_metadata.path == file_uri
     end
 
     test "returns {:deleted, old_metadata} for deleted file" do
       file_path = create_test_file("deleted.ex", "content")
+      file_uri = FileTracker.normalize_file_id(file_path)
 
       analysis = %{modules: [], functions: [], calls: [], imports: []}
       FileTracker.track_file(file_path, analysis)
@@ -114,7 +119,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       File.rm!(file_path)
 
       assert {:deleted, old_metadata} = FileTracker.has_changed?(file_path)
-      assert old_metadata.path == file_path
+      assert old_metadata.path == file_uri
     end
   end
 
@@ -327,8 +332,8 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       assert Enum.count(tracked) == 2
 
       paths = Enum.map(tracked, fn {path, _} -> path end)
-      assert file1 in paths
-      assert file2 in paths
+      assert FileTracker.normalize_file_id(file1) in paths
+      assert FileTracker.normalize_file_id(file2) in paths
     end
 
     test "handles invalid import data" do
@@ -338,6 +343,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
     test "preserves metadata during export/import" do
       file_path = create_test_file("test.ex", "content")
+      file_uri = FileTracker.normalize_file_id(file_path)
 
       analysis = %{
         modules: [%{name: "Test"}],
@@ -352,9 +358,9 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       FileTracker.clear_all()
       FileTracker.import(exported)
 
-      [{^file_path, metadata}] = FileTracker.list_tracked_files()
+      [{^file_uri, metadata}] = FileTracker.list_tracked_files()
 
-      assert metadata.path == file_path
+      assert metadata.path == file_uri
       assert is_binary(metadata.content_hash)
       assert length(metadata.entities) == 2
       assert {:module, "Test"} in metadata.entities
@@ -374,17 +380,19 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
     test "handles empty analysis result" do
       file_path = create_test_file("empty.ex", "content")
+      file_uri = FileTracker.normalize_file_id(file_path)
 
       analysis = %{modules: [], functions: [], calls: [], imports: []}
 
       assert :ok = FileTracker.track_file(file_path, analysis)
 
-      [{^file_path, metadata}] = FileTracker.list_tracked_files()
+      [{^file_uri, metadata}] = FileTracker.list_tracked_files()
       assert metadata.entities == []
     end
 
     test "handles large number of entities" do
       file_path = create_test_file("large.ex", "content")
+      file_uri = FileTracker.normalize_file_id(file_path)
 
       # Generate many functions
       functions =
@@ -401,7 +409,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
       assert :ok = FileTracker.track_file(file_path, analysis)
 
-      [{^file_path, metadata}] = FileTracker.list_tracked_files()
+      [{^file_uri, metadata}] = FileTracker.list_tracked_files()
       # 1 module + 1000 functions
       assert length(metadata.entities) == 1001
     end

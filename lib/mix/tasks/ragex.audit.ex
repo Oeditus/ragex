@@ -251,11 +251,19 @@ defmodule Mix.Tasks.Ragex.Audit do
 
             supplementary = run_supplementary(path)
             graph_stats = Store.stats()
-            modules = Store.list_nodes(:module, :infinity)
-            functions = Store.list_nodes(:function, :infinity)
+            module_count = Store.count_nodes_by_type(:module)
+            function_count = Store.count_nodes_by_type(:function)
 
             json_report =
-              build_json(path, result, supplementary, graph_stats, modules, functions, opts)
+              build_json(
+                path,
+                result,
+                supplementary,
+                graph_stats,
+                module_count,
+                function_count,
+                opts
+              )
 
             encoded = Jason.encode!(json_report, pretty: true)
 
@@ -285,7 +293,7 @@ defmodule Mix.Tasks.Ragex.Audit do
     }
   end
 
-  defp build_json(path, result, supplementary, graph_stats, modules, functions, opts) do
+  defp build_json(path, result, supplementary, graph_stats, module_count, function_count, opts) do
     with_empty = Keyword.get(opts, :with_empty, false)
 
     quality_metrics =
@@ -318,11 +326,11 @@ defmodule Mix.Tasks.Ragex.Audit do
       audit: result.report,
       ai_status: result[:ai_status] || %{status: "unknown"},
       graph: %{
-        nodes: graph_stats.nodes,
-        edges: graph_stats.edges,
-        embeddings: graph_stats.embeddings,
-        modules: length(modules),
-        functions: length(functions)
+        nodes: Map.get(graph_stats, :nodes, Map.get(graph_stats, :total, 0)),
+        edges: Map.get(graph_stats, :edges, 0),
+        embeddings: Map.get(graph_stats, :embeddings, 0),
+        modules: module_count,
+        functions: function_count
       },
       results: results,
       summary: result.summary,

@@ -181,10 +181,13 @@ defmodule Ragex.Embeddings.Helper do
 
           case Bumblebee.embed_batch(texts) do
             {:ok, embeddings} ->
-              Enum.zip(texts_with_ids, embeddings)
-              |> Enum.each(fn {{entity_id, text}, embedding} ->
-                Store.store_embedding(entity_type, entity_id, embedding, text)
-              end)
+              items =
+                Enum.zip(texts_with_ids, embeddings)
+                |> Enum.map(fn {{entity_id, text}, embedding} ->
+                  {entity_type, entity_id, embedding, text}
+                end)
+
+              Store.store_embeddings(items)
 
               {:ok, length(embeddings)}
 
@@ -239,12 +242,15 @@ defmodule Ragex.Embeddings.Helper do
 
       case Bumblebee.embed_batch(chunk_texts) do
         {:ok, embeddings} ->
-          chunks
-          |> Enum.zip(embeddings)
-          |> Enum.each(fn {{idx, chunk_text}, embedding} ->
-            chunk_key = Chunker.chunk_key(entity_type, entity_id, idx)
-            Store.store_embedding(:chunk, chunk_key, embedding, chunk_text)
-          end)
+          items =
+            chunks
+            |> Enum.zip(embeddings)
+            |> Enum.map(fn {{idx, chunk_text}, embedding} ->
+              chunk_key = Chunker.chunk_key(entity_type, entity_id, idx)
+              {:chunk, chunk_key, embedding, chunk_text}
+            end)
+
+          Store.store_embeddings(items)
 
           {:ok, length(chunks)}
 
