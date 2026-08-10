@@ -224,6 +224,8 @@ defmodule Ragex.Embeddings.FileTracker do
     :ok
   end
 
+  alias Ragex.Graph.Store
+
   @doc """
   Returns the subset of `entities` whose body hash has changed (or is new).
 
@@ -254,7 +256,7 @@ defmodule Ragex.Embeddings.FileTracker do
               _ -> :module
             end
 
-          case Ragex.Graph.Store.get_embedding(node_type, entity_id) do
+          case Store.get_embedding(node_type, entity_id) do
             {_emb, _text} ->
               :ets.insert(@fn_hash_table, {{file_id, entity_id}, new_hash})
               false

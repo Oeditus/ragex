@@ -252,19 +252,24 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
     test "stale_entities_for_file falls back to Graph.Store when fn_hash is missing" do
       entity_id = {MyMod, :my_fn, 0}
-      
+
       if :ets.whereis(:ragex_embeddings) == :undefined do
         :ets.new(:ragex_embeddings, [:named_table, :set, :public])
       end
 
       :ets.insert(:ragex_embeddings, {{:function, entity_id}, [0.1, 0.2], "my_fn doc"})
 
-      stale = FileTracker.stale_entities_for_file("my_file.ex", [{entity_id, "def my_fn, do: :ok"}])
+      stale =
+        FileTracker.stale_entities_for_file("my_file.ex", [{entity_id, "def my_fn, do: :ok"}])
+
       assert MapSet.size(stale) == 0
 
       # Unstored entity is marked stale
       unstored_id = {MyMod, :other_fn, 0}
-      stale2 = FileTracker.stale_entities_for_file("my_file.ex", [{unstored_id, "def other_fn, do: :ok"}])
+
+      stale2 =
+        FileTracker.stale_entities_for_file("my_file.ex", [{unstored_id, "def other_fn, do: :ok"}])
+
       assert MapSet.member?(stale2, unstored_id)
     end
   end
@@ -359,6 +364,7 @@ defmodule Ragex.Embeddings.FileTrackerTest do
         version: 1,
         tracked_files: exported.tracked_files
       }
+
       FileTracker.clear_all()
       assert :ok = FileTracker.import(v1_data)
       assert Enum.count(FileTracker.list_tracked_files()) == 2

@@ -201,7 +201,8 @@ defmodule Ragex.Analyzers.Directory do
     find_files_recursive(path, 0, max_depth, exclude_patterns, [], path)
   end
 
-  defp find_files_recursive(_path, depth, max_depth, _exclude, acc, _root) when depth > max_depth do
+  defp find_files_recursive(_path, depth, max_depth, _exclude, acc, _root)
+       when depth > max_depth do
     acc
   end
 
@@ -245,7 +246,8 @@ defmodule Ragex.Analyzers.Directory do
   defp should_exclude?(path, patterns, root_path) do
     basename = Path.basename(path)
 
-    if basename in patterns or (String.starts_with?(basename, ".") and basename not in [".", ".."]) do
+    if basename in patterns or
+         (String.starts_with?(basename, ".") and basename not in [".", ".."]) do
       true
     else
       rel_path = if root_path, do: Path.relative_to(path, root_path), else: path
