@@ -109,6 +109,26 @@ defmodule Ragex.LanguageSupportTest do
       assert basenames == ["a.ex", "b.py", "d.erl", "e.js"]
     end
 
+    test "excludes _build, deps, and hidden directories when scanning top directory", %{dir: dir} do
+      build_dir = Path.join(dir, "_build/dev/lib/foo")
+      deps_dir = Path.join(dir, "deps/bar")
+      hidden_dir = Path.join(dir, ".elixir_ls")
+      File.mkdir_p!(build_dir)
+      File.mkdir_p!(deps_dir)
+      File.mkdir_p!(hidden_dir)
+
+      File.write!(Path.join(build_dir, "build_file.ex"), "")
+      File.write!(Path.join(deps_dir, "dep_file.ex"), "")
+      File.write!(Path.join(hidden_dir, "hidden_file.ex"), "")
+
+      {:ok, files} = LanguageSupport.find_source_files(dir)
+      basenames = Enum.map(files, &Path.basename/1) |> Enum.sort()
+      assert basenames == ["a.ex", "b.py", "d.erl", "e.js"]
+      refute Enum.any?(files, &String.contains?(&1, "_build"))
+      refute Enum.any?(files, &String.contains?(&1, "deps"))
+      refute Enum.any?(files, &String.contains?(&1, ".elixir_ls"))
+    end
+
     test "non-recursive skips subdirectories", %{dir: dir} do
       {:ok, files} = LanguageSupport.find_source_files(dir, recursive: false)
       basenames = Enum.map(files, &Path.basename/1) |> Enum.sort()

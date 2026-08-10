@@ -198,15 +198,15 @@ defmodule Ragex.Analyzers.Directory do
   # Private functions
 
   defp find_supported_files(path, max_depth, exclude_patterns) do
-    find_files_recursive(path, 0, max_depth, exclude_patterns, [])
+    find_files_recursive(path, 0, max_depth, exclude_patterns, [], path)
   end
 
-  defp find_files_recursive(_path, depth, max_depth, _exclude, acc) when depth > max_depth do
+  defp find_files_recursive(_path, depth, max_depth, _exclude, acc, _root) when depth > max_depth do
     acc
   end
 
-  defp find_files_recursive(path, depth, max_depth, exclude_patterns, acc) do
-    if should_exclude?(path, exclude_patterns) do
+  defp find_files_recursive(path, depth, max_depth, exclude_patterns, acc, root_path) do
+    if should_exclude?(path, exclude_patterns, root_path) do
       acc
     else
       case File.ls(path) do
@@ -215,11 +215,18 @@ defmodule Ragex.Analyzers.Directory do
             full_path = Path.join(path, entry)
 
             cond do
-              should_exclude?(full_path, exclude_patterns) ->
+              should_exclude?(full_path, exclude_patterns, root_path) ->
                 acc_inner
 
               File.dir?(full_path) ->
-                find_files_recursive(full_path, depth + 1, max_depth, exclude_patterns, acc_inner)
+                find_files_recursive(
+                  full_path,
+                  depth + 1,
+                  max_depth,
+                  exclude_patterns,
+                  acc_inner,
+                  root_path
+                )
 
               supported_file?(full_path) ->
                 [full_path | acc_inner]
@@ -235,12 +242,20 @@ defmodule Ragex.Analyzers.Directory do
     end
   end
 
-  defp should_exclude?(path, patterns) do
+  defp should_exclude?(path, patterns, root_path) do
     basename = Path.basename(path)
 
-    Enum.any?(patterns, fn pattern ->
-      String.contains?(path, pattern) or String.starts_with?(basename, ".")
-    end)
+    if basename in patterns or (String.starts_with?(basename, ".") and basename not in [".", ".."]) do
+      true
+    else
+      rel_path = if root_path, do: Path.relative_to(path, root_path), else: path
+      segments = Path.split(rel_path)
+
+      Enum.any?(segments, fn segment ->
+        segment in patterns or
+          (String.starts_with?(segment, ".") and segment not in [".", ".."])
+      end)
+    end
   end
 
   defp supported_file?(path) do

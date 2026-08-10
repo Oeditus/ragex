@@ -249,6 +249,24 @@ defmodule Ragex.Embeddings.FileTrackerTest do
 
       assert FileTracker.list_tracked_files() == []
     end
+
+    test "stale_entities_for_file falls back to Graph.Store when fn_hash is missing" do
+      entity_id = {MyMod, :my_fn, 0}
+      
+      if :ets.whereis(:ragex_embeddings) == :undefined do
+        :ets.new(:ragex_embeddings, [:named_table, :set, :public])
+      end
+
+      :ets.insert(:ragex_embeddings, {{:function, entity_id}, [0.1, 0.2], "my_fn doc"})
+
+      stale = FileTracker.stale_entities_for_file("my_file.ex", [{entity_id, "def my_fn, do: :ok"}])
+      assert MapSet.size(stale) == 0
+
+      # Unstored entity is marked stale
+      unstored_id = {MyMod, :other_fn, 0}
+      stale2 = FileTracker.stale_entities_for_file("my_file.ex", [{unstored_id, "def other_fn, do: :ok"}])
+      assert MapSet.member?(stale2, unstored_id)
+    end
   end
 
   describe "stats/0" do
@@ -318,10 +336,11 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       # Export
       exported = FileTracker.export()
 
-      assert exported.version == 1
+      assert exported.version == 2
       assert map_size(exported.tracked_files) == 2
+      assert is_map(exported.fn_hashes)
 
-      # Clear and import
+      # Clear and import v2
       FileTracker.clear_all()
       assert FileTracker.list_tracked_files() == []
 
@@ -334,6 +353,15 @@ defmodule Ragex.Embeddings.FileTrackerTest do
       paths = Enum.map(tracked, fn {path, _} -> path end)
       assert FileTracker.normalize_file_id(file1) in paths
       assert FileTracker.normalize_file_id(file2) in paths
+
+      # Test backward compatibility with v1 format
+      v1_data = %{
+        version: 1,
+        tracked_files: exported.tracked_files
+      }
+      FileTracker.clear_all()
+      assert :ok = FileTracker.import(v1_data)
+      assert Enum.count(FileTracker.list_tracked_files()) == 2
     end
 
     test "handles invalid import data" do

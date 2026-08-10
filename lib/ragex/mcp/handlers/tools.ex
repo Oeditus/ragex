@@ -6696,13 +6696,10 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp find_supported_files(dir) do
-    # Extensions supported by Metastatic
-    extensions = [".ex", ".exs", ".erl", ".hrl", ".py", ".rb", ".hs"]
-
-    Path.wildcard(Path.join(dir, "**/*"))
-    |> Enum.filter(fn path ->
-      File.regular?(path) && Enum.any?(extensions, fn ext -> String.ends_with?(path, ext) end)
-    end)
+    case Ragex.LanguageSupport.find_source_files(dir, metastatic_only: true) do
+      {:ok, files} -> files
+      _ -> []
+    end
   end
 
   defp format_dead_code_summary(dead_functions, scope) do

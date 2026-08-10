@@ -328,13 +328,17 @@ defmodule Ragex.Analysis.Duplication do
     |> Enum.filter(fn path ->
       File.regular?(path) &&
         Enum.any?(extensions, fn ext -> String.ends_with?(path, ext) end) &&
-        not excluded?(path, exclude_patterns)
+        not excluded?(path, exclude_patterns, dir)
     end)
   end
 
-  defp excluded?(path, patterns) do
-    Enum.any?(patterns, fn pattern ->
-      String.contains?(path, pattern)
+  defp excluded?(path, patterns, dir) do
+    rel_path = Path.relative_to(path, dir)
+    segments = Path.split(rel_path)
+
+    Enum.any?(segments, fn segment ->
+      segment in patterns or
+        (String.starts_with?(segment, ".") and segment not in [".", ".."])
     end)
   end
 

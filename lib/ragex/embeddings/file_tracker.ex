@@ -244,8 +244,24 @@ defmodule Ragex.Embeddings.FileTracker do
       new_hash = :crypto.hash(:sha256, normalize_body(body))
 
       case :ets.lookup(@fn_hash_table, {file_id, entity_id}) do
-        [{{^file_id, ^entity_id}, stored_hash}] -> new_hash != stored_hash
-        [] -> true
+        [{{^file_id, ^entity_id}, stored_hash}] ->
+          new_hash != stored_hash
+
+        [] ->
+          node_type =
+            case entity_id do
+              {_m, _f, _a} -> :function
+              _ -> :module
+            end
+
+          case Ragex.Graph.Store.get_embedding(node_type, entity_id) do
+            {_emb, _text} ->
+              :ets.insert(@fn_hash_table, {{file_id, entity_id}, new_hash})
+              false
+
+            nil ->
+              true
+          end
       end
     end)
     |> Enum.map(&elem(&1, 0))
@@ -301,9 +317,14 @@ defmodule Ragex.Embeddings.FileTracker do
   Returns a map that can be serialized and stored alongside embeddings.
   """
   def export do
+    fn_hashes =
+      :ets.tab2list(@fn_hash_table)
+      |> Enum.into(%{})
+
     %{
-      version: 1,
-      tracked_files: list_tracked_files() |> Enum.into(%{})
+      version: 2,
+      tracked_files: list_tracked_files() |> Enum.into(%{}),
+      fn_hashes: fn_hashes
     }
   end
 
@@ -314,6 +335,20 @@ defmodule Ragex.Embeddings.FileTracker do
   """
   def import(data) do
     case data do
+      %{version: 2, tracked_files: files, fn_hashes: fn_hashes} when is_map(files) ->
+        clear_all()
+
+        Enum.each(files, fn {path, metadata} ->
+          :ets.insert(@tracker_table, {path, metadata})
+        end)
+
+        Enum.each(fn_hashes, fn {key, hash} ->
+          :ets.insert(@fn_hash_table, {key, hash})
+        end)
+
+        Logger.info("Imported tracking data for #{map_size(files)} files")
+        :ok
+
       %{version: 1, tracked_files: files} when is_map(files) ->
         clear_all()
 
@@ -321,7 +356,7 @@ defmodule Ragex.Embeddings.FileTracker do
           :ets.insert(@tracker_table, {path, metadata})
         end)
 
-        Logger.info("Imported tracking data for #{map_size(files)} files")
+        Logger.info("Imported tracking data for #{map_size(files)} files (v1)")
         :ok
 
       _ ->

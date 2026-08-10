@@ -149,6 +149,44 @@ defmodule Ragex.LanguageSupport do
     end
   end
 
+  @default_exclude_patterns [
+    "node_modules",
+    ".git",
+    ".hg",
+    ".svn",
+    "_build",
+    "deps",
+    "target",
+    "dist",
+    "build",
+    "coverage",
+    ".elixir_ls",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".bundle",
+    "vendor"
+  ]
+
+  @doc "Returns default directory exclusion patterns."
+  @spec default_exclude_patterns() :: [String.t()]
+  def default_exclude_patterns, do: @default_exclude_patterns
+
+  @doc """
+  Checks if a file path should be excluded based on relative path components
+  from the root directory and configured exclusion patterns.
+  """
+  @spec should_exclude?(String.t(), String.t(), [String.t()]) :: boolean()
+  def should_exclude?(file_path, root_dir, exclude_patterns \\ @default_exclude_patterns) do
+    rel_path = Path.relative_to(file_path, root_dir)
+    segments = Path.split(rel_path)
+
+    Enum.any?(segments, fn segment ->
+      segment in exclude_patterns or
+        (String.starts_with?(segment, ".") and segment not in [".", ".."])
+    end)
+  end
+
   @doc """
   Finds supported source files in a directory.
 
@@ -156,6 +194,7 @@ defmodule Ragex.LanguageSupport do
 
   - `:recursive` -- recursively search subdirectories (default: `true`)
   - `:metastatic_only` -- only include languages with Metastatic adapters (default: `false`)
+  - `:exclude_patterns` -- patterns/directories to exclude (default: common build/deps dirs)
 
   ## Examples
 
@@ -171,6 +210,7 @@ defmodule Ragex.LanguageSupport do
       File.dir?(path) ->
         recursive = Keyword.get(opts, :recursive, true)
         metastatic_only = Keyword.get(opts, :metastatic_only, false)
+        exclude_patterns = Keyword.get(opts, :exclude_patterns, @default_exclude_patterns)
 
         extensions =
           if metastatic_only do
@@ -188,7 +228,11 @@ defmodule Ragex.LanguageSupport do
             Path.join([path, "*.{#{glob}}"])
           end
 
-        {:ok, Path.wildcard(pattern)}
+        files =
+          Path.wildcard(pattern)
+          |> Enum.reject(&should_exclude?(&1, path, exclude_patterns))
+
+        {:ok, files}
 
       true ->
         {:error, {:not_found, path}}
