@@ -47,4 +47,11 @@ defmodule Ragex do
   def stats do
     Store.stats()
   end
+
+  @doc """
+  Compacts the underlying database store (.redb file) to reclaim free space.
+  """
+  def compact do
+    Store.compact()
+  end
 end

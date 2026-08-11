@@ -398,6 +398,25 @@ defmodule Ragex.Graph.Store do
   """
   def embeddings_table, do: @embeddings_table
 
+  @doc """
+  Triggers database compaction on the underlying store to reclaim free space.
+  """
+  def compact do
+    if Application.get_env(:ragex, :store_backend, :ets) == :dllb do
+      case Dllb.compact() do
+        {:ok, _} ->
+          Logger.info("Store compaction succeeded")
+          :ok
+
+        {:error, err} ->
+          Logger.warning("Store compaction failed: #{inspect(err)}")
+          {:error, err}
+      end
+    else
+      :ok
+    end
+  end
+
   # Server Callbacks
 
   @impl true
@@ -412,9 +431,10 @@ defmodule Ragex.Graph.Store do
 
     # At startup, load CWD-based cache (backward compat for MCP server / interactive use).
     # Agent.Core.analyze_project will call load_project/1 to switch to the correct path.
-    do_load_project_cache(nil)
+    cwd = canonical_project_root(nil)
+    do_load_project_cache(cwd)
 
-    {:ok, %{project_path: nil}}
+    {:ok, %{project_path: cwd}}
   end
 
   @impl true
@@ -424,16 +444,26 @@ defmodule Ragex.Graph.Store do
 
   @impl true
   def handle_call({:load_project, project_path}, _from, state) do
-    # Clear all tables
-    :ets.delete_all_objects(@nodes_table)
-    :ets.delete_all_objects(@edges_table)
-    :ets.delete_all_objects(@embeddings_table)
-    FileTracker.clear_all()
+    target_root = canonical_project_root(project_path)
+    current_root = canonical_project_root(state.project_path)
 
-    # Load caches for the target project path
-    do_load_project_cache(project_path)
+    tracked_count = FileTracker.stats().total_files
 
-    {:reply, :ok, %{state | project_path: project_path}}
+    if target_root == current_root and state.project_path != nil and tracked_count > 0 do
+      Logger.info("Store already loaded for project: #{target_root}, preserving graph and file tracker")
+      {:reply, :ok, %{state | project_path: target_root}}
+    else
+      # Clear all tables when switching projects or initial empty load
+      :ets.delete_all_objects(@nodes_table)
+      :ets.delete_all_objects(@edges_table)
+      :ets.delete_all_objects(@embeddings_table)
+      FileTracker.clear_all()
+
+      # Load caches for the target project path
+      do_load_project_cache(target_root)
+
+      {:reply, :ok, %{state | project_path: target_root}}
+    end
   end
 
   @impl true
@@ -515,9 +545,14 @@ defmodule Ragex.Graph.Store do
 
   # Loads graph and embedding caches for a given project path (nil = CWD).
   defp do_load_project_cache(project_path) do
+    target_path = project_path || File.cwd!()
+
+    # Hydrate FileTracker state from AnalysisCache if available
+    Ragex.Analysis.Cache.load(target_path)
+
     # For ETS backend, load from disk cache
     if Backend.module() == Ragex.Store.Backend.ETS do
-      case Persistence.load(project_path) do
+      case Persistence.load(target_path) do
         {:ok, count} ->
           Logger.info("Loaded #{count} cached embeddings")
 
@@ -531,7 +566,7 @@ defmodule Ragex.Graph.Store do
           Logger.warning("Failed to load embedding cache: #{inspect(reason)}")
       end
 
-      case GraphPersistence.load(project_path) do
+      case GraphPersistence.load(target_path) do
         {:ok, %{nodes: n, edges: e}} ->
           Logger.info("Loaded graph from cache: #{n} nodes, #{e} edges")
 
@@ -549,6 +584,20 @@ defmodule Ragex.Graph.Store do
       {:error, reason} -> Logger.warning("Store backend bootstrap failed: #{inspect(reason)}")
     end
   end
+
+  defp canonical_project_root(nil), do: canonical_project_root(File.cwd!())
+  defp canonical_project_root(""), do: canonical_project_root(File.cwd!())
+
+  defp canonical_project_root(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    case Ragex.Git.Repo.root(expanded) do
+      {:ok, root} -> Path.expand(root)
+      _ -> expanded
+    end
+  end
+
+  defp canonical_project_root(other), do: Path.expand(to_string(other))
 
   defp backend, do: Backend.module()
 end

@@ -57,14 +57,16 @@ defmodule Ragex.Analysis.Cache do
 
     File.mkdir_p!(cache_dir)
 
-    # Snapshot current file fingerprints
+    # Snapshot current file fingerprints and file tracking data
     fingerprints = build_fingerprint_snapshot()
+    file_tracking = FileTracker.export()
 
     data = %{
       version: @version,
       timestamp: System.system_time(:second),
       project_path: path,
       fingerprints: fingerprints,
+      file_tracking: file_tracking,
       issues: issues
     }
 
@@ -179,6 +181,7 @@ defmodule Ragex.Analysis.Cache do
 
     case data do
       %{version: @version, project_path: ^path, fingerprints: fingerprints, issues: issues} ->
+        hydrate_file_tracker(data)
         changed_files = find_changed_files(fingerprints)
 
         if changed_files == [] do
@@ -207,6 +210,19 @@ defmodule Ragex.Analysis.Cache do
     e ->
       Logger.error("Failed to load analysis cache: #{Exception.message(e)}")
       {:error, Exception.message(e)}
+  end
+
+  defp hydrate_file_tracker(data) when is_map(data) do
+    cond do
+      Map.has_key?(data, :file_tracking) ->
+        FileTracker.import(data.file_tracking)
+
+      Map.has_key?(data, :fingerprints) ->
+        FileTracker.import_fingerprints(data.fingerprints)
+
+      true ->
+        :ok
+    end
   end
 
   defp build_fingerprint_snapshot do
@@ -267,12 +283,14 @@ defmodule Ragex.Analysis.Cache do
 
   defp save_dllb(issues, path) do
     fingerprints = build_fingerprint_snapshot()
+    file_tracking = FileTracker.export()
 
     data = %{
       version: @version,
       timestamp: System.system_time(:second),
       project_path: path,
       fingerprints: fingerprints,
+      file_tracking: file_tracking,
       issues: issues
     }
 
@@ -308,7 +326,8 @@ defmodule Ragex.Analysis.Cache do
                   project_path: ^path,
                   fingerprints: fingerprints,
                   issues: issues
-                } ->
+                } = data ->
+                  hydrate_file_tracker(data)
                   changed_files = find_changed_files(fingerprints)
 
                   if changed_files == [] do

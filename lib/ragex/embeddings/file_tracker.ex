@@ -367,6 +367,36 @@ defmodule Ragex.Embeddings.FileTracker do
     end
   end
 
+  @doc """
+  Imports basic file fingerprints into FileTracker if full metadata is unavailable.
+  """
+  def import_fingerprints(fingerprints) when is_map(fingerprints) do
+    Enum.each(fingerprints, fn {path, content_hash} ->
+      file_id = normalize_file_id(path)
+      fs_path = file_id_to_path(path)
+
+      mtime =
+        case File.stat(fs_path) do
+          {:ok, stat} -> file_mtime_to_unix(stat.mtime)
+          _ -> 0
+        end
+
+      metadata = %{
+        path: file_id,
+        content_hash: content_hash,
+        mtime: mtime,
+        size: 0,
+        entities: [],
+        analyzed_at: System.system_time(:second)
+      }
+
+      :ets.insert(@tracker_table, {file_id, metadata})
+    end)
+
+    Logger.info("Imported fingerprints for #{map_size(fingerprints)} files into FileTracker")
+    :ok
+  end
+
   ## Private Functions
 
   defp compute_file_metadata(fs_path, file_id, analysis_result) do
