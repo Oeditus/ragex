@@ -90,8 +90,8 @@ defmodule Ragex.Git.RepoServer do
   # Private
 
   defp do_open(path) do
-    ref = :git.open(path)
-    {:ok, ref}
+    # credo:disable-for-next-line
+    {:ok, apply(:git, :open, [path])}
   rescue
     e -> {:error, {:egit_open_failed, Exception.message(e)}}
   end
