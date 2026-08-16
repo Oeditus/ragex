@@ -65,7 +65,7 @@ defmodule Ragex.MixProject do
       # dllb multi-model database client
       if(File.dir?("../dllb_ex") or not is_nil(System.get_env("LOCAL_DLLB")),
         do: {:dllb, path: "../dllb_ex", override: true},
-        else: {:dllb, "~> 0.8"}
+        else: {:dllb, "~> 0.9"}
       ),
       # TUI Framework
       {:owl, "~> 0.12"},
