@@ -8,8 +8,13 @@ defmodule Ragex.Dllb.ProjectManagerTest do
     old_bin = Application.get_env(:ragex, :dllb_server_bin)
 
     on_exit(fn ->
-      if old_mode, do: Application.put_env(:ragex, :dllb_mode, old_mode), else: Application.delete_env(:ragex, :dllb_mode)
-      if old_bin, do: Application.put_env(:ragex, :dllb_server_bin, old_bin), else: Application.delete_env(:ragex, :dllb_server_bin)
+      if old_mode,
+        do: Application.put_env(:ragex, :dllb_mode, old_mode),
+        else: Application.delete_env(:ragex, :dllb_mode)
+
+      if old_bin,
+        do: Application.put_env(:ragex, :dllb_server_bin, old_bin),
+        else: Application.delete_env(:ragex, :dllb_server_bin)
     end)
 
     :ok
@@ -31,6 +36,7 @@ defmodule Ragex.Dllb.ProjectManagerTest do
 
     test "find_dllb_binary/0 locates dllb-server executable" do
       binary = ProjectManager.find_dllb_binary()
+
       if binary do
         assert File.exists?(binary)
         assert String.contains?(binary, "dllb-server")
@@ -40,7 +46,12 @@ defmodule Ragex.Dllb.ProjectManagerTest do
 
   describe "project lifecycle" do
     test "ensure_instance creates .ragex directory and attempts server launch" do
-      tmp_dir = Path.join(System.tmp_dir!(), "ragex_proj_manager_test_#{System.unique_integer([:positive])}")
+      tmp_dir =
+        Path.join(
+          System.tmp_dir!(),
+          "ragex_proj_manager_test_#{System.unique_integer([:positive])}"
+        )
+
       File.mkdir_p!(tmp_dir)
 
       on_exit(fn ->

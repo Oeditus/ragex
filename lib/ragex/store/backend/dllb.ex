@@ -23,14 +23,15 @@ defmodule Ragex.Store.Backend.Dllb do
   require Logger
 
   alias Dllb.MetaAST.Query, as: MQ
+  alias Ragex.Dllb.ProjectManager
   alias Ragex.Embeddings.Registry
 
   defp query_fn, do: fn stmt -> query(stmt) end
 
   @doc "Executes a query statement against the active dllb instance (per-project or global)."
   def query(statement, opts \\ []) do
-    if Ragex.Dllb.ProjectManager.per_project_enabled?() do
-      Ragex.Dllb.ProjectManager.query(statement, opts)
+    if ProjectManager.per_project_enabled?() do
+      ProjectManager.query(statement, opts)
     else
       Dllb.query(statement, opts)
     end
@@ -38,8 +39,8 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @doc "Executes a batch transaction against the active dllb instance."
   def batch_transaction(query_strings, opts \\ []) do
-    if Ragex.Dllb.ProjectManager.per_project_enabled?() do
-      Ragex.Dllb.ProjectManager.batch_transaction(query_strings, opts)
+    if ProjectManager.per_project_enabled?() do
+      ProjectManager.batch_transaction(query_strings, opts)
     else
       Dllb.batch_transaction(query_strings, opts)
     end
@@ -117,8 +118,8 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def load_project(project_path) do
-    if Ragex.Dllb.ProjectManager.per_project_enabled?() and not is_nil(project_path) do
-      Ragex.Dllb.ProjectManager.set_active_project(project_path)
+    if ProjectManager.per_project_enabled?() and not is_nil(project_path) do
+      ProjectManager.set_active_project(project_path)
     end
 
     bootstrap()

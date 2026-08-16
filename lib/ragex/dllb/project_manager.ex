@@ -21,6 +21,8 @@ defmodule Ragex.Dllb.ProjectManager do
   use GenServer
   require Logger
 
+  alias Ragex.Store.Backend.Dllb, as: DllbBackend
+
   @default_base_port 3010
 
   # ---------------------------------------------------------------------------
@@ -80,7 +82,10 @@ defmodule Ragex.Dllb.ProjectManager do
           GenServer.call(__MODULE__, {:set_active_project, project_path})
 
         {:error, reason} ->
-          Logger.warning("Failed to initialize per-project dllb instance for #{project_path}: #{inspect(reason)}")
+          Logger.warning(
+            "Failed to initialize per-project dllb instance for #{project_path}: #{inspect(reason)}"
+          )
+
           {:error, reason}
       end
     else
@@ -266,7 +271,10 @@ defmodule Ragex.Dllb.ProjectManager do
       {:error, :dllb_binary_not_found}
     else
       pool_name = :"dllb_pool_#{port}"
-      Logger.info("Starting per-project dllb server for #{project_path} on port #{port} (db: #{db_path})")
+
+      Logger.info(
+        "Starting per-project dllb server for #{project_path} on port #{port} (db: #{db_path})"
+      )
 
       env = [
         {~c"DLLB_PATH", to_charlist(db_path)},
@@ -275,15 +283,18 @@ defmodule Ragex.Dllb.ProjectManager do
         {~c"DLLB_NS", ~c"default"}
       ]
 
-      port_proc = Port.open({:spawn_executable, binary}, [:binary, :exit_status, env: env, args: []])
+      port_proc =
+        Port.open({:spawn_executable, binary}, [:binary, :exit_status, env: env, args: []])
 
       case wait_for_server(port, 30) do
         :ok ->
           pool_opts = [name: pool_name, host: "127.0.0.1", port: port, pool_size: 5]
-          {:ok, pool_pid} = NimblePool.start_link(worker: {Dllb.Pool, pool_opts}, pool_size: 5, name: pool_name)
+
+          {:ok, pool_pid} =
+            NimblePool.start_link(worker: {Dllb.Pool, pool_opts}, pool_size: 5, name: pool_name)
 
           # Bootstrap database schema for this instance
-          Ragex.Store.Backend.Dllb.bootstrap_instance(pool_name)
+          DllbBackend.bootstrap_instance(pool_name)
 
           info = %{
             project_path: project_path,

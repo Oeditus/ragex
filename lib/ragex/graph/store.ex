@@ -14,7 +14,9 @@ defmodule Ragex.Graph.Store do
   use GenServer
   require Logger
 
+  alias Ragex.Analysis.Cache, as: AnalysisCache
   alias Ragex.Embeddings.{FileTracker, Persistence}
+  alias Ragex.Git.Repo, as: GitRepo
   alias Ragex.Graph.Persistence, as: GraphPersistence
   alias Ragex.Store.Backend
 
@@ -450,7 +452,10 @@ defmodule Ragex.Graph.Store do
     tracked_count = FileTracker.stats().total_files
 
     if target_root == current_root and state.project_path != nil and tracked_count > 0 do
-      Logger.info("Store already loaded for project: #{target_root}, preserving graph and file tracker")
+      Logger.info(
+        "Store already loaded for project: #{target_root}, preserving graph and file tracker"
+      )
+
       {:reply, :ok, %{state | project_path: target_root}}
     else
       # Clear all tables when switching projects or initial empty load
@@ -548,7 +553,7 @@ defmodule Ragex.Graph.Store do
     target_path = project_path || File.cwd!()
 
     # Hydrate FileTracker state from AnalysisCache if available
-    Ragex.Analysis.Cache.load(target_path)
+    AnalysisCache.load(target_path)
 
     # For ETS backend, load from disk cache
     if Backend.module() == Ragex.Store.Backend.ETS do
@@ -591,7 +596,7 @@ defmodule Ragex.Graph.Store do
   defp canonical_project_root(path) when is_binary(path) do
     expanded = Path.expand(path)
 
-    case Ragex.Git.Repo.root(expanded) do
+    case GitRepo.root(expanded) do
       {:ok, root} -> Path.expand(root)
       _ -> expanded
     end
