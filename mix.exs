@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.25.0"
+  @version "0.25.1"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -63,10 +63,11 @@ defmodule Ragex.MixProject do
       {:jason, "~> 1.4"},
       {:file_system, "~> 1.0"},
       # dllb multi-model database client
-      if(File.dir?("../dllb_ex") or not is_nil(System.get_env("LOCAL_DLLB")),
-        do: {:dllb, path: "../dllb_ex", override: true},
-        else: {:dllb, "~> 0.9"}
-      ),
+      # if(File.dir?("../dllb_ex") or not is_nil(System.get_env("LOCAL_DLLB")),
+      #   do: {:dllb, path: "../dllb_ex", override: true},
+      #   else: {:dllb, "~> 0.9"}
+      # ),
+      {:dllb, "~> 0.9"},
       # TUI Framework
       {:owl, "~> 0.12"},
       # Embeddings and ML

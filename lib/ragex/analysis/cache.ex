@@ -236,16 +236,36 @@ defmodule Ragex.Analysis.Cache do
     # Compare cached hashes directly against the filesystem.
     # This avoids depending on the in-memory FileTracker ETS table,
     # which may not yet be populated on fresh startup.
+    #
+    # Reading and hashing every tracked file is I/O-bound and scales linearly
+    # with project size -- large projects can have tens of thousands of
+    # tracked files, turning a sequential scan into a multi-minute stall on
+    # startup. Run the per-file checks concurrently to make this bounded by
+    # the slowest single file rather than the sum of all of them.
     cached_fingerprints
-    |> Enum.filter(fn {path, cached_hash} ->
-      fs_path = FileTracker.file_id_to_path(path)
-
-      case File.read(fs_path) do
-        {:ok, content} -> :crypto.hash(:sha256, content) != cached_hash
-        {:error, _} -> true
-      end
+    |> Task.async_stream(
+      fn {path, cached_hash} -> {path, file_changed?(path, cached_hash)} end,
+      max_concurrency: max(System.schedulers_online() * 4, 8),
+      timeout: 30_000,
+      on_timeout: :kill_task
+    )
+    |> Enum.reduce([], fn
+      {:ok, {path, true}}, acc -> [path | acc]
+      {:ok, {_path, false}}, acc -> acc
+      # A per-file check exceeded the timeout (e.g. a stuck filesystem). This
+      # should be exceedingly rare; skip it this pass rather than failing the
+      # whole freshness check -- the next save/load cycle will re-evaluate it.
+      {:exit, _reason}, acc -> acc
     end)
-    |> Enum.map(fn {path, _} -> path end)
+  end
+
+  defp file_changed?(path, cached_hash) do
+    fs_path = FileTracker.file_id_to_path(path)
+
+    case File.read(fs_path) do
+      {:ok, content} -> :crypto.hash(:sha256, content) != cached_hash
+      {:error, _} -> true
+    end
   end
 
   defp read_metadata(cache_path) do
