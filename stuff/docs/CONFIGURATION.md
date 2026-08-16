@@ -759,6 +759,44 @@ config :ragex, :embedding_model, :custom_model
 
 ---
 
+## Storage Backend & `dllb` Configuration
+
+Ragex supports two storage backends:
+- `:ets` (default) — In-memory ETS tables with file-based persistence.
+- `:dllb` — Persistent multi-model database backend (`Ragex.Store.Backend.Dllb`) via `../dllb_ex`.
+
+### `dllb` Modes (`:global` vs `:per_project`)
+
+```elixir
+# Select storage backend and dllb mode
+config :ragex,
+  store_backend: :dllb,
+  # :global (default shared server) or :per_project (isolated server per project)
+  dllb_mode: :per_project,
+  # Optional explicit path to dllb-server binary
+  dllb_server_bin: nil,
+  # Starting base TCP port for per-project instances (default 3010)
+  dllb_base_port: 3010
+
+# Shared connection options (used in :global mode or as fallback)
+config :dllb,
+  enabled: true,
+  host: "127.0.0.1",
+  port: 3009,
+  pool_size: 5
+```
+
+#### Binary Resolution (`dllb_server_bin`)
+- **Explicit path**: Set `config :ragex, :dllb_server_bin, "/path/to/dllb-server"` or `DLLB_SERVER_BIN=/path/to/dllb-server`.
+- **Auto-discovery** (if not specified): Searches system `$PATH` -> `../dllb/target/release/dllb-server` -> `../dllb/target/debug/dllb-server`.
+- **Fallback**: If no binary is found, query routing safely falls back to the shared `127.0.0.1:3009` pool (`Dllb.Pool`).
+
+#### Address & Port Usage
+- **Per-Project Mode**: Binds to `127.0.0.1` using dynamically allocated ports starting at `3010` (`3010`, `3011`, `3012`, etc.) and stores data in `<project_path>/.ragex/dllb.redb`.
+- **Global Mode**: Connects to `127.0.0.1:3009` (or `config :dllb, :host` and `:port`).
+
+---
+
 ## Summary
 
 **Quick Start (Default):**

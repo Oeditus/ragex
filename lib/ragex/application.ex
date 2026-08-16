@@ -32,6 +32,8 @@ defmodule Ragex.Application do
     # Base children that always start
     base_children =
       [
+        # Per-project dllb manager
+        Ragex.Dllb.ProjectManager,
         # Graph store must start before MCP server
         Ragex.Graph.Store,
         # Embedding model for semantic search (heavy -- needs GPU)

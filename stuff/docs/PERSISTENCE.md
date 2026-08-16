@@ -400,7 +400,12 @@ Enable `dllb` in your application configuration (`config/config.exs` or `config/
 
 ```elixir
 # Select the dllb store backend (defaults to :ets)
-config :ragex, :store_backend, :dllb
+config :ragex,
+  store_backend: :dllb,
+  # dllb_mode: :global (default) or :per_project
+  dllb_mode: :per_project,
+  # Optional custom path to dllb-server binary
+  dllb_server_bin: nil
 
 # Configure connection to the dllb database server
 config :dllb,
@@ -411,6 +416,34 @@ config :dllb,
   outcome: :json,
   timeout: 30_000
 ```
+
+### Per-Project `dllb` Instances
+
+When `dllb_mode: :per_project` is configured (or `:dllb_instance_per_project` is set to `true`), Ragex automatically spawns and manages a dedicated `dllb-server` process and connection pool per project/directory.
+
+#### Storage & Isolation
+- **Storage Location**: Database files are stored inside `<project_path>/.ragex/dllb.redb` for complete project isolation.
+- **Automatic Lifecycle**: When switching projects via `load_project/1`, `Ragex.Dllb.ProjectManager` ensures the target project's `dllb-server` process is running, allocates a TCP port, initializes the dynamic `dllb_ex` connection pool, and bootstraps the database schema.
+
+#### Binary Resolution Order (`dllb_server_bin`)
+If `dllb_server_bin` is specified in config (or the `DLLB_SERVER_BIN` environment variable is set), `ProjectManager` will execute that binary directly.
+
+If `dllb_server_bin` is **not** specified, Ragex attempts to discover the `dllb-server` binary in the following priority order:
+1. `config :ragex, :dllb_server_bin` or `DLLB_SERVER_BIN` env var
+2. System `$PATH` (`System.find_executable("dllb-server")`)
+3. Cargo release build (`../dllb/target/release/dllb-server`)
+4. Cargo debug build (`../dllb/target/debug/dllb-server`)
+
+#### Fallback Behavior
+If no `dllb-server` binary can be found on disk (or if process spawning fails), `ProjectManager`:
+- Logs a warning (`"Cannot start per-project dllb server: binary not found"`).
+- Automatically falls back query execution to the default global `Dllb.Pool` connection (or `:ets` backend), ensuring zero runtime crashes.
+
+#### Network Ports & Addresses
+| Mode | Host / Bind Address | Port Allocation | Database Path |
+| :--- | :--- | :--- | :--- |
+| **Per-Project Mode** (`dllb_mode: :per_project`) | `127.0.0.1` | **Dynamic sequential ports** starting at `3010` (`3010` for project 1, `3011` for project 2, etc. Configurable via `:dllb_base_port`) | `<project_path>/.ragex/dllb.redb` |
+| **Global / Fallback Mode** (`dllb_mode: :global`) | `127.0.0.1` (from `config :dllb, :host`) | **`3009`** (from `config :dllb, :port`) | Server's global database file |
 
 ## Future Enhancements
 

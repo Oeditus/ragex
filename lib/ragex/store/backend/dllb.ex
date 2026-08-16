@@ -25,7 +25,25 @@ defmodule Ragex.Store.Backend.Dllb do
   alias Dllb.MetaAST.Query, as: MQ
   alias Ragex.Embeddings.Registry
 
-  defp query_fn, do: &Dllb.query/1
+  defp query_fn, do: fn stmt -> query(stmt) end
+
+  @doc "Executes a query statement against the active dllb instance (per-project or global)."
+  def query(statement, opts \\ []) do
+    if Ragex.Dllb.ProjectManager.per_project_enabled?() do
+      Ragex.Dllb.ProjectManager.query(statement, opts)
+    else
+      Dllb.query(statement, opts)
+    end
+  end
+
+  @doc "Executes a batch transaction against the active dllb instance."
+  def batch_transaction(query_strings, opts \\ []) do
+    if Ragex.Dllb.ProjectManager.per_project_enabled?() do
+      Ragex.Dllb.ProjectManager.batch_transaction(query_strings, opts)
+    else
+      Dllb.batch_transaction(query_strings, opts)
+    end
+  end
 
   # ---------------------------------------------------------------------------
   # Lifecycle
@@ -35,11 +53,22 @@ defmodule Ragex.Store.Backend.Dllb do
   def bootstrap do
     schema_statements()
     |> Enum.reduce_while(:ok, fn stmt, :ok ->
-      case Dllb.query(stmt) do
+      case query(stmt) do
         # The server replies {:ok, %Dllb.Result.Error{}} for statements the
         # engine does not execute (e.g. DEFINE TABLE/FIELD) or for an index
         # that already exists. These are tolerated so bootstrap stays
         # idempotent; only a transport-level failure aborts.
+        {:ok, _} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  @doc "Bootstraps schema statements on a specific named pool connection."
+  def bootstrap_instance(pool_name) do
+    schema_statements()
+    |> Enum.reduce_while(:ok, fn stmt, :ok ->
+      case Dllb.query(stmt, pool: pool_name) do
         {:ok, _} -> {:cont, :ok}
         {:error, reason} -> {:halt, {:error, reason}}
       end
@@ -87,9 +116,11 @@ defmodule Ragex.Store.Backend.Dllb do
   end
 
   @impl true
-  def load_project(_project_path) do
-    # dllb is persistent -- no cache loading needed.
-    # Bootstrap schema in case it's a fresh database.
+  def load_project(project_path) do
+    if Ragex.Dllb.ProjectManager.per_project_enabled?() and not is_nil(project_path) do
+      Ragex.Dllb.ProjectManager.set_active_project(project_path)
+    end
+
     bootstrap()
     :ok
   end
@@ -115,7 +146,7 @@ defmodule Ragex.Store.Backend.Dllb do
     id = node_to_dllb_id({node_type, node_id})
     query_string = Dllb.Query.upsert("ast_node", id, fields)
 
-    case Dllb.query(query_string) do
+    case query(query_string) do
       {:ok, _} -> :ok
       {:error, reason} -> Logger.debug("dllb store_node failed: #{inspect(reason)}")
     end
@@ -183,7 +214,7 @@ defmodule Ragex.Store.Backend.Dllb do
   def count_nodes_by_type(node_type) do
     query_string = Dllb.Query.count("ast_node", where: "kind = '#{node_type}'")
 
-    case Dllb.query(query_string) do
+    case query(query_string) do
       {:ok, %Dllb.Result.Count{count: count}} ->
         count
 
@@ -213,14 +244,14 @@ defmodule Ragex.Store.Backend.Dllb do
   @impl true
   def remove_node(node_type, node_id) do
     id = node_to_dllb_id({node_type, node_id})
-    Dllb.query(Dllb.Query.delete("ast_node:#{id}"))
+    query(Dllb.Query.delete("ast_node:#{id}"))
     :ok
   end
 
   @impl true
   def update_node_metadata(node_type, node_id, new_metadata) when is_map(new_metadata) do
     id = node_to_dllb_id({node_type, node_id})
-    Dllb.query(Dllb.Query.update("ast_node:#{id}", new_metadata))
+    query(Dllb.Query.update("ast_node:#{id}", new_metadata))
     :ok
   end
 
@@ -239,7 +270,7 @@ defmodule Ragex.Store.Backend.Dllb do
     query_string =
       Dllb.Query.relate("ast_node:#{from_id}", to_string(edge_type), "ast_node:#{to_id}", props)
 
-    Dllb.query(query_string)
+    query(query_string)
     :ok
   end
 
@@ -265,7 +296,7 @@ defmodule Ragex.Store.Backend.Dllb do
     queries
     |> Enum.chunk_every(250)
     |> Enum.each(fn chunk ->
-      case Dllb.batch_transaction(chunk) do
+      case batch_transaction(chunk) do
         {:ok, _} -> :ok
         {:error, reason} -> Logger.debug("dllb batch execution failed: #{inspect(reason)}")
       end
@@ -316,7 +347,7 @@ defmodule Ragex.Store.Backend.Dllb do
     if edge_type do
       query_string = Dllb.Query.graph_edges(to_string(edge_type))
 
-      case Dllb.query(query_string) do
+      case query(query_string) do
         {:ok, %Dllb.Result.Rows{data: data}} ->
           Enum.map(data, fn row ->
             %{
@@ -346,7 +377,7 @@ defmodule Ragex.Store.Backend.Dllb do
 
     query_string = Dllb.Query.select("_edge_idx", where: where)
 
-    case Dllb.query(query_string) do
+    case query(query_string) do
       {:ok, %Dllb.Result.Rows{data: data}} ->
         Enum.map(data, fn row ->
           %{
