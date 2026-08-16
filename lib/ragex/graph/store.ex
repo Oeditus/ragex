@@ -550,7 +550,7 @@ defmodule Ragex.Graph.Store do
 
   # Loads graph and embedding caches for a given project path (nil = CWD).
   defp do_load_project_cache(project_path) do
-    target_path = project_path || File.cwd!()
+    target_path = project_path
 
     # Hydrate FileTracker state from AnalysisCache if available
     AnalysisCache.load(target_path)
@@ -592,6 +592,7 @@ defmodule Ragex.Graph.Store do
 
   defp canonical_project_root(nil), do: canonical_project_root(File.cwd!())
   defp canonical_project_root(""), do: canonical_project_root(File.cwd!())
+  defp canonical_project_root(" " <> rest), do: canonical_project_root(rest)
 
   defp canonical_project_root(path) when is_binary(path) do
     expanded = Path.expand(path)
