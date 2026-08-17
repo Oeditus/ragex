@@ -356,7 +356,7 @@ defmodule Ragex.AI.Cache do
 
     case :ets.tab2file(@table_name, String.to_charlist(path)) do
       :ok ->
-        Logger.info("AI Cache saved to disk: #{path}")
+        Logger.debug("AI Cache saved to disk: #{path}")
 
       err ->
         Logger.warning("Failed to save AI Cache to disk: #{inspect(err)}")
