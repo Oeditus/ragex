@@ -264,7 +264,10 @@ defmodule Ragex.Editor.Core do
         :ok
 
       {:error, errors} ->
-        {:error, %{type: :validation_error, errors: errors}}
+        hint =
+          "Syntax error after applying change. This indicates line_start or line_end was off by a few lines, clipping or duplicating block keywords (e.g., 'def', 'do', 'end')."
+
+        {:error, %{type: :validation_error, errors: errors, hint: hint}}
     end
   end
 
