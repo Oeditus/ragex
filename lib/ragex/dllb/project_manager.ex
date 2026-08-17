@@ -164,9 +164,17 @@ defmodule Ragex.Dllb.ProjectManager do
         debug_bin = Path.expand("../dllb/target/debug/dllb-server", cwd)
 
         cond do
-          File.exists?(release_bin) -> release_bin
-          File.exists?(debug_bin) -> debug_bin
-          true -> nil
+          File.exists?(release_bin) ->
+            release_bin
+
+          File.exists?(debug_bin) ->
+            Logger.warning(
+              "Using debug build of dllb-server at #{debug_bin}. For optimal performance and low memory footprint, compile with: `cargo build --release -p dllb-server`"
+            )
+            debug_bin
+
+          true ->
+            nil
         end
     end
   end
