@@ -29,10 +29,13 @@ defmodule Ragex.LanguageSupportTest do
     test "detects JavaScript family" do
       assert :javascript = LanguageSupport.detect_language("index.js")
       assert :javascript = LanguageSupport.detect_language("App.jsx")
-      assert :javascript = LanguageSupport.detect_language("index.ts")
-      assert :javascript = LanguageSupport.detect_language("App.tsx")
       assert :javascript = LanguageSupport.detect_language("utils.mjs")
       assert :javascript = LanguageSupport.detect_language("utils.cjs")
+    end
+
+    test "detects TypeScript family" do
+      assert :typescript = LanguageSupport.detect_language("index.ts")
+      assert :typescript = LanguageSupport.detect_language("App.tsx")
     end
 
     test "returns :unknown for unsupported extensions" do
@@ -51,8 +54,9 @@ defmodule Ragex.LanguageSupportTest do
       assert {:ok, Metastatic.Adapters.Haskell} = LanguageSupport.get_adapter(:haskell)
     end
 
-    test "returns adapter for JavaScript" do
+    test "returns adapter for JavaScript and TypeScript" do
       assert {:ok, Metastatic.Adapters.JavaScript} = LanguageSupport.get_adapter(:javascript)
+      assert {:ok, Metastatic.Adapters.TypeScript} = LanguageSupport.get_adapter(:typescript)
     end
 
     test "returns error for :unknown" do

@@ -243,6 +243,7 @@ defmodule Ragex.Analyzers.Metastatic do
         :python -> PyAnalyzer.analyze(source, file_path)
         :ruby -> RbAnalyzer.analyze(source, file_path)
         :javascript -> JSAnalyzer.analyze(source, file_path)
+        :typescript -> JSAnalyzer.analyze(source, file_path)
         _ -> {:error, :no_fallback_analyzer}
       end
     else

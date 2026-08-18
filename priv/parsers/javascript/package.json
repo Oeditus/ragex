@@ -1,0 +1,12 @@
+{
+  "name": "metastatic-js-parser",
+  "version": "0.1.0",
+  "description": "Babel-based AST parser and generator for Metastatic JavaScript/TypeScript adapter",
+  "main": "parser.js",
+  "private": true,
+  "dependencies": {
+    "@babel/generator": "^7.26.0",
+    "@babel/parser": "^7.26.0",
+    "@babel/types": "^7.26.0"
+  }
+}

@@ -93,15 +93,9 @@ defmodule Ragex.Analyzers.DeeperIndexing do
 
   # ── Language Detection ──────────────────────────────────────────────
 
-  defp detect_language(file_path) do
-    case Path.extname(file_path) do
-      ext when ext in [".ex", ".exs"] -> :elixir
-      ext when ext in [".erl", ".hrl"] -> :erlang
-      ".py" -> :python
-      ext when ext in [".js", ".jsx", ".ts", ".tsx", ".mjs"] -> :javascript
-      _ -> :unknown
-    end
-  end
+  # ── Language Detection ──────────────────────────────────────────────
+
+  defp detect_language(file_path), do: Ragex.LanguageSupport.detect_language(file_path)
 
   # ── String Extraction ───────────────────────────────────────────────
 
@@ -136,7 +130,7 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     Enum.sort_by(triple ++ single, &elem(&1, 0))
   end
 
-  def extract_strings(source, :javascript) do
+  def extract_strings(source, lang) when lang in [:javascript, :typescript] do
     # Template literals, double-quoted, single-quoted
     templates = extract_strings_regex(source, ~r/`([^`\\]|\\.)*`/, 0)
 
@@ -204,7 +198,7 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     extract_line_comments(source, ~r/^\s*#\s*(.*)$/)
   end
 
-  def extract_comments(source, :javascript) do
+  def extract_comments(source, lang) when lang in [:javascript, :typescript] do
     line_comments = extract_line_comments(source, ~r|^\s*//\s*(.*)$|)
 
     # Block comments: /* ... */

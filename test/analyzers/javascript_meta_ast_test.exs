@@ -2,47 +2,45 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
   use ExUnit.Case, async: true
 
   alias Metastatic.Adapters.JavaScript, as: JSAdapter
+  alias Metastatic.Adapters.TypeScript, as: TSAdapter
   alias Ragex.Analyzers.MetaASTExtractor
+  alias Ragex.LanguageSupport
 
   describe "file_extensions/0" do
-    test "covers all JS/TS variants" do
-      exts = JSAdapter.file_extensions()
-      assert ".js" in exts
-      assert ".ts" in exts
-      assert ".jsx" in exts
-      assert ".tsx" in exts
+    test "covers all JS/TS variants across JS and TS adapters" do
+      js_exts = JSAdapter.file_extensions()
+      ts_exts = TSAdapter.file_extensions()
+
+      assert ".js" in js_exts
+      assert ".jsx" in js_exts
+      assert ".mjs" in js_exts
+      assert ".cjs" in js_exts
+      assert ".ts" in ts_exts
+      assert ".tsx" in ts_exts
     end
   end
 
-  describe "parse/1" do
-    test "returns {:ok, meta_ast}" do
+  describe "parse/1 and to_meta/1" do
+    test "parse/1 produces Babel AST JSON and to_meta/1 produces MetaAST" do
       source = """
       function hello(name) {
         return name;
       }
       """
 
-      assert {:ok, ast} = JSAdapter.parse(source)
-      assert match?({:container, _, _}, ast)
-    end
+      assert {:ok, native_ast} = JSAdapter.parse(source)
+      assert is_map(native_ast)
+      assert native_ast["type"] == "File"
 
-    test "file-level container is always present" do
-      assert {:ok, ast} = JSAdapter.parse("const x = 1;")
-      assert match?({:container, _, _}, ast)
-    end
-  end
-
-  describe "to_meta/1" do
-    test "is an identity pass returning {:ok, ast, %{}}" do
-      {:ok, ast} = JSAdapter.parse("function f() {}")
-      assert {:ok, ^ast, %{}} = JSAdapter.to_meta(ast)
+      assert {:ok, meta_ast, _metadata} = JSAdapter.to_meta(native_ast)
+      assert match?({:function_def, _, _}, meta_ast)
     end
   end
 
-  describe "function extraction via parse/1" do
+  describe "function extraction via MetaAST" do
     test "function declaration is emitted as :function_def" do
       source = "function greet(name, age) { return name; }"
-      {:ok, ast} = JSAdapter.parse(source)
+      {:ok, ast} = parse_meta(source)
 
       func_defs = collect_nodes(ast, :function_def)
 
@@ -51,14 +49,14 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
              end)
     end
 
-    test "arrow function is emitted as :function_def" do
+    test "arrow function is emitted as :lambda node" do
       source = "const add = (a, b) => a + b;"
-      {:ok, ast} = JSAdapter.parse(source)
+      {:ok, ast} = parse_meta(source)
 
-      func_defs = collect_nodes(ast, :function_def)
+      lambdas = collect_nodes(ast, :lambda)
 
-      assert Enum.any?(func_defs, fn {:function_def, meta, _} ->
-               Keyword.get(meta, :name) == "add"
+      assert Enum.any?(lambdas, fn {:lambda, meta, _} ->
+               Keyword.get(meta, :arrow) == true
              end)
     end
 
@@ -69,7 +67,7 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
       }
       """
 
-      {:ok, ast} = JSAdapter.parse(source)
+      {:ok, ast} = parse_meta(source)
       func_defs = collect_nodes(ast, :function_def)
 
       assert Enum.any?(func_defs, fn {:function_def, meta, _} ->
@@ -77,9 +75,9 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
              end)
     end
 
-    test "parameter count is reflected in :params meta" do
+    test "parameter count is reflected in params meta" do
       source = "function three(a, b, c) {}"
-      {:ok, ast} = JSAdapter.parse(source)
+      {:ok, ast} = parse_meta(source)
       func_defs = collect_nodes(ast, :function_def)
 
       three =
@@ -88,15 +86,17 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
         end)
 
       assert three != nil
-      {:function_def, meta, _} = three
-      assert length(Keyword.get(meta, :params, [])) == 3
+      {:function_def, _meta, children} = three
+      # Children tuple contains [params, body]
+      [params | _] = children
+      assert length(params) == 3
     end
   end
 
   describe "import extraction" do
     test "ES6 import is emitted as :import node" do
       source = ~s(import React from 'react';)
-      {:ok, ast} = JSAdapter.parse(source)
+      {:ok, ast} = parse_meta(source)
 
       imports = collect_nodes(ast, :import)
 
@@ -105,19 +105,19 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
              end)
     end
 
-    test "require() is emitted as :import node" do
+    test "require() is emitted as :function_call node" do
       source = ~s|const fs = require('fs');|
-      {:ok, ast} = JSAdapter.parse(source)
+      {:ok, ast} = parse_meta(source)
 
-      imports = collect_nodes(ast, :import)
+      calls = collect_nodes(ast, :function_call)
 
-      assert Enum.any?(imports, fn {:import, meta, _} ->
-               Keyword.get(meta, :source) == "fs"
+      assert Enum.any?(calls, fn {:function_call, meta, _} ->
+               Keyword.get(meta, :name) == "require"
              end)
     end
 
     test "import type is recorded correctly" do
-      {:ok, ast} = JSAdapter.parse(~s|import x from 'mod';|)
+      {:ok, ast} = parse_meta(~s|import x from 'mod';|)
       imports = collect_nodes(ast, :import)
       [imp | _] = imports
       {:import, meta, _} = imp
@@ -133,7 +133,7 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
       }
       """
 
-      {:ok, ast} = JSAdapter.parse(source)
+      {:ok, ast} = parse_meta(source)
       containers = collect_nodes(ast, :container)
 
       assert Enum.any?(containers, fn {:container, meta, _} ->
@@ -143,10 +143,10 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
     end
   end
 
-  describe "TypeScript type stripping" do
-    test "typed params are still counted correctly" do
+  describe "TypeScript type handling" do
+    test "typed params in TS adapter are extracted and counted correctly" do
       source = "function typed(name: string, count: number): void {}"
-      {:ok, ast} = JSAdapter.parse(source)
+      {:ok, ast} = parse_meta(source, TSAdapter)
       func_defs = collect_nodes(ast, :function_def)
 
       typed =
@@ -155,9 +155,9 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
         end)
 
       assert typed != nil
-      {:function_def, meta, _} = typed
+      {:function_def, _meta, [params | _]} = typed
       # 2 params despite TypeScript type annotations
-      assert length(Keyword.get(meta, :params, [])) == 2
+      assert length(params) == 2
     end
   end
 
@@ -174,14 +174,7 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
       function helper(x) { return x; }
       """
 
-      {:ok, ast} = JSAdapter.parse(source)
-
-      doc = %Metastatic.Document{
-        ast: ast,
-        language: :javascript,
-        metadata: %{},
-        original_source: source
-      }
+      {:ok, doc} = LanguageSupport.parse_document(source, :javascript)
 
       assert {:ok, result} = MetaASTExtractor.extract(doc, "service.js")
 
@@ -197,26 +190,64 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
       # lodash import
       assert Enum.any?(result.imports, fn i -> i.to_module == "lodash" end)
     end
+
+    test "extract/2 works on a Document built from TypeScript source" do
+      source = """
+      import lodash from 'lodash';
+
+      class Service {
+        fetch(url: string): string { return url; }
+        post(url: string, data: any): void {}
+      }
+
+      function helper(x: number): number { return x; }
+      """
+
+      {:ok, doc} = LanguageSupport.parse_document(source, :typescript)
+
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "service.ts")
+
+      assert match?([_ | _], result.modules)
+
+      func_names = Enum.map(result.functions, fn f -> f.name end)
+      assert :helper in func_names
+      assert :fetch in func_names
+      assert :post in func_names
+
+      assert Enum.any?(result.imports, fn i -> i.to_module == "lodash" end)
+    end
   end
 
   describe "LanguageSupport integration" do
-    test "get_adapter(:javascript) returns the new adapter" do
+    test "get_adapter(:javascript) returns JS adapter" do
       assert {:ok, Metastatic.Adapters.JavaScript} =
-               Ragex.LanguageSupport.get_adapter(:javascript)
+               LanguageSupport.get_adapter(:javascript)
     end
 
-    test ".js extension is now in metastatic_extensions list" do
-      assert ".js" in Ragex.LanguageSupport.metastatic_extensions()
+    test "get_adapter(:typescript) returns TS adapter" do
+      assert {:ok, Metastatic.Adapters.TypeScript} =
+               LanguageSupport.get_adapter(:typescript)
     end
 
-    test ".ts extension is now in metastatic_extensions list" do
-      assert ".ts" in Ragex.LanguageSupport.metastatic_extensions()
+    test ".js extension is in metastatic_extensions list" do
+      assert ".js" in LanguageSupport.metastatic_extensions()
+    end
+
+    test ".ts extension is in metastatic_extensions list" do
+      assert ".ts" in LanguageSupport.metastatic_extensions()
     end
   end
 
   # ---------------------------------------------------------------------------
-  # Helper
+  # Helpers
   # ---------------------------------------------------------------------------
+
+  defp parse_meta(source, adapter \\ JSAdapter) do
+    with {:ok, native_ast} <- adapter.parse(source),
+         {:ok, meta_ast, _meta} <- adapter.to_meta(native_ast) do
+      {:ok, meta_ast}
+    end
+  end
 
   defp collect_nodes(ast, type) when is_list(ast) do
     Enum.flat_map(ast, fn node -> collect_nodes(node, type) end)
