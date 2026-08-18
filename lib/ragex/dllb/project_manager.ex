@@ -144,6 +144,16 @@ defmodule Ragex.Dllb.ProjectManager do
     end
   end
 
+  @doc "Stops all managed per-project dllb instances."
+  @spec stop_all_instances() :: :ok
+  def stop_all_instances do
+    if Process.whereis(__MODULE__) do
+      GenServer.call(__MODULE__, :stop_all_instances)
+    else
+      :ok
+    end
+  end
+
   @doc """
   Locates the `dllb-server` executable binary path.
   """
@@ -171,6 +181,7 @@ defmodule Ragex.Dllb.ProjectManager do
             Logger.warning(
               "Using debug build of dllb-server at #{debug_bin}. For optimal performance and low memory footprint, compile with: `cargo build --release -p dllb-server`"
             )
+
             debug_bin
 
           true ->
@@ -185,6 +196,8 @@ defmodule Ragex.Dllb.ProjectManager do
 
   @impl true
   def init(_opts) do
+    Process.flag(:trap_exit, true)
+
     state = %{
       active_project: nil,
       instances: %{},
@@ -251,6 +264,24 @@ defmodule Ragex.Dllb.ProjectManager do
       :error ->
         {:reply, :ok, state}
     end
+  end
+
+  @impl true
+  def handle_call(:stop_all_instances, _from, state) do
+    Enum.each(state.instances, fn {_path, info} ->
+      do_stop_instance(info)
+    end)
+
+    {:reply, :ok, %{state | instances: %{}, active_project: nil}}
+  end
+
+  @impl true
+  def terminate(_reason, state) do
+    Enum.each(state.instances, fn {_path, info} ->
+      do_stop_instance(info)
+    end)
+
+    :ok
   end
 
   @impl true
