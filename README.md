@@ -505,6 +505,28 @@ graph TD
 - Python 3.x (optional, for Python code analysis)
 - Node.JS (optional, for Javascript code analysis)
 - ~500MB RAM for embedding model (first run downloads ~90MB)
+- `dllb-server` binary (optional, for per-project persistent database storage and hybrid full-text search)
+
+### Database Backend (`dllb`)
+
+Ragex integrates with [`dllb`](https://github.com/Oeditus/dllb)—a high-performance multi-model NoSQL and vector database server written in Rust—to power persistent graph storage, full-text search (BM25 via Tantivy), HNSW vector index storage, and MetaAST symbol caching across application restarts.
+
+When `:dllb_mode` is set to `:per_project` (or when per-project indexing is enabled), `Ragex` automatically manages dedicated `dllb-server` processes and connection pools for each workspace.
+
+#### `dllb` Binary Resolution Precedence
+
+Ragex automatically locates the `dllb-server` executable in the following order:
+
+1. **Custom Configuration / Environment Variable**:
+   - Config setting: `config :ragex, dllb_server_bin: "/path/to/dllb-server"`
+   - Environment variable: `DLLB_SERVER_BIN=/path/to/dllb-server`
+2. **System `$PATH` Executables**:
+   - Standard binary directories in `$PATH` (e.g. `/usr/local/bin/dllb-server`, `~/.cargo/bin/dllb-server`).
+3. **Sibling Repository Target Paths (Relative to working directory)**:
+   - Release build: `../dllb/target/release/dllb-server`
+   - Debug build: `../dllb/target/debug/dllb-server`
+
+> 💡 **Tip:** Pre-compiled `dllb-server` release binaries can be grabbed directly from the [dllb GitHub Releases](https://github.com/Oeditus/dllb/releases) page, or compiled locally from source via `cargo build --release -p dllb-server`.
 
 ### Build
 
