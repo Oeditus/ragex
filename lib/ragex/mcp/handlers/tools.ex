@@ -2344,8 +2344,19 @@ defmodule Ragex.MCP.Handlers.Tools do
   @doc """
   Executes a tool call.
   """
-  # credo:disable-for-lines:72
-  def call_tool(tool_name, arguments) do
+  # credo:disable-for-lines:80
+  def call_tool(tool_name, nil), do: call_tool(tool_name, %{})
+
+  def call_tool(tool_name, arguments) when is_map(arguments) do
+    normalized_args = normalize_arguments(arguments)
+    do_call_tool(tool_name, normalized_args)
+  end
+
+  def call_tool(_tool_name, _arguments) do
+    {:error, "Tool arguments must be a map"}
+  end
+
+  defp do_call_tool(tool_name, arguments) do
     case tool_name do
       "analyze_file" ->
         analyze_file(arguments)
@@ -4339,6 +4350,18 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp sanitize_number(_), do: nil
 
+  defp normalize_arguments(map) when is_map(map) do
+    Map.new(map, fn
+      {k, v} when is_atom(k) -> {Atom.to_string(k), normalize_arg_value(v)}
+      {k, v} when is_binary(k) -> {k, normalize_arg_value(v)}
+      {k, v} -> {to_string(k), normalize_arg_value(v)}
+    end)
+  end
+
+  defp normalize_arg_value(map) when is_map(map), do: normalize_arguments(map)
+  defp normalize_arg_value(list) when is_list(list), do: Enum.map(list, &normalize_arg_value/1)
+  defp normalize_arg_value(val), do: val
+
   # New algorithm tools
 
   defp betweenness_centrality_tool(params) do
@@ -5504,8 +5527,8 @@ defmodule Ragex.MCP.Handlers.Tools do
   # File reading tool
 
   defp read_file_tool(%{"path" => path} = params) do
-    start_line = Map.get(params, "start_line")
-    end_line = Map.get(params, "end_line")
+    start_line = parse_int_attr_optional(Map.get(params, "start_line"))
+    end_line = parse_int_attr_optional(Map.get(params, "end_line"))
 
     case File.read(path) do
       {:ok, content} ->

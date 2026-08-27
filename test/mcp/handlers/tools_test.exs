@@ -238,4 +238,54 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
              "explain_suggestion should mention suggest_refactorings as a prerequisite"
     end
   end
+
+  describe "tool execution robustness & parameter normalization" do
+    test "handles nil arguments gracefully without crashing" do
+      assert {:ok, result} = Tools.call_tool("list_nodes", nil)
+      assert is_map(result)
+      assert Map.has_key?(result, :nodes)
+    end
+
+    test "handles non-map arguments safely" do
+      assert {:error, error} = Tools.call_tool("read_file", "not_a_map")
+      assert error =~ "Tool arguments must be a map"
+    end
+
+    test "normalizes atom keys to string keys recursively" do
+      # Atom keys for list_nodes
+      assert {:ok, result} = Tools.call_tool("list_nodes", %{limit: 10, node_type: "module"})
+      assert is_map(result)
+    end
+
+    test "read_file tool parses string line numbers" do
+      temp_dir = System.tmp_dir!()
+      file = Path.join(temp_dir, "read_test_#{:rand.uniform(999_999)}.txt")
+      File.write!(file, "line 1\nline 2\nline 3\n")
+
+      on_exit(fn -> File.rm(file) end)
+
+      assert {:ok, result} =
+               Tools.call_tool("read_file", %{path: file, start_line: "2", end_line: "3"})
+
+      assert result.range.start == 2
+      assert result.range.end == 3
+      assert result.content =~ "2|line 2"
+    end
+
+    test "returns clear error for unknown tool names" do
+      assert {:error, error} = Tools.call_tool("unknown_tool_name_xyz", %{})
+      assert error =~ "Unknown tool: unknown_tool_name_xyz"
+    end
+
+    test "search and query tools handle missing parameters without crashing" do
+      assert {:error, error1} = Tools.call_tool("read_file", %{})
+      assert error1 =~ "path"
+
+      assert {:error, error2} = Tools.call_tool("analyze_file", %{})
+      assert error2 =~ "path" or error2 =~ "Failed" or error2 =~ "Invalid" or error2 =~ "parameters"
+
+      assert {:error, error3} = Tools.call_tool("semantic_search", %{})
+      assert error3 =~ "query" or error3 =~ "Missing" or error3 =~ "failed"
+    end
+  end
 end
