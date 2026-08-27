@@ -46,16 +46,6 @@ defmodule Ragex.Editor.Validators.Elixir do
     {Keyword.get(meta, :line), Keyword.get(meta, :column)}
   end
 
-  defp extract_line_and_column(meta) when is_map(meta) do
-    {Map.get(meta, :line), Map.get(meta, :column)}
-  end
-
-  defp extract_line_and_column(line) when is_integer(line) do
-    {line, nil}
-  end
-
-  defp extract_line_and_column(_), do: {nil, nil}
-
   defp format_error_message(error_info, token) when is_binary(error_info) do
     if is_binary(token) and token != "" do
       "#{error_info}: #{inspect(token)}"
@@ -64,26 +54,14 @@ defmodule Ragex.Editor.Validators.Elixir do
     end
   end
 
-  defp format_error_message({message, description}, token)
-       when is_binary(message) and is_binary(description) do
-    formatted = "#{message}\nhint: #{description}"
+  defp format_error_message({message, description}, token) when is_binary(message) do
+    hint = if is_binary(description) and description != "", do: "\nhint: #{description}", else: ""
+    formatted = "#{message}#{hint}"
 
     if is_binary(token) and token != "" do
       "#{formatted}: #{inspect(token)}"
     else
       formatted
     end
-  end
-
-  defp format_error_message({message, _} = _error_info, token) when is_binary(message) do
-    if is_binary(token) and token != "" do
-      "#{message}: #{inspect(token)}"
-    else
-      message
-    end
-  end
-
-  defp format_error_message(error_info, _token) do
-    to_string(error_info)
   end
 end
