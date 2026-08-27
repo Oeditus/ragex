@@ -30,6 +30,9 @@ ragex-*.tar
 /.elixir_ls/
 /.erl.history/
 
+/dllb.redb
+/dllb.redb.search/
+
 /priv/parsers/haskell/.stack-work/
 
 ragex.log
