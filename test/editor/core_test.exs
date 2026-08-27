@@ -291,14 +291,22 @@ defmodule Ragex.Editor.CoreTest do
 
       # Edit 1: modify step 1 with trailing newline
       edit1 = [
-        Types.replace(2, 4, "  def handle_call(:step1, _from, state) do\n    {:reply, :updated1, state}\n  end\n")
+        Types.replace(
+          2,
+          4,
+          "  def handle_call(:step1, _from, state) do\n    {:reply, :updated1, state}\n  end\n"
+        )
       ]
 
       assert {:ok, _} = Core.edit_file(path, edit1, validate: true)
 
       # Edit 2: modify step 2 on lines 6-8 without line drift syntax errors
       edit2 = [
-        Types.replace(6, 8, "  def handle_call(:step2, _from, state) do\n    {:reply, :updated2, state}\n  end\n")
+        Types.replace(
+          6,
+          8,
+          "  def handle_call(:step2, _from, state) do\n    {:reply, :updated2, state}\n  end\n"
+        )
       ]
 
       assert {:ok, _} = Core.edit_file(path, edit2, validate: true)

@@ -282,7 +282,9 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
       assert error1 =~ "path"
 
       assert {:error, error2} = Tools.call_tool("analyze_file", %{})
-      assert error2 =~ "path" or error2 =~ "Failed" or error2 =~ "Invalid" or error2 =~ "parameters"
+
+      assert error2 =~ "path" or error2 =~ "Failed" or error2 =~ "Invalid" or
+               error2 =~ "parameters"
 
       assert {:error, error3} = Tools.call_tool("semantic_search", %{})
       assert error3 =~ "query" or error3 =~ "Missing" or error3 =~ "failed"
