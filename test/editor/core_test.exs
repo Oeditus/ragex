@@ -253,4 +253,69 @@ defmodule Ragex.Editor.CoreTest do
       assert remaining_temps == []
     end
   end
+
+  describe "line alignment & trailing newline handling" do
+    test "trailing newline in content does not insert extra blank line", %{test_dir: dir} do
+      path = Path.join(dir, "alignment.ex")
+      File.write!(path, "line 1\nline 2\nline 3\n")
+
+      changes = [Types.replace(2, 2, "new line 2\n")]
+      assert {:ok, _} = Core.edit_file(path, changes, validate: false)
+
+      lines = File.read!(path) |> String.split("\n")
+      assert lines == ["line 1", "new line 2", "line 3", ""]
+    end
+
+    test "sequential edits on Elixir file maintain correct line alignment and pass validation", %{
+      test_dir: dir
+    } do
+      path = Path.join(dir, "game_server.ex")
+
+      elixir_code = """
+      defmodule GameServer do
+        def handle_call(:step1, _from, state) do
+          {:reply, :ok, state}
+        end
+
+        def handle_call(:step2, _from, state) do
+          {:reply, :ok, state}
+        end
+
+        def handle_call(:step3, _from, state) do
+          {:reply, :ok, state}
+        end
+      end
+      """
+
+      File.write!(path, elixir_code)
+
+      # Edit 1: modify step 1 with trailing newline
+      edit1 = [
+        Types.replace(2, 4, "  def handle_call(:step1, _from, state) do\n    {:reply, :updated1, state}\n  end\n")
+      ]
+
+      assert {:ok, _} = Core.edit_file(path, edit1, validate: true)
+
+      # Edit 2: modify step 2 on lines 6-8 without line drift syntax errors
+      edit2 = [
+        Types.replace(6, 8, "  def handle_call(:step2, _from, state) do\n    {:reply, :updated2, state}\n  end\n")
+      ]
+
+      assert {:ok, _} = Core.edit_file(path, edit2, validate: true)
+
+      content = File.read!(path)
+      assert content =~ ":updated1"
+      assert content =~ ":updated2"
+    end
+
+    test "detects and rejects overlapping change ranges in single edit", %{test_file: path} do
+      changes = [
+        Types.replace(2, 4, "replacement 1"),
+        Types.replace(3, 5, "replacement 2")
+      ]
+
+      assert {:error, reason} = Core.edit_file(path, changes, validate: false)
+      assert reason =~ "overlapping"
+    end
+  end
 end

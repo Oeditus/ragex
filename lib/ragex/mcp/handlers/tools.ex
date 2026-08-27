@@ -3311,8 +3311,9 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   # Edit tool implementations
 
-  defp edit_file_tool(%{"path" => path, "changes" => changes_data} = params) do
-    # Convert JSON changes to Types.change() structs
+  defp edit_file_tool(%{"path" => path} = params) when is_binary(path) and path != "" do
+    changes_data = Map.get(params, "changes")
+
     with {:ok, changes} <- parse_changes(changes_data),
          opts <- build_edit_opts(params),
          {:ok, result} <- Core.edit_file(path, changes, opts) do
@@ -3327,22 +3328,38 @@ defmodule Ragex.MCP.Handlers.Tools do
          timestamp: result.timestamp
        }}
     else
-      {:error, %{type: :validation_error, errors: errors}} ->
+      {:error, %{type: :validation_error, errors: errors} = err} ->
+        hint = Map.get(err, :hint) || "Syntax error after applying change."
+
         {:error,
          %{
            "type" => "validation_error",
            "message" => "Validation failed",
+           "hint" => hint,
            "errors" => Enum.map(errors, &format_validation_error/1)
          }}
+
+      {:error, reason} when is_binary(reason) ->
+        {:error, "Edit failed: #{reason}"}
 
       {:error, reason} ->
         {:error, "Edit failed: #{inspect(reason)}"}
     end
   end
 
-  defp edit_file_tool(_), do: {:error, "Invalid parameters for edit_file"}
+  defp edit_file_tool(%{path: path} = params) when is_binary(path) and path != "" do
+    string_params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
+    edit_file_tool(string_params)
+  end
 
-  defp validate_edit_tool(%{"path" => path, "changes" => changes_data} = params) do
+  defp edit_file_tool(_) do
+    {:error,
+     "Invalid parameters for edit_file: expected 'path' (string) and 'changes' (list of change objects with 'type', 'line_start', etc.)"}
+  end
+
+  defp validate_edit_tool(%{"path" => path} = params) when is_binary(path) and path != "" do
+    changes_data = Map.get(params, "changes")
+
     with {:ok, changes} <- parse_changes(changes_data),
          opts <- build_validation_opts(params),
          :ok <- Core.validate_changes(path, changes, opts) do
@@ -3352,19 +3369,32 @@ defmodule Ragex.MCP.Handlers.Tools do
          message: "Changes are valid"
        }}
     else
-      {:error, %{type: :validation_error, errors: errors}} ->
+      {:error, %{type: :validation_error, errors: errors} = err} ->
+        hint = Map.get(err, :hint) || "Syntax error after applying change."
+
         {:ok,
          %{
            status: "invalid",
+           hint: hint,
            errors: Enum.map(errors, &format_validation_error/1)
          }}
+
+      {:error, reason} when is_binary(reason) ->
+        {:error, "Validation failed: #{reason}"}
 
       {:error, reason} ->
         {:error, "Validation failed: #{inspect(reason)}"}
     end
   end
 
-  defp validate_edit_tool(_), do: {:error, "Invalid parameters for validate_edit"}
+  defp validate_edit_tool(%{path: path} = params) when is_binary(path) and path != "" do
+    string_params = Map.new(params, fn {k, v} -> {to_string(k), v} end)
+    validate_edit_tool(string_params)
+  end
+
+  defp validate_edit_tool(_) do
+    {:error, "Invalid parameters for validate_edit: expected 'path' and 'changes'"}
+  end
 
   defp rollback_edit_tool(%{"path" => path} = params) do
     opts =
@@ -4147,6 +4177,10 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   # Helper functions for edit tools
 
+  defp parse_changes(changes_data) when is_map(changes_data) do
+    parse_changes([changes_data])
+  end
+
   defp parse_changes(changes_data) when is_list(changes_data) do
     changes =
       Enum.reduce_while(changes_data, [], fn change, acc ->
@@ -4162,26 +4196,77 @@ defmodule Ragex.MCP.Handlers.Tools do
     end
   end
 
-  defp parse_changes(_), do: {:error, "Changes must be a list"}
+  defp parse_changes(_), do: {:error, "Changes must be a list or a single change object"}
 
-  defp parse_single_change(%{
-         "type" => "replace",
-         "line_start" => start,
-         "line_end" => end_line,
-         "content" => content
-       }) do
-    {:ok, Types.replace(start, end_line, content)}
+  defp parse_single_change(change) when is_map(change) do
+    type = fetch_change_attr(change, ["type", :type])
+    line_start = fetch_change_attr(change, ["line_start", :line_start])
+    line_end = fetch_change_attr(change, ["line_end", :line_end])
+    content = fetch_change_attr(change, ["content", :content])
+
+    with {:ok, type_atom} <- parse_change_type(type),
+         {:ok, start_int} <- parse_int_attr(line_start, "line_start") do
+      end_int = parse_int_attr_optional(line_end)
+
+      case type_atom do
+        :replace ->
+          effective_end = end_int || start_int
+
+          if is_binary(content) or content == nil do
+            {:ok, Types.replace(start_int, effective_end, content || "")}
+          else
+            {:error, "Replace content must be a string"}
+          end
+
+        :insert ->
+          if is_binary(content) or content == nil do
+            {:ok, Types.insert(start_int, content || "")}
+          else
+            {:error, "Insert content must be a string"}
+          end
+
+        :delete ->
+          effective_end = end_int || start_int
+          {:ok, Types.delete(start_int, effective_end)}
+      end
+    end
   end
 
-  defp parse_single_change(%{"type" => "insert", "line_start" => start, "content" => content}) do
-    {:ok, Types.insert(start, content)}
+  defp parse_single_change(_), do: {:error, "Invalid change structure: must be an object"}
+
+  defp fetch_change_attr(map, keys) do
+    Enum.find_value(keys, fn k -> Map.get(map, k) end)
   end
 
-  defp parse_single_change(%{"type" => "delete", "line_start" => start, "line_end" => end_line}) do
-    {:ok, Types.delete(start, end_line)}
+  defp parse_change_type("replace"), do: {:ok, :replace}
+  defp parse_change_type("insert"), do: {:ok, :insert}
+  defp parse_change_type("delete"), do: {:ok, :delete}
+  defp parse_change_type(:replace), do: {:ok, :replace}
+  defp parse_change_type(:insert), do: {:ok, :insert}
+  defp parse_change_type(:delete), do: {:ok, :delete}
+  defp parse_change_type(other), do: {:error, "Invalid change type: #{inspect(other)}"}
+
+  defp parse_int_attr(val, _name) when is_integer(val) and val > 0, do: {:ok, val}
+
+  defp parse_int_attr(val, name) when is_binary(val) do
+    case Integer.parse(val) do
+      {int, ""} when int > 0 -> {:ok, int}
+      _ -> {:error, "#{name} must be a positive integer"}
+    end
   end
 
-  defp parse_single_change(_), do: {:error, "Invalid change structure"}
+  defp parse_int_attr(_, name), do: {:error, "#{name} must be a positive integer"}
+
+  defp parse_int_attr_optional(val) when is_integer(val) and val > 0, do: val
+
+  defp parse_int_attr_optional(val) when is_binary(val) do
+    case Integer.parse(val) do
+      {int, ""} when int > 0 -> int
+      _ -> nil
+    end
+  end
+
+  defp parse_int_attr_optional(_), do: nil
 
   defp build_edit_opts(params) do
     opts = []
@@ -4226,19 +4311,11 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp format_validation_error(error) do
     base = %{message: error.message, severity: error.severity}
 
-    base =
-      if Map.has_key?(error, :line) and error.line do
-        Map.put(base, :line, error.line)
-      else
-        base
-      end
+    line = sanitize_number(Map.get(error, :line))
+    column = sanitize_number(Map.get(error, :column))
 
-    base =
-      if Map.has_key?(error, :column) and error.column do
-        Map.put(base, :column, error.column)
-      else
-        base
-      end
+    base = if line, do: Map.put(base, :line, line), else: base
+    base = if column, do: Map.put(base, :column, column), else: base
 
     base =
       if Map.has_key?(error, :context) and error.context do
@@ -4249,6 +4326,18 @@ defmodule Ragex.MCP.Handlers.Tools do
 
     base
   end
+
+  defp sanitize_number(n) when is_integer(n) and n > 0, do: n
+
+  defp sanitize_number(list) when is_list(list) do
+    Keyword.get(list, :line) || Keyword.get(list, :column)
+  end
+
+  defp sanitize_number(map) when is_map(map) do
+    Map.get(map, :line) || Map.get(map, :column)
+  end
+
+  defp sanitize_number(_), do: nil
 
   # New algorithm tools
 

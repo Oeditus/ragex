@@ -166,17 +166,46 @@ defmodule Ragex.Editor.Core do
   defp apply_changes(content, changes) do
     lines = String.split(content, "\n")
 
-    # Sort changes by line number (descending) to avoid index shifting
-    sorted_changes = Enum.sort_by(changes, & &1.line_start, :desc)
+    case validate_no_overlapping_changes(changes) do
+      :ok ->
+        # Sort changes by line number (descending) to avoid index shifting
+        sorted_changes = Enum.sort_by(changes, & &1.line_start, :desc)
 
-    case apply_changes_to_lines(lines, sorted_changes) do
-      {:ok, modified_lines} ->
-        {:ok, Enum.join(modified_lines, "\n")}
+        case apply_changes_to_lines(lines, sorted_changes) do
+          {:ok, modified_lines} ->
+            {:ok, Enum.join(modified_lines, "\n")}
+
+          {:error, _reason} = error ->
+            error
+        end
 
       {:error, _reason} = error ->
         error
     end
   end
+
+  defp validate_no_overlapping_changes(changes) when length(changes) <= 1, do: :ok
+
+  defp validate_no_overlapping_changes(changes) do
+    sorted = Enum.sort_by(changes, & &1.line_start)
+
+    overlapping =
+      sorted
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.any?(fn [c1, c2] ->
+        c1_end = change_end_line(c1)
+        c2.line_start <= c1_end
+      end)
+
+    if overlapping do
+      {:error, "Multiple changes in a single edit request must not have overlapping line ranges"}
+    else
+      :ok
+    end
+  end
+
+  defp change_end_line(%{line_end: end_line}) when is_integer(end_line), do: end_line
+  defp change_end_line(%{line_start: start}), do: start
 
   defp apply_changes_to_lines(lines, changes) do
     Enum.reduce_while(changes, {:ok, lines}, fn change, {:ok, current_lines} ->
@@ -206,7 +235,7 @@ defmodule Ragex.Editor.Core do
         # Replace lines (1-indexed)
         before = Enum.take(lines, start - 1)
         after_lines = Enum.drop(lines, end_line)
-        new_content_lines = String.split(content, "\n")
+        new_content_lines = split_content_lines(content)
 
         {:ok, before ++ new_content_lines ++ after_lines}
     end
@@ -221,7 +250,7 @@ defmodule Ragex.Editor.Core do
       # Insert before line (1-indexed)
       before = Enum.take(lines, start - 1)
       after_lines = Enum.drop(lines, start - 1)
-      new_content_lines = String.split(content, "\n")
+      new_content_lines = split_content_lines(content)
 
       {:ok, before ++ new_content_lines ++ after_lines}
     end
@@ -244,6 +273,20 @@ defmodule Ragex.Editor.Core do
 
         {:ok, before ++ after_lines}
     end
+  end
+
+  defp split_content_lines(nil), do: [""]
+
+  defp split_content_lines(content) when is_binary(content) do
+    # Strip a single trailing newline if present to prevent introducing unintended empty lines
+    normalized =
+      cond do
+        String.ends_with?(content, "\r\n") -> String.slice(content, 0..-3//1)
+        String.ends_with?(content, "\n") -> String.slice(content, 0..-2//1)
+        true -> content
+      end
+
+    String.split(normalized, ~r/\r?\n/)
   end
 
   defp maybe_validate(_content, _path, false, _opts), do: :ok

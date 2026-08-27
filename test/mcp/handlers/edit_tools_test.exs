@@ -379,5 +379,79 @@ defmodule Ragex.MCP.Handlers.EditToolsTest do
       assert {:error, error} = Tools.call_tool("rollback_edit", params)
       assert is_binary(error)
     end
+
+    test "edit_file includes hint in validation_error response", %{test_dir: dir} do
+      test_file = Path.join(dir, "invalid.ex")
+      File.write!(test_file, "defmodule Test do\nend\n")
+
+      params = %{
+        "path" => test_file,
+        "changes" => [
+          %{
+            "type" => "replace",
+            "line_start" => 1,
+            "line_end" => 2,
+            "content" => "defmodule Test do\n  1 + * 2\nend"
+          }
+        ],
+        "validate" => true
+      }
+
+      assert {:error, error} = Tools.call_tool("edit_file", params)
+      assert error["type"] == "validation_error"
+      assert Map.has_key?(error, "hint")
+      assert is_binary(error["hint"])
+      assert error["hint"] =~ "Syntax error after applying change"
+
+      [err_item | _] = error["errors"]
+      assert is_integer(err_item[:line]) or is_integer(err_item["line"])
+    end
+
+    test "edit_file handles string line numbers and omitted line_end", %{test_dir: dir} do
+      test_file = Path.join(dir, "string_lines.txt")
+      File.write!(test_file, "line 1\nline 2\nline 3\n")
+
+      params = %{
+        "path" => test_file,
+        "changes" => [
+          %{
+            "type" => "replace",
+            "line_start" => "2",
+            "content" => "new line 2"
+          }
+        ],
+        "validate" => false
+      }
+
+      assert {:ok, result} = Tools.call_tool("edit_file", params)
+      assert result.status == "success"
+      assert File.read!(test_file) == "line 1\nnew line 2\nline 3\n"
+    end
+
+    test "edit_file handles atom parameter keys and single change object", %{test_dir: dir} do
+      test_file = Path.join(dir, "atom_keys.txt")
+      File.write!(test_file, "line 1\nline 2\n")
+
+      params = %{
+        path: test_file,
+        changes: %{
+          type: "replace",
+          line_start: 1,
+          line_end: 1,
+          content: "new line 1"
+        },
+        validate: false
+      }
+
+      assert {:ok, result} = Tools.call_tool("edit_file", params)
+      assert result.status == "success"
+      assert File.read!(test_file) == "new line 1\nline 2\n"
+    end
+
+    test "edit_file returns descriptive error for empty or missing arguments" do
+      assert {:error, error} = Tools.call_tool("edit_file", %{})
+      assert error =~ "Invalid parameters for edit_file"
+      assert error =~ "expected 'path'"
+    end
   end
 end
