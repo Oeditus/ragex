@@ -448,9 +448,10 @@ defmodule Ragex.MCP.Handlers.EditToolsTest do
       assert File.read!(test_file) == "new line 1\nline 2\n"
     end
 
-    test "edit_file handles parameter aliases (start_line, new_content, search) and omitted type", %{
-      test_dir: dir
-    } do
+    test "edit_file handles parameter aliases (start_line, new_content, search) and omitted type",
+         %{
+           test_dir: dir
+         } do
       test_file = Path.join(dir, "alias_test.ex")
 
       code = """

@@ -561,19 +561,23 @@ defmodule Ragex.MCP.Handlers.Tools do
                       },
                       line_start: %{
                         type: "integer",
-                        description: "Starting line number (1-indexed, accepts aliases: start_line, line)"
+                        description:
+                          "Starting line number (1-indexed, accepts aliases: start_line, line)"
                       },
                       line_end: %{
                         type: "integer",
-                        description: "Ending line number for replace/delete (accepts aliases: end_line)"
+                        description:
+                          "Ending line number for replace/delete (accepts aliases: end_line)"
                       },
                       content: %{
                         type: "string",
-                        description: "New content (for replace/insert, accepts aliases: new_content, replacement)"
+                        description:
+                          "New content (for replace/insert, accepts aliases: new_content, replacement)"
                       },
                       old_content: %{
                         type: "string",
-                        description: "Original text expected at line_start (optional, used to verify/locate correct lines if line numbers shifted, accepts aliases: search, target_content)"
+                        description:
+                          "Original text expected at line_start (optional, used to verify/locate correct lines if line numbers shifted, accepts aliases: search, target_content)"
                       }
                     },
                     required: ["line_start"]
@@ -4214,7 +4218,8 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp parse_changes(_), do: {:error, "Changes must be a list or a single change object"}
 
   defp parse_single_change(change) when is_map(change) do
-    raw_type = fetch_change_attr(change, ["type", "operation", "action", :type, :operation, :action])
+    raw_type =
+      fetch_change_attr(change, ["type", "operation", "action", :type, :operation, :action])
 
     line_start =
       fetch_change_attr(change, [

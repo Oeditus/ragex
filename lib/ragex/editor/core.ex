@@ -493,19 +493,17 @@ defmodule Ragex.Editor.Core do
     total_lines = length(orig_lines)
 
     change_info =
-      Enum.map(changes, fn c ->
+      Enum.map_join(changes, ", ", fn c ->
         s = c.line_start
         e = c.line_end || s
         "lines #{s}-#{e}"
       end)
-      |> Enum.join(", ")
 
     error_summary =
-      Enum.map(errors, fn err ->
+      Enum.map_join(errors, "; ", fn err ->
         line_info = if err.line, do: "line #{err.line}", else: "unknown line"
         "#{line_info}: #{err.message}"
       end)
-      |> Enum.join("; ")
 
     first_change = List.first(changes)
 
@@ -515,12 +513,10 @@ defmodule Ragex.Editor.Core do
         e = min(total_lines, (first_change.line_end || first_change.line_start) + 2)
 
         context_lines =
-          s..e
-          |> Enum.map(fn idx ->
+          Enum.map_join(s..e, "\n", fn idx ->
             line_text = Enum.at(orig_lines, idx - 1) || ""
             "#{idx}: #{line_text}"
           end)
-          |> Enum.join("\n")
 
         "\nOriginal file context around target (#{s}-#{e}):\n#{context_lines}"
       else
