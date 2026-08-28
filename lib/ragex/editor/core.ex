@@ -57,8 +57,8 @@ defmodule Ragex.Editor.Core do
          {:ok, original_content} <- File.read(abs_path),
          {:ok, original_stat} <- File.stat(abs_path),
          {:ok, backup_info} <- maybe_create_backup(abs_path, create_backup_opt),
-         {:ok, modified_content} <- apply_changes(original_content, changes),
-         :ok <- maybe_validate(modified_content, abs_path, validate_opt, opts),
+         {:ok, modified_content} <-
+           apply_changes_and_validate(original_content, changes, abs_path, validate_opt, opts),
          :ok <- atomic_write(abs_path, modified_content, original_stat),
          :ok <- maybe_format(abs_path, format_opt, opts) do
       result =
@@ -98,8 +98,9 @@ defmodule Ragex.Editor.Core do
     with :ok <- validate_changes_list(changes),
          {:ok, abs_path} <- expand_path(path),
          {:ok, original_content} <- File.read(abs_path),
-         {:ok, modified_content} <- apply_changes(original_content, changes) do
-      maybe_validate(modified_content, abs_path, true, opts)
+         {:ok, _modified_content} <-
+           apply_changes_and_validate(original_content, changes, abs_path, true, opts) do
+      :ok
     end
   end
 
@@ -289,29 +290,244 @@ defmodule Ragex.Editor.Core do
     String.split(normalized, ~r/\r?\n/)
   end
 
-  defp maybe_validate(_content, _path, false, _opts), do: :ok
+  defp apply_changes_and_validate(original_content, changes, path, validate_opt, opts) do
+    lines = String.split(original_content, "\n")
+    resolved_changes = Enum.map(changes, &resolve_change_boundaries(lines, &1))
 
-  defp maybe_validate(content, path, true, opts) do
-    # Build validation options
+    with :ok <- validate_no_overlapping_changes(resolved_changes),
+         {:ok, modified_content} <- apply_changes(original_content, resolved_changes) do
+      maybe_validate_with_autocorrect(
+        original_content,
+        resolved_changes,
+        modified_content,
+        path,
+        validate_opt,
+        opts
+      )
+    end
+  end
+
+  defp resolve_change_boundaries(lines, change) do
+    start = change.line_start
+    end_line = change[:line_end] || start
+    old_content = Map.get(change, :old_content)
+
+    if is_binary(old_content) and old_content != "" do
+      case locate_old_content(lines, start, end_line, old_content) do
+        {:ok, new_start, new_end} ->
+          Map.merge(change, %{line_start: new_start, line_end: new_end})
+
+        :not_found ->
+          change
+      end
+    else
+      change
+    end
+  end
+
+  defp locate_old_content(lines, start, end_line, old_content) do
+    target_lines = String.split(normalize_newlines(old_content), "\n")
+    target_len = length(target_lines)
+    total_lines = length(lines)
+
+    # 1. Check exact or trimmed match at specified position
+    if start >= 1 and end_line <= total_lines and end_line - start + 1 == target_len do
+      slice = Enum.slice(lines, (start - 1)..(end_line - 1))
+
+      if slice == target_lines or trim_lines(slice) == trim_lines(target_lines) do
+        {:ok, start, end_line}
+      else
+        find_best_match(lines, start, target_lines)
+      end
+    else
+      find_best_match(lines, start, target_lines)
+    end
+  end
+
+  defp find_best_match(lines, start, target_lines) do
+    target_len = length(target_lines)
+    total_lines = length(lines)
+
+    if target_len > total_lines do
+      :not_found
+    else
+      candidates =
+        0..(total_lines - target_len)
+        |> Enum.map(fn idx ->
+          slice = Enum.slice(lines, idx..(idx + target_len - 1))
+          start_line = idx + 1
+          end_line = start_line + target_len - 1
+          dist = abs(start_line - start)
+
+          cond do
+            slice == target_lines -> {0, dist, start_line, end_line}
+            trim_lines(slice) == trim_lines(target_lines) -> {1, dist, start_line, end_line}
+            true -> nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      case Enum.sort_by(candidates, fn {quality, dist, _, _} -> {quality, dist} end) do
+        [{_quality, _dist, best_start, best_end} | _] ->
+          Logger.info(
+            "Re-aligned change line boundaries to #{best_start}-#{best_end} based on old_content match"
+          )
+
+          {:ok, best_start, best_end}
+
+        [] ->
+          :not_found
+      end
+    end
+  end
+
+  defp normalize_newlines(str) do
+    str
+    |> String.replace("\r\n", "\n")
+    |> String.replace("\r", "\n")
+  end
+
+  defp trim_lines(lines_list) do
+    Enum.map(lines_list, &String.trim/1)
+  end
+
+  defp maybe_validate_with_autocorrect(
+         _orig_content,
+         _changes,
+         modified_content,
+         _path,
+         false,
+         _opts
+       ) do
+    {:ok, modified_content}
+  end
+
+  defp maybe_validate_with_autocorrect(
+         orig_content,
+         changes,
+         modified_content,
+         path,
+         true,
+         opts
+       ) do
     validator_opts =
       opts
       |> Keyword.put(:path, path)
       |> Keyword.take([:path, :language, :validator])
 
-    case Validator.validate(content, validator_opts) do
+    case Validator.validate(modified_content, validator_opts) do
       {:ok, :valid} ->
-        :ok
+        {:ok, modified_content}
 
       {:ok, :no_validator} ->
         Logger.debug("No validator available for #{path}, skipping validation")
-        :ok
+        {:ok, modified_content}
 
       {:error, errors} ->
-        hint =
-          "Syntax error after applying change. This indicates line_start or line_end was off by a few lines, clipping or duplicating block keywords (e.g., 'def', 'do', 'end')."
+        auto_correct_opt = Keyword.get(opts, :auto_correct, true)
 
-        {:error, %{type: :validation_error, errors: errors, hint: hint}}
+        if auto_correct_opt do
+          case try_autocorrect_boundaries(orig_content, changes, validator_opts) do
+            {:ok, corrected_content} ->
+              Logger.info("Auto-corrected change boundaries to pass validation for #{path}")
+              {:ok, corrected_content}
+
+            :failed ->
+              hint = build_enhanced_hint(errors, changes, orig_content)
+              {:error, %{type: :validation_error, errors: errors, hint: hint}}
+          end
+        else
+          hint = build_enhanced_hint(errors, changes, orig_content)
+          {:error, %{type: :validation_error, errors: errors, hint: hint}}
+        end
     end
+  end
+
+  defp try_autocorrect_boundaries(orig_content, changes, validator_opts) do
+    lines = String.split(orig_content, "\n")
+    total_lines = length(lines)
+
+    shifts = [-1, 1, -2, 2, -3, 3]
+
+    Enum.reduce_while(shifts, :failed, fn delta, _acc ->
+      candidate_changes =
+        Enum.map(changes, fn change ->
+          s = change.line_start
+          e = change.line_end || s
+          span = e - s
+          new_s = s + delta
+          new_e = new_s + span
+          Map.merge(change, %{line_start: new_s, line_end: new_e})
+        end)
+
+      all_valid_bounds =
+        Enum.all?(candidate_changes, fn c ->
+          c.line_start >= 1 and c.line_end <= total_lines
+        end)
+
+      if all_valid_bounds do
+        case validate_no_overlapping_changes(candidate_changes) do
+          :ok ->
+            case apply_changes(orig_content, candidate_changes) do
+              {:ok, cand_content} ->
+                case Validator.validate(cand_content, validator_opts) do
+                  {:ok, :valid} -> {:halt, {:ok, cand_content}}
+                  _ -> {:cont, :failed}
+                end
+
+              _ ->
+                {:cont, :failed}
+            end
+
+          _ ->
+            {:cont, :failed}
+        end
+      else
+        {:cont, :failed}
+      end
+    end)
+  end
+
+  defp build_enhanced_hint(errors, changes, orig_content) do
+    orig_lines = String.split(orig_content, "\n")
+    total_lines = length(orig_lines)
+
+    change_info =
+      Enum.map(changes, fn c ->
+        s = c.line_start
+        e = c.line_end || s
+        "lines #{s}-#{e}"
+      end)
+      |> Enum.join(", ")
+
+    error_summary =
+      Enum.map(errors, fn err ->
+        line_info = if err.line, do: "line #{err.line}", else: "unknown line"
+        "#{line_info}: #{err.message}"
+      end)
+      |> Enum.join("; ")
+
+    first_change = List.first(changes)
+
+    snippet_hint =
+      if first_change do
+        s = max(1, first_change.line_start - 2)
+        e = min(total_lines, (first_change.line_end || first_change.line_start) + 2)
+
+        context_lines =
+          s..e
+          |> Enum.map(fn idx ->
+            line_text = Enum.at(orig_lines, idx - 1) || ""
+            "#{idx}: #{line_text}"
+          end)
+          |> Enum.join("\n")
+
+        "\nOriginal file context around target (#{s}-#{e}):\n#{context_lines}"
+      else
+        ""
+      end
+
+    "Syntax error after applying change to #{change_info} (#{error_summary}). This indicates line_start or line_end was off by a few lines, clipping or duplicating block keywords (e.g., 'def', 'do', 'end') or syntax constructs. Verify line numbers against original file context.#{snippet_hint}"
   end
 
   defp atomic_write(path, content, original_stat) do

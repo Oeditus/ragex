@@ -7,7 +7,8 @@ defmodule Ragex.Editor.Types do
           type: change_type(),
           line_start: pos_integer(),
           line_end: pos_integer() | nil,
-          content: String.t() | nil
+          content: String.t() | nil,
+          old_content: String.t() | nil
         }
   @typedoc "Result of an edit operation.\n"
   @type edit_result :: %{
@@ -40,11 +41,17 @@ defmodule Ragex.Editor.Types do
   ## Examples
 
       iex> Types.replace(10, 15, "new content")
-      %{type: :replace, line_start: 10, line_end: 15, content: "new content"}
+      %{type: :replace, line_start: 10, line_end: 15, content: "new content", old_content: nil}
   """
-  @spec replace(pos_integer(), pos_integer(), String.t()) :: change()
-  def replace(line_start, line_end, content) do
-    %{type: :replace, line_start: line_start, line_end: line_end, content: content}
+  @spec replace(pos_integer(), pos_integer(), String.t(), String.t() | nil) :: change()
+  def replace(line_start, line_end, content, old_content \\ nil) do
+    %{
+      type: :replace,
+      line_start: line_start,
+      line_end: line_end,
+      content: content,
+      old_content: old_content
+    }
   end
 
   @doc """
@@ -53,11 +60,17 @@ defmodule Ragex.Editor.Types do
   ## Examples
 
       iex> Types.insert(20, "inserted line")
-      %{type: :insert, line_start: 20, line_end: nil, content: "inserted line"}
+      %{type: :insert, line_start: 20, line_end: nil, content: "inserted line", old_content: nil}
   """
-  @spec insert(pos_integer(), String.t()) :: change()
-  def insert(line_start, content) do
-    %{type: :insert, line_start: line_start, line_end: nil, content: content}
+  @spec insert(pos_integer(), String.t(), String.t() | nil) :: change()
+  def insert(line_start, content, old_content \\ nil) do
+    %{
+      type: :insert,
+      line_start: line_start,
+      line_end: nil,
+      content: content,
+      old_content: old_content
+    }
   end
 
   @doc """
@@ -66,11 +79,17 @@ defmodule Ragex.Editor.Types do
   ## Examples
 
       iex> Types.delete(5, 8)
-      %{type: :delete, line_start: 5, line_end: 8, content: nil}
+      %{type: :delete, line_start: 5, line_end: 8, content: nil, old_content: nil}
   """
-  @spec delete(pos_integer(), pos_integer()) :: change()
-  def delete(line_start, line_end) do
-    %{type: :delete, line_start: line_start, line_end: line_end, content: nil}
+  @spec delete(pos_integer(), pos_integer(), String.t() | nil) :: change()
+  def delete(line_start, line_end, old_content \\ nil) do
+    %{
+      type: :delete,
+      line_start: line_start,
+      line_end: line_end,
+      content: nil,
+      old_content: old_content
+    }
   end
 
   @doc """
@@ -81,28 +100,34 @@ defmodule Ragex.Editor.Types do
   @spec validate_change(change()) :: :ok | {:error, String.t()}
   def validate_change(%{type: type, line_start: line_start} = change)
       when type in [:replace, :insert, :delete] and is_integer(line_start) and line_start > 0 do
-    case type do
-      :replace ->
-        if is_integer(change.line_end) and change.line_end >= line_start and
-             is_binary(change.content) do
-          :ok
-        else
-          {:error, "Replace requires line_end >= line_start and content"}
-        end
+    old_content = Map.get(change, :old_content)
 
-      :insert ->
-        if is_binary(change.content) do
-          :ok
-        else
-          {:error, "Insert requires content"}
-        end
+    if old_content != nil and not is_binary(old_content) do
+      {:error, "old_content must be a string if provided"}
+    else
+      case type do
+        :replace ->
+          if is_integer(change.line_end) and change.line_end >= line_start and
+               is_binary(change.content) do
+            :ok
+          else
+            {:error, "Replace requires line_end >= line_start and content"}
+          end
 
-      :delete ->
-        if is_integer(change.line_end) and change.line_end >= line_start do
-          :ok
-        else
-          {:error, "Delete requires line_end >= line_start"}
-        end
+        :insert ->
+          if is_binary(change.content) do
+            :ok
+          else
+            {:error, "Insert requires content"}
+          end
+
+        :delete ->
+          if is_integer(change.line_end) and change.line_end >= line_start do
+            :ok
+          else
+            {:error, "Delete requires line_end >= line_start"}
+          end
+      end
     end
   end
 

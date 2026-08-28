@@ -557,22 +557,26 @@ defmodule Ragex.MCP.Handlers.Tools do
                       type: %{
                         type: "string",
                         enum: ["replace", "insert", "delete"],
-                        description: "Type of change"
+                        description: "Type of change (default: replace)"
                       },
                       line_start: %{
                         type: "integer",
-                        description: "Starting line number (1-indexed)"
+                        description: "Starting line number (1-indexed, accepts aliases: start_line, line)"
                       },
                       line_end: %{
                         type: "integer",
-                        description: "Ending line number (for replace/delete)"
+                        description: "Ending line number for replace/delete (accepts aliases: end_line)"
                       },
                       content: %{
                         type: "string",
-                        description: "New content (for replace/insert)"
+                        description: "New content (for replace/insert, accepts aliases: new_content, replacement)"
+                      },
+                      old_content: %{
+                        type: "string",
+                        description: "Original text expected at line_start (optional, used to verify/locate correct lines if line numbers shifted, accepts aliases: search, target_content)"
                       }
                     },
-                    required: ["type", "line_start"]
+                    required: ["line_start"]
                   }
                 },
                 validate: %{
@@ -4210,35 +4214,112 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp parse_changes(_), do: {:error, "Changes must be a list or a single change object"}
 
   defp parse_single_change(change) when is_map(change) do
-    type = fetch_change_attr(change, ["type", :type])
-    line_start = fetch_change_attr(change, ["line_start", :line_start])
-    line_end = fetch_change_attr(change, ["line_end", :line_end])
-    content = fetch_change_attr(change, ["content", :content])
+    raw_type = fetch_change_attr(change, ["type", "operation", "action", :type, :operation, :action])
 
-    with {:ok, type_atom} <- parse_change_type(type),
+    line_start =
+      fetch_change_attr(change, [
+        "line_start",
+        "start_line",
+        "startLine",
+        "line",
+        "lineStart",
+        "start",
+        :line_start,
+        :start_line,
+        :startLine,
+        :line,
+        :lineStart,
+        :start
+      ])
+
+    line_end =
+      fetch_change_attr(change, [
+        "line_end",
+        "end_line",
+        "endLine",
+        "lineEnd",
+        "end",
+        :line_end,
+        :end_line,
+        :endLine,
+        :lineEnd,
+        :end
+      ])
+
+    content =
+      fetch_change_attr(change, [
+        "content",
+        "new_content",
+        "newContent",
+        "replacement",
+        "replacement_content",
+        "replacementContent",
+        "code",
+        :content,
+        :new_content,
+        :newContent,
+        :replacement,
+        :replacement_content,
+        :replacementContent,
+        :code
+      ])
+
+    old_content =
+      fetch_change_attr(change, [
+        "old_content",
+        "oldContent",
+        "search",
+        "target",
+        "target_content",
+        "targetContent",
+        "search_text",
+        "searchText",
+        "original_content",
+        "originalContent",
+        :old_content,
+        :oldContent,
+        :search,
+        :target,
+        :target_content,
+        :targetContent,
+        :search_text,
+        :searchText,
+        :original_content,
+        :originalContent
+      ])
+
+    inferred_type =
+      cond do
+        raw_type != nil -> raw_type
+        content != nil or old_content != nil or line_end != nil -> "replace"
+        true -> "replace"
+      end
+
+    with {:ok, type_atom} <- parse_change_type(inferred_type),
          {:ok, start_int} <- parse_int_attr(line_start, "line_start") do
       end_int = parse_int_attr_optional(line_end)
+      old_content_str = if is_binary(old_content), do: old_content, else: nil
 
       case type_atom do
         :replace ->
           effective_end = end_int || start_int
 
           if is_binary(content) or content == nil do
-            {:ok, Types.replace(start_int, effective_end, content || "")}
+            {:ok, Types.replace(start_int, effective_end, content || "", old_content_str)}
           else
             {:error, "Replace content must be a string"}
           end
 
         :insert ->
           if is_binary(content) or content == nil do
-            {:ok, Types.insert(start_int, content || "")}
+            {:ok, Types.insert(start_int, content || "", old_content_str)}
           else
             {:error, "Insert content must be a string"}
           end
 
         :delete ->
           effective_end = end_int || start_int
-          {:ok, Types.delete(start_int, effective_end)}
+          {:ok, Types.delete(start_int, effective_end, old_content_str)}
       end
     end
   end

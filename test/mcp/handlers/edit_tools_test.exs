@@ -448,6 +448,39 @@ defmodule Ragex.MCP.Handlers.EditToolsTest do
       assert File.read!(test_file) == "new line 1\nline 2\n"
     end
 
+    test "edit_file handles parameter aliases (start_line, new_content, search) and omitted type", %{
+      test_dir: dir
+    } do
+      test_file = Path.join(dir, "alias_test.ex")
+
+      code = """
+      defmodule AliasTest do
+        def foo do
+          :bar
+        end
+      end
+      """
+
+      File.write!(test_file, code)
+
+      params = %{
+        "path" => test_file,
+        "changes" => [
+          %{
+            "start_line" => 1,
+            "end_line" => 5,
+            "search" => "  def foo do\n    :bar\n  end",
+            "new_content" => "  def foo do\n    :baz\n  end"
+          }
+        ],
+        "validate" => true
+      }
+
+      assert {:ok, result} = Tools.call_tool("edit_file", params)
+      assert result.status == "success"
+      assert File.read!(test_file) =~ ":baz"
+    end
+
     test "edit_file returns descriptive error for empty or missing arguments" do
       assert {:error, error} = Tools.call_tool("edit_file", %{})
       assert error =~ "Invalid parameters for edit_file"

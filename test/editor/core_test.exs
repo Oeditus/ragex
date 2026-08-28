@@ -325,5 +325,93 @@ defmodule Ragex.Editor.CoreTest do
       assert {:error, reason} = Core.edit_file(path, changes, validate: false)
       assert reason =~ "overlapping"
     end
+
+    test "re-aligns change boundaries based on old_content match when line numbers shifted", %{
+      test_dir: dir
+    } do
+      path = Path.join(dir, "shift_test.ex")
+
+      code = """
+      defmodule ShiftTest do
+        # extra comment line 1
+        # extra comment line 2
+        def target_func do
+          :original_val
+        end
+      end
+      """
+
+      File.write!(path, code)
+
+      # Pass wrong line_start/line_end (e.g. lines 2..4 instead of 4..6), but provide old_content
+      old_text = "  def target_func do\n    :original_val\n  end"
+      new_text = "  def target_func do\n    :updated_val\n  end"
+
+      changes = [Types.replace(2, 4, new_text, old_text)]
+
+      assert {:ok, _result} = Core.edit_file(path, changes, validate: true)
+      content = File.read!(path)
+      assert content =~ ":updated_val"
+      refute content =~ ":original_val"
+    end
+
+    test "auto-corrects off-by-one line boundaries to pass validation when syntax would break", %{
+      test_dir: dir
+    } do
+      path = Path.join(dir, "autocorrect_test.ex")
+
+      code = """
+      defmodule AutocorrectTest do
+        def my_fn(arg1, arg2) do
+          {:ok, arg1 + arg2}
+        end
+      end
+      """
+
+      File.write!(path, code)
+
+      # Off-by-one line_start/line_end (e.g. line 3..3 instead of 2..4) replacing whole function body
+      # replacing line 3 alone with full def would duplicate/clip def ... do ... end
+      wrong_change = [
+        Types.replace(
+          3,
+          3,
+          "  def my_fn(arg1, arg2) do\n    {:ok, arg1 * arg2}\n  end"
+        )
+      ]
+
+      assert {:ok, _result} = Core.edit_file(path, wrong_change, validate: true)
+      content = File.read!(path)
+      assert content =~ "arg1 * arg2"
+      # Must still be valid Elixir code
+      assert Code.string_to_quoted(content) != {:error, nil}
+    end
+
+    test "returns enhanced diagnostic hint with file context when validation fails", %{
+      test_dir: dir
+    } do
+      path = Path.join(dir, "syntax_fail.ex")
+
+      code = """
+      defmodule SyntaxFail do
+        def hello do
+          :world
+        end
+      end
+      """
+
+      File.write!(path, code)
+
+      # Invalid syntax inside replacement content
+      bad_change = [Types.replace(3, 3, "    unexpected ( syntax error")]
+
+      assert {:error, %{type: :validation_error, hint: hint, errors: errors}} =
+               Core.edit_file(path, bad_change, validate: true)
+
+      assert hint =~ "Syntax error after applying change"
+      assert hint =~ "Original file context around target"
+      assert is_list(errors)
+      assert errors != []
+    end
   end
 end
