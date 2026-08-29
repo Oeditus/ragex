@@ -238,11 +238,11 @@ defmodule Ragex.CLI.Progress do
 
     {icon, color_fn} =
       case status_type do
-        :success -> {"✓", &Colors.success/1}
-        :error -> {"✗", &Colors.error/1}
-        :warning -> {"⚠", &Colors.warning/1}
-        :info -> {"ℹ", &Colors.info/1}
-        _ -> {"•", & &1}
+        :success -> {"󰄬", &Colors.success/1}
+        :error -> {"󰅖", &Colors.error/1}
+        :warning -> {"󰀦", &Colors.warning/1}
+        :info -> {"󰋼", &Colors.info/1}
+        _ -> {"●", & &1}
       end
 
     IO.puts(color_fn.("#{icon} #{message}"))

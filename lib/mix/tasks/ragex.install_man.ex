@@ -72,7 +72,7 @@ defmodule Mix.Tasks.Ragex.InstallMan do
     man_files = list_man_files()
 
     if man_files == [] do
-      IO.puts(Colors.error("✗ No man pages found in #{@man_dir}"))
+      IO.puts(Colors.error("󰅖 No man pages found in #{@man_dir}"))
       IO.puts("")
       System.halt(1)
     end
@@ -82,8 +82,8 @@ defmodule Mix.Tasks.Ragex.InstallMan do
 
     # Check if install directory exists
     unless File.dir?(@install_dir) do
-      IO.puts(Colors.warning("⚠ Install directory does not exist: #{@install_dir}"))
-      IO.puts(Colors.error("✗ Installation requires sudo to create directory"))
+      IO.puts(Colors.warning("󰀦 Install directory does not exist: #{@install_dir}"))
+      IO.puts(Colors.error("󰅖 Installation requires sudo to create directory"))
       IO.puts("")
       IO.puts("Run manually:")
       IO.puts(Colors.highlight("  sudo mkdir -p #{@install_dir}"))
@@ -104,16 +104,16 @@ defmodule Mix.Tasks.Ragex.InstallMan do
 
         case File.cp(file, dest) do
           :ok ->
-            IO.puts(Colors.success("✓ Installed: #{Path.basename(file)}"))
+            IO.puts(Colors.success("󰄬 Installed: #{Path.basename(file)}"))
             :ok
 
           {:error, :eacces} ->
-            IO.puts(Colors.error("✗ Permission denied: #{Path.basename(file)}"))
+            IO.puts(Colors.error("󰅖 Permission denied: #{Path.basename(file)}"))
             {:error, :eacces}
 
           {:error, reason} ->
             IO.puts(
-              Colors.error("✗ Failed to install #{Path.basename(file)}: #{inspect(reason)}")
+              Colors.error("󰅖 Failed to install #{Path.basename(file)}: #{inspect(reason)}")
             )
 
             {:error, reason}
@@ -123,11 +123,11 @@ defmodule Mix.Tasks.Ragex.InstallMan do
     IO.puts("")
 
     if Enum.all?(results, &(&1 == :ok)) do
-      IO.puts(Colors.success("✓ All man pages installed successfully"))
+      IO.puts(Colors.success("󰄬 All man pages installed successfully"))
       IO.puts("")
       show_usage_instructions()
     else
-      IO.puts(Colors.error("✗ Some installations failed (permission denied)"))
+      IO.puts(Colors.error("󰅖 Some installations failed (permission denied)"))
       IO.puts("")
       IO.puts("Run with sudo:")
 
