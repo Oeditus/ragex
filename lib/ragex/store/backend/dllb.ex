@@ -105,15 +105,27 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def stats do
-    case MQ.exec_stats(query_fn()) do
-      {:ok, stats} ->
-        total = Map.get(stats, :total, 0)
-        by_kind = Map.get(stats, :by_kind, %{})
-        Map.merge(%{nodes: total, total: total, edges: 0, embeddings: 0, by_kind: by_kind}, stats)
+    stats_result =
+      case MQ.exec_stats(query_fn()) do
+        {:ok, %{total: total} = res} when is_integer(total) and total > 0 ->
+          res
 
-      {:error, _} ->
-        %{nodes: 0, total: 0, edges: 0, embeddings: 0, by_kind: %{}}
-    end
+        _ ->
+          case query("COUNT ast_node;") do
+            {:ok, %Dllb.Result.Count{count: count}} ->
+              %{total: count, by_kind: %{}}
+
+            {:ok, %Dllb.Result.Rows{data: [%{"count" => count} | _]}} ->
+              %{total: unwrap_typed(count), by_kind: %{}}
+
+            _ ->
+              %{total: 0, by_kind: %{}}
+          end
+      end
+
+    total = Map.get(stats_result, :total, 0)
+    by_kind = Map.get(stats_result, :by_kind, %{})
+    Map.merge(%{nodes: total, total: total, edges: 0, embeddings: 0, by_kind: by_kind}, stats_result)
   end
 
   @impl true
@@ -130,19 +142,63 @@ defmodule Ragex.Store.Backend.Dllb do
   # Nodes
   # ---------------------------------------------------------------------------
 
+  @schema_fields MapSet.new([
+    :kind,
+    :name,
+    :language,
+    :file_path,
+    :module,
+    :arity,
+    :visibility,
+    :project_path,
+    :line_start,
+    :line_end,
+    :source_text,
+    :signature,
+    :docstring,
+    :source_embedding,
+    :structure_embedding,
+    :docstring_embedding,
+    :ast_serialized
+  ])
+
+  defp filter_schema_fields(data) when is_map(data) do
+    data
+    |> to_plain_map()
+    |> Enum.filter(fn {k, v} ->
+      k_atom =
+        try do
+          if is_binary(k), do: String.to_existing_atom(k), else: k
+        rescue
+          _ -> nil
+        end
+
+      k_atom && MapSet.member?(@schema_fields, k_atom) and not is_nil(v)
+    end)
+    |> Map.new()
+  end
+
+  defp to_plain_map(%{__struct__: _} = struct), do: Map.from_struct(struct)
+  defp to_plain_map(map) when is_map(map), do: map
+  defp to_plain_map(_), do: %{}
+
   @impl true
   def store_node(node_type, node_id, data) do
     normalized_data =
       data
+      |> to_plain_map()
       |> map_key(:file, :file_path)
       |> map_key(:line, :line_start)
       |> map_key(:doc, :docstring)
 
     fields =
-      Map.merge(normalized_data, %{
+      normalized_data
+      |> Map.merge(%{
         kind: to_string(node_type),
-        name: extract_name(node_type, node_id)
+        name: extract_name(node_type, node_id),
+        language: Map.get(normalized_data, :language, "elixir")
       })
+      |> filter_schema_fields()
 
     id = node_to_dllb_id({node_type, node_id})
     query_string = Dllb.Query.upsert("ast_node", id, fields)
@@ -161,15 +217,19 @@ defmodule Ragex.Store.Backend.Dllb do
       Enum.map(nodes, fn {node_type, node_id, data} ->
         normalized_data =
           data
+          |> to_plain_map()
           |> map_key(:file, :file_path)
           |> map_key(:line, :line_start)
           |> map_key(:doc, :docstring)
 
         fields =
-          Map.merge(normalized_data, %{
+          normalized_data
+          |> Map.merge(%{
             kind: to_string(node_type),
-            name: extract_name(node_type, node_id)
+            name: extract_name(node_type, node_id),
+            language: Map.get(normalized_data, :language, "elixir")
           })
+          |> filter_schema_fields()
 
         id = node_to_dllb_id({node_type, node_id})
         Dllb.Query.upsert("ast_node", id, fields)

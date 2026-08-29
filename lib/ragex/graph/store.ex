@@ -456,6 +456,11 @@ defmodule Ragex.Graph.Store do
         "Store already loaded for project: #{target_root}, preserving graph and file tracker"
       )
 
+      case backend().bootstrap() do
+        :ok -> :ok
+        _ -> :ok
+      end
+
       {:reply, :ok, %{state | project_path: target_root}}
     else
       # Clear all tables when switching projects or initial empty load

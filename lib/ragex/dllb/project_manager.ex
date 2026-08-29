@@ -216,10 +216,12 @@ defmodule Ragex.Dllb.ProjectManager do
         {:reply, {:ok, info}, state}
 
       :error ->
-        case do_start_instance(abs_path, state.next_port) do
+        {port, next_port} = select_available_port(state.next_port)
+
+        case do_start_instance(abs_path, port) do
           {:ok, info} ->
             new_instances = Map.put(state.instances, abs_path, info)
-            new_state = %{state | instances: new_instances, next_port: state.next_port + 1}
+            new_state = %{state | instances: new_instances, next_port: next_port}
             {:reply, {:ok, info}, new_state}
 
           {:error, reason} ->
@@ -231,7 +233,31 @@ defmodule Ragex.Dllb.ProjectManager do
   @impl true
   def handle_call({:set_active_project, project_path}, _from, state) do
     abs_path = Path.expand(project_path)
-    {:reply, :ok, %{state | active_project: abs_path}}
+
+    case Map.fetch(state.instances, abs_path) do
+      {:ok, _info} ->
+        {:reply, :ok, %{state | active_project: abs_path}}
+
+      :error ->
+        {port, next_port} = select_available_port(state.next_port)
+
+        case do_start_instance(abs_path, port) do
+          {:ok, info} ->
+            new_instances = Map.put(state.instances, abs_path, info)
+
+            new_state = %{
+              state
+              | instances: new_instances,
+                active_project: abs_path,
+                next_port: next_port
+            }
+
+            {:reply, :ok, new_state}
+
+          {:error, reason} ->
+            {:reply, {:error, reason}, state}
+        end
+    end
   end
 
   @impl true
@@ -241,13 +267,41 @@ defmodule Ragex.Dllb.ProjectManager do
 
   @impl true
   def handle_call(:get_active_pool, _from, state) do
-    pool =
+    {pool, new_state} =
       case state.active_project && Map.get(state.instances, state.active_project) do
-        %{pool: pool_name} when not is_nil(pool_name) -> pool_name
-        _ -> Dllb.Pool
+        %{pool: pool_name} when not is_nil(pool_name) ->
+          {pool_name, state}
+
+        _ ->
+          cwd_path = Path.expand(File.cwd!())
+
+          case Map.fetch(state.instances, cwd_path) do
+            {:ok, %{pool: pool_name}} ->
+              {pool_name, %{state | active_project: cwd_path}}
+
+            _ ->
+              {port, next_port} = select_available_port(state.next_port)
+
+              case do_start_instance(cwd_path, port) do
+                {:ok, info} ->
+                  new_instances = Map.put(state.instances, cwd_path, info)
+
+                  s = %{
+                    state
+                    | instances: new_instances,
+                      active_project: cwd_path,
+                      next_port: next_port
+                  }
+
+                  {info.pool, s}
+
+                _ ->
+                  {Dllb.Pool, state}
+              end
+          end
       end
 
-    {:reply, pool, state}
+    {:reply, pool, new_state}
   end
 
   @impl true
@@ -285,6 +339,23 @@ defmodule Ragex.Dllb.ProjectManager do
   end
 
   @impl true
+  def handle_info({:EXIT, port_proc, reason}, state) do
+    Logger.debug("dllb-server port process exited: #{inspect(reason)}")
+
+    new_instances =
+      state.instances
+      |> Enum.reject(fn {_path, info} -> info[:proc] == port_proc end)
+      |> Map.new()
+
+    active =
+      if state.active_project && !Map.has_key?(new_instances, state.active_project),
+        do: nil,
+        else: state.active_project
+
+    {:noreply, %{state | instances: new_instances, active_project: active}}
+  end
+
+  @impl true
   def handle_info({_port, {:data, _data}}, state) do
     {:noreply, state}
   end
@@ -294,9 +365,34 @@ defmodule Ragex.Dllb.ProjectManager do
     {:noreply, state}
   end
 
+  @impl true
+  def handle_info(msg, state) do
+    Logger.debug("ProjectManager unhandled info message: #{inspect(msg)}")
+    {:noreply, state}
+  end
+
   # ---------------------------------------------------------------------------
   # Private Helpers
   # ---------------------------------------------------------------------------
+
+  defp select_available_port(port) do
+    if port_available?(port) do
+      {port, port + 1}
+    else
+      select_available_port(port + 1)
+    end
+  end
+
+  defp port_available?(port) do
+    case :gen_tcp.listen(port, [:binary, ip: {127, 0, 0, 1}, reuseaddr: true]) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
+
+      {:error, _} ->
+        false
+    end
+  end
 
   defp do_start_instance(project_path, port) do
     db_dir = Path.join(project_path, ".ragex")
@@ -319,7 +415,8 @@ defmodule Ragex.Dllb.ProjectManager do
         {~c"DLLB_PATH", to_charlist(db_path)},
         {~c"DLLB_BIND", to_charlist("127.0.0.1:#{port}")},
         {~c"DLLB_DB", ~c"default"},
-        {~c"DLLB_NS", ~c"default"}
+        {~c"DLLB_NS", ~c"default"},
+        {~c"DLLB_WATCH_STDIN", ~c"1"}
       ]
 
       port_proc =
@@ -347,7 +444,14 @@ defmodule Ragex.Dllb.ProjectManager do
           {:ok, info}
 
         {:error, reason} ->
-          Port.close(port_proc)
+          try do
+            Port.close(port_proc)
+          rescue
+            _ -> :ok
+          catch
+            _, _ -> :ok
+          end
+
           {:error, reason}
       end
     end
@@ -360,7 +464,14 @@ defmodule Ragex.Dllb.ProjectManager do
 
     if info[:proc] do
       try do
-        Port.close(info[:proc])
+        case Port.info(info[:proc], :os_pid) do
+          {:os_pid, os_pid} ->
+            Port.close(info[:proc])
+            System.cmd("kill", ["-15", to_string(os_pid)], stderr_to_stdout: true)
+
+          _ ->
+            Port.close(info[:proc])
+        end
       rescue
         _ -> :ok
       catch
