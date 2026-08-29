@@ -125,7 +125,11 @@ defmodule Ragex.Store.Backend.Dllb do
 
     total = Map.get(stats_result, :total, 0)
     by_kind = Map.get(stats_result, :by_kind, %{})
-    Map.merge(%{nodes: total, total: total, edges: 0, embeddings: 0, by_kind: by_kind}, stats_result)
+
+    Map.merge(
+      %{nodes: total, total: total, edges: 0, embeddings: 0, by_kind: by_kind},
+      stats_result
+    )
   end
 
   @impl true
@@ -143,24 +147,24 @@ defmodule Ragex.Store.Backend.Dllb do
   # ---------------------------------------------------------------------------
 
   @schema_fields MapSet.new([
-    :kind,
-    :name,
-    :language,
-    :file_path,
-    :module,
-    :arity,
-    :visibility,
-    :project_path,
-    :line_start,
-    :line_end,
-    :source_text,
-    :signature,
-    :docstring,
-    :source_embedding,
-    :structure_embedding,
-    :docstring_embedding,
-    :ast_serialized
-  ])
+                   :kind,
+                   :name,
+                   :language,
+                   :file_path,
+                   :module,
+                   :arity,
+                   :visibility,
+                   :project_path,
+                   :line_start,
+                   :line_end,
+                   :source_text,
+                   :signature,
+                   :docstring,
+                   :source_embedding,
+                   :structure_embedding,
+                   :docstring_embedding,
+                   :ast_serialized
+                 ])
 
   defp filter_schema_fields(data) when is_map(data) do
     data
@@ -173,7 +177,7 @@ defmodule Ragex.Store.Backend.Dllb do
           _ -> nil
         end
 
-      k_atom && MapSet.member?(@schema_fields, k_atom) and not is_nil(v)
+      (k_atom && MapSet.member?(@schema_fields, k_atom)) and not is_nil(v)
     end)
     |> Map.new()
   end
