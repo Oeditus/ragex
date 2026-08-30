@@ -1,13 +1,29 @@
 #!/usr/bin/env bash
 # Test Ragex MCP socket communication
 
+# Resolve the socket path the same way start_server.sh / bin/ragex-mcp do:
+#   1. Explicit override: pass as $1, or set RAGEX_MCP_SOCK
+#   2. DLLB_PORT (namespace by dllb server port)
+#   3. otherwise namespace by the current directory (sanitized)
+if [[ -n "${1:-}" ]]; then
+  SOCKET_PATH="$1"
+elif [[ -n "${RAGEX_MCP_SOCK:-}" ]]; then
+  SOCKET_PATH="$RAGEX_MCP_SOCK"
+elif [[ -n "${DLLB_PORT:-}" ]]; then
+  SOCKET_PATH="/tmp/ragex_mcp_${DLLB_PORT}.sock"
+else
+  SANITIZED=$(pwd | sed -e 's#^/##' -e 's#[^A-Za-z0-9]#_#g' -e 's#_*$##')
+  SOCKET_PATH="/tmp/ragex_mcp_${SANITIZED}.sock"
+fi
+
 echo "Testing Ragex MCP Socket..."
 echo ""
 
 # Check if socket exists
-if [ ! -S /tmp/ragex_mcp.sock ]; then
-    echo "❌ Socket file does not exist: /tmp/ragex_mcp.sock"
+if [ ! -S "$SOCKET_PATH" ]; then
+    echo "❌ Socket file does not exist: $SOCKET_PATH"
     echo ""
+    echo "Other sockets found: $(ls /tmp/ragex_mcp_*.sock 2>/dev/null | tr '\n' ' ')"
     echo "Start the server with: ./start_server.sh"
     exit 1
 fi
@@ -25,7 +41,7 @@ echo "Sending request:"
 echo "$REQUEST"
 echo ""
 
-RESPONSE=$(printf '%s\n' "$REQUEST" | socat - UNIX-CONNECT:/tmp/ragex_mcp.sock 2>&1)
+RESPONSE=$(printf '%s\n' "$REQUEST" | socat - UNIX-CONNECT:"$SOCKET_PATH" 2>&1)
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then
@@ -40,7 +56,7 @@ if [ $EXIT_CODE -ne 0 ]; then
     echo ""
     echo "Solution:"
     echo "  1. Kill any existing server: pkill -f 'mix run'"
-    echo "  2. Remove socket: rm -f /tmp/ragex_mcp.sock"
+    echo "  2. Remove socket: rm -f $SOCKET_PATH"
     echo "  3. Start server: ./start_server.sh"
     exit 1
 fi

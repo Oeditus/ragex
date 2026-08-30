@@ -342,10 +342,15 @@ defmodule Ragex.Dllb.ProjectManager do
   def handle_info({:EXIT, port_proc, reason}, state) do
     Logger.debug("dllb-server port process exited: #{inspect(reason)}")
 
-    new_instances =
-      state.instances
-      |> Enum.reject(fn {_path, info} -> info[:proc] == port_proc end)
-      |> Map.new()
+    {exited, remaining} =
+      Enum.split_with(state.instances, fn {_path, info} -> info[:proc] == port_proc end)
+
+    # Only owned instances ever have a non-nil :proc, so it's always safe to
+    # drop their instance-state file here -- the process that backed it is
+    # gone.
+    Enum.each(exited, fn {_path, info} -> remove_instance_file(info.project_path) end)
+
+    new_instances = Map.new(remaining)
 
     active =
       if state.active_project && !Map.has_key?(new_instances, state.active_project),
@@ -356,12 +361,23 @@ defmodule Ragex.Dllb.ProjectManager do
   end
 
   @impl true
-  def handle_info({_port, {:data, _data}}, state) do
+  def handle_info({port_proc, {:data, data}}, state) do
+    # Surface dllb-server's stdout/stderr (redirected here via
+    # :stderr_to_stdout) instead of silently discarding it -- this is where
+    # diagnostics like a redb lock conflict on startup would otherwise
+    # vanish without a trace.
+    log_dllb_output(port_proc, data, :info)
     {:noreply, state}
   end
 
   @impl true
-  def handle_info({_port, {:exit_status, _status}}, state) do
+  def handle_info({port_proc, {:exit_status, status}}, state) do
+    if status != 0 do
+      Logger.warning(
+        "dllb-server process exited with status #{status} (port: #{inspect(port_proc)})"
+      )
+    end
+
     {:noreply, state}
   end
 
@@ -398,15 +414,60 @@ defmodule Ragex.Dllb.ProjectManager do
     db_dir = Path.join(project_path, ".ragex")
     File.mkdir_p!(db_dir)
     db_path = Path.join(db_dir, "dllb.redb")
+    instance_file = instance_state_path(project_path)
 
+    case adopt_if_alive(project_path, db_path, instance_file) do
+      {:ok, info} -> {:ok, info}
+      :none -> spawn_and_attach(project_path, port, db_path, instance_file)
+    end
+  end
+
+  # If a previous (possibly orphaned, e.g. after a VM crash or restart)
+  # dllb-server is still alive for this project, reattach to it instead of
+  # spawning a second one against the same redb file -- that second attempt
+  # would fail with a "Database already open" lock error, since the OS-level
+  # exclusive lock is still held by the still-running orphan.
+  defp adopt_if_alive(project_path, db_path, instance_file) do
+    case read_instance_file(instance_file) do
+      {:ok, port} ->
+        if server_reachable?(port) do
+          Logger.info(
+            "Found already-running dllb-server for #{project_path} on port #{port} " <>
+              "(#{instance_file}); reattaching instead of spawning a new instance."
+          )
+
+          case attach_pool(project_path, port, db_path, owned?: false, proc: nil) do
+            {:ok, info} ->
+              {:ok, info}
+
+            {:error, reason} ->
+              Logger.warning(
+                "Failed to attach to existing dllb-server on port #{port}: #{inspect(reason)}"
+              )
+
+              :none
+          end
+        else
+          Logger.debug(
+            "Stale dllb instance file for #{project_path} (port #{port} unreachable); removing."
+          )
+
+          File.rm(instance_file)
+          :none
+        end
+
+      :error ->
+        :none
+    end
+  end
+
+  defp spawn_and_attach(project_path, port, db_path, instance_file) do
     binary = find_dllb_binary()
 
     if is_nil(binary) do
       Logger.warning("Cannot start per-project dllb server: binary not found")
       {:error, :dllb_binary_not_found}
     else
-      pool_name = :"dllb_pool_#{port}"
-
       Logger.info(
         "Starting per-project dllb server for #{project_path} on port #{port} (db: #{db_path})"
       )
@@ -420,41 +481,76 @@ defmodule Ragex.Dllb.ProjectManager do
       ]
 
       port_proc =
-        Port.open({:spawn_executable, binary}, [:binary, :exit_status, env: env, args: []])
+        Port.open(
+          {:spawn_executable, binary},
+          [:binary, :exit_status, :stderr_to_stdout, env: env, args: []]
+        )
 
-      case wait_for_server(port, 30) do
+      case wait_for_server(port, port_proc, 30, []) do
         :ok ->
-          pool_opts = [name: pool_name, host: "127.0.0.1", port: port, pool_size: 5]
+          case attach_pool(project_path, port, db_path, owned?: true, proc: port_proc) do
+            {:ok, info} ->
+              write_instance_file(instance_file, port, port_proc)
+              {:ok, info}
 
-          {:ok, pool_pid} =
-            NimblePool.start_link(worker: {Dllb.Pool, pool_opts}, pool_size: 5, name: pool_name)
-
-          # Bootstrap database schema for this instance
-          DllbBackend.bootstrap_instance(pool_name)
-
-          info = %{
-            project_path: project_path,
-            port: port,
-            proc: port_proc,
-            pool: pool_name,
-            pool_pid: pool_pid,
-            db_path: db_path
-          }
-
-          {:ok, info}
-
-        {:error, reason} ->
-          try do
-            Port.close(port_proc)
-          rescue
-            _ -> :ok
-          catch
-            _, _ -> :ok
+            {:error, reason} ->
+              safe_close_port(port_proc)
+              {:error, reason}
           end
 
+        {:error, reason} ->
+          safe_close_port(port_proc)
           {:error, reason}
       end
     end
+  end
+
+  # Starts (or reuses, for adoption) the connection pool for a dllb-server
+  # already listening on `host:port`, bootstraps its schema, and builds the
+  # instance info map tracked in GenServer state.
+  defp attach_pool(project_path, port, db_path, opts) do
+    pool_name = :"dllb_pool_#{port}"
+    pool_opts = [name: pool_name, host: "127.0.0.1", port: port, pool_size: 5]
+
+    case NimblePool.start_link(worker: {Dllb.Pool, pool_opts}, pool_size: 5, name: pool_name) do
+      {:ok, pool_pid} ->
+        build_attach_info(project_path, port, db_path, pool_name, pool_pid, opts)
+
+      {:error, {:already_started, pool_pid}} ->
+        # A pool is already registered under this name (e.g. a prior adopt
+        # for the same port raced us, or the name hasn't unregistered yet
+        # after a very recent stop). Reuse it rather than failing.
+        build_attach_info(project_path, port, db_path, pool_name, pool_pid, opts)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp build_attach_info(project_path, port, db_path, pool_name, pool_pid, opts) do
+    # Bootstrap is idempotent -- safe to re-run against an adopted,
+    # already-bootstrapped instance.
+    DllbBackend.bootstrap_instance(pool_name)
+
+    info = %{
+      project_path: project_path,
+      port: port,
+      proc: Keyword.get(opts, :proc),
+      pool: pool_name,
+      pool_pid: pool_pid,
+      db_path: db_path,
+      owned?: Keyword.get(opts, :owned?, true)
+    }
+
+    {:ok, info}
+  end
+
+  defp safe_close_port(port_proc) do
+    Port.close(port_proc)
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 
   defp do_stop_instance(info) do
@@ -462,7 +558,9 @@ defmodule Ragex.Dllb.ProjectManager do
       Process.exit(info[:pool_pid], :shutdown)
     end
 
-    if info[:proc] do
+    owned? = Map.get(info, :owned?, true)
+
+    if owned? && info[:proc] do
       try do
         case Port.info(info[:proc], :os_pid) do
           {:os_pid, os_pid} ->
@@ -478,19 +576,132 @@ defmodule Ragex.Dllb.ProjectManager do
         _, _ -> :ok
       end
     end
+
+    # Only the owning instance may delete the state file: an adopted
+    # instance doesn't know if some other, still-running consumer depends on
+    # it, so removing it here could cause a future reattach attempt to miss
+    # a perfectly healthy server and try to double-spawn against its db.
+    if owned? do
+      remove_instance_file(info.project_path)
+    end
+
+    :ok
   end
 
-  defp wait_for_server(_port, 0), do: {:error, :server_timeout}
+  # ---------------------------------------------------------------------------
+  # Per-project instance-state persistence (port/pid), used to reattach to an
+  # already-running dllb-server after a VM restart instead of colliding with
+  # its exclusive redb lock.
+  # ---------------------------------------------------------------------------
 
-  defp wait_for_server(port, attempts) do
+  defp instance_state_path(project_path) do
+    Path.join([project_path, ".ragex", "dllb.instance.json"])
+  end
+
+  defp write_instance_file(path, port, port_proc) do
+    os_pid =
+      case Port.info(port_proc, :os_pid) do
+        {:os_pid, pid} -> pid
+        _ -> nil
+      end
+
+    payload = %{
+      "port" => port,
+      "os_pid" => os_pid,
+      "started_at" => DateTime.to_iso8601(DateTime.utc_now())
+    }
+
+    File.write(path, IO.iodata_to_binary(:json.encode(payload)))
+  rescue
+    e -> Logger.debug("Could not write dllb instance state file #{path}: #{inspect(e)}")
+  end
+
+  defp read_instance_file(path) do
+    with {:ok, content} <- File.read(path),
+         {:ok, %{"port" => port}} when is_integer(port) <- safe_json_decode(content) do
+      {:ok, port}
+    else
+      _ -> :error
+    end
+  end
+
+  defp safe_json_decode(content) do
+    {:ok, :json.decode(content)}
+  rescue
+    _ -> :error
+  end
+
+  defp remove_instance_file(project_path) do
+    project_path
+    |> instance_state_path()
+    |> File.rm()
+
+    :ok
+  end
+
+  # ---------------------------------------------------------------------------
+  # Liveness / output helpers
+  # ---------------------------------------------------------------------------
+
+  defp server_reachable?(port) do
+    case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 300) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
+
+      {:error, _} ->
+        false
+    end
+  end
+
+  defp wait_for_server(_port, port_proc, 0, acc) do
+    log_dllb_output(port_proc, Enum.reverse(acc), :error)
+    {:error, :server_timeout}
+  end
+
+  defp wait_for_server(port, port_proc, attempts, acc) do
     case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 200) do
       {:ok, socket} ->
         :gen_tcp.close(socket)
         :ok
 
       {:error, _} ->
-        Process.sleep(100)
-        wait_for_server(port, attempts - 1)
+        acc = drain_port_data(port_proc, acc, 100)
+        wait_for_server(port, port_proc, attempts - 1, acc)
+    end
+  end
+
+  # Drains any pending port output for up to `timeout` ms, so the diagnostic
+  # dllb-server prints on a failed startup (e.g. a redb lock conflict) is
+  # captured instead of sitting unread in the mailbox while we poll.
+  defp drain_port_data(port_proc, acc, timeout) do
+    receive do
+      {^port_proc, {:data, data}} -> drain_port_data(port_proc, [data | acc], 0)
+    after
+      timeout -> acc
+    end
+  end
+
+  @dialyzer {:nowarn_function, log_dllb_output: 3}
+  defp log_dllb_output(_port_proc, [], _level), do: :ok
+
+  defp log_dllb_output(port_proc, iodata, level) when is_list(iodata) do
+    log_dllb_output(port_proc, IO.iodata_to_binary(iodata), level)
+  end
+
+  defp log_dllb_output(port_proc, output, level) when is_binary(output) do
+    case String.trim(output) do
+      "" ->
+        :ok
+
+      trimmed ->
+        message = "dllb-server (#{inspect(port_proc)}) output:\n#{trimmed}"
+
+        case level do
+          :error -> Logger.error(message)
+          :warning -> Logger.warning(message)
+          _ -> Logger.info(message)
+        end
     end
   end
 end

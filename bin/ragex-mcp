@@ -101,10 +101,27 @@ if [[ -n "$PROJECT" ]]; then
   export RAGEX_AUTO_ANALYZE="$PROJECT"
 fi
 
+# -- Resolve the MCP socket path ---------------------------------------------
+# Multiple independent ragex-mcp instances (different projects, different
+# dllb ports) may be running at once. Namespace the socket so they never
+# collide. This precedence MUST match Ragex.MCP.SocketPath.compute_string/0:
+#   1. RAGEX_MCP_SOCK (explicit override, used verbatim)
+#   2. DLLB_PORT      (namespace by dllb server port)
+#   3. otherwise       namespace by the project identity (sanitized)
+if [[ -n "${RAGEX_MCP_SOCK:-}" ]]; then
+  SOCKET_PATH="$RAGEX_MCP_SOCK"
+elif [[ -n "${DLLB_PORT:-}" ]]; then
+  SOCKET_PATH="/tmp/ragex_mcp_${DLLB_PORT}.sock"
+else
+  IDENTITY="${PROJECT:-$ORIGINAL_PWD}"
+  SANITIZED=$(printf '%s' "$IDENTITY" | sed -e 's#^/##' -e 's#[^A-Za-z0-9]#_#g' -e 's#_*$##')
+  SOCKET_PATH="/tmp/ragex_mcp_${SANITIZED}.sock"
+fi
+export RAGEX_MCP_SOCK="$SOCKET_PATH"
+
 # -- Detect running instance ------------------------------------------------
 # If a Ragex server is already listening on the Unix socket, bridge to it
 # instead of starting a second BEAM VM (which would OOM on GPU allocation).
-SOCKET_PATH="/tmp/ragex_mcp.sock"
 
 if [[ -S "$SOCKET_PATH" ]]; then
   # Try a lightweight ping via the socket to confirm it's alive.

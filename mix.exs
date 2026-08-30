@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.26.3"
+  @version "0.27.0"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -176,6 +176,7 @@ defmodule Ragex.MixProject do
         Ragex.Analysis.Suggestions,
         Ragex.Analyzers,
         Ragex.CLI,
+        Ragex.Dllb,
         Ragex.Editor,
         Ragex.Embeddings,
         Ragex.Git,
@@ -183,7 +184,8 @@ defmodule Ragex.MixProject do
         Ragex.MCP,
         Ragex.MCP.Handlers,
         Ragex.RAG,
-        Ragex.Retrieval
+        Ragex.Retrieval,
+        Ragex.Store
       ],
       authors: ["Aleksei Matiushkin"],
       canonical: "https://hexdocs.pm/#{@app}",
@@ -253,7 +255,9 @@ defmodule Ragex.MixProject do
         Ragex.RAG.ContextBuilder,
         Ragex.RAG.Pipeline,
         Ragex.RAG.PromptTemplate,
+        Ragex.Retrieval.Evaluator,
         Ragex.Retrieval.Hybrid,
+        Ragex.Retrieval.Reranker,
         Ragex.Retrieval.Strategies,
         Ragex.Retrieval.CrossLanguage,
         Ragex.Retrieval.MetaASTRanker,
@@ -296,15 +300,21 @@ defmodule Ragex.MixProject do
         Ragex.Analyzers.SCIP.Parser,
         Ragex.Analyzers.SCIP.Registry
       ],
-      "Knowledge Graph": [
+      "Store & Knowledge Graph": [
+        Ragex.Dllb.Adapter,
+        Ragex.Dllb.ProjectManager,
         Ragex.Graph.Algorithms,
         Ragex.Graph.Persistence,
         Ragex.Graph.Store,
+        Ragex.Store.Backend,
+        Ragex.Store.Backend.Dllb,
+        Ragex.Store.Backend.ETS,
         Ragex.VectorStore
       ],
       "Embeddings & ML": [
         Ragex.Embeddings.Behaviour,
         Ragex.Embeddings.Bumblebee,
+        Ragex.Embeddings.Chunker,
         Ragex.Embeddings.FileTracker,
         Ragex.Embeddings.Generator,
         Ragex.Embeddings.Helper,
@@ -342,6 +352,7 @@ defmodule Ragex.MixProject do
         Ragex.Analysis.ASTLocationExtractor,
         Ragex.Analysis.BusinessLogic,
         Ragex.Analysis.Cache,
+        Ragex.Analysis.Cohesion,
         Ragex.Analysis.DeadCode,
         Ragex.Analysis.DeadCode.AIRefiner,
         Ragex.Analysis.DependencyGraph,
@@ -354,6 +365,7 @@ defmodule Ragex.MixProject do
         Ragex.Analysis.MetaCredoBridge,
         Ragex.Analysis.Runner,
         Ragex.Analysis.Semantic,
+        Ragex.Analysis.StateAudit,
         Ragex.Analysis.Suggestions,
         Ragex.Analysis.Suggestions.Patterns,
         Ragex.Analysis.Suggestions.Ranker,

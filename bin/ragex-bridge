@@ -2,12 +2,16 @@
 #
 # ragex-bridge -- Lightweight stdio-to-Unix-socket bridge.
 #
-# Bridges MCP JSON-RPC between stdin/stdout and a running Ragex server
-# on /tmp/ragex_mcp.sock.  No Mix, no application startup, no GPU
-# allocation.  Used by bin/ragex-mcp when a server is already running.
+# Bridges MCP JSON-RPC between stdin/stdout and a running Ragex server on
+# its Unix socket (path resolved via RAGEX_MCP_SOCK, set by bin/ragex-mcp).
+# No Mix, no application startup, no GPU allocation.  Used by bin/ragex-mcp
+# when a server is already running.
 
 defmodule RagexBridge do
-  @socket_path ~c"/tmp/ragex_mcp.sock"
+  # bin/ragex-mcp always exports RAGEX_MCP_SOCK after resolving the correct
+  # per-project/per-port socket path before exec'ing this script. The
+  # fallback below only matters if this is invoked directly.
+  @socket_path (System.get_env("RAGEX_MCP_SOCK") || "/tmp/ragex_mcp.sock") |> to_charlist()
 
   def run do
     case connect() do

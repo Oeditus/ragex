@@ -15,7 +15,8 @@ defmodule Ragex.MCP.Client do
       end
   """
 
-  @socket_path ~c"/tmp/ragex_mcp.sock"
+  alias Ragex.MCP.SocketPath
+
   @connect_timeout 3_000
   @recv_timeout 300_000
 
@@ -52,7 +53,7 @@ defmodule Ragex.MCP.Client do
     # The destination is passed as the first arg to :gen_tcp.connect.
     opts = [:binary, {:active, false}]
 
-    case :gen_tcp.connect({:local, @socket_path}, 0, opts, @connect_timeout) do
+    case :gen_tcp.connect({:local, SocketPath.compute()}, 0, opts, @connect_timeout) do
       {:ok, socket} ->
         conn = %__MODULE__{socket: socket}
         # Send initialize handshake
@@ -192,17 +193,15 @@ defmodule Ragex.MCP.Client do
   end
 
   defp decode_response(line) do
-    case Jason.decode(line) do
-      {:ok, response} -> {:ok, response}
-      {:error, reason} -> {:error, {:decode_error, reason}}
-    end
+    {:ok, :json.decode(line)}
+  rescue
+    e -> {:error, {:decode_error, e}}
   end
 
   defp extract_tool_result(%{"content" => [%{"type" => "text", "text" => text} | _]}) do
-    case Jason.decode(text) do
-      {:ok, parsed} -> parsed
-      {:error, _} -> text
-    end
+    :json.decode(text)
+  rescue
+    _ -> text
   end
 
   defp extract_tool_result(other), do: other

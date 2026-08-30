@@ -3,6 +3,27 @@
 
 local M = {}
 
+-- Resolve the MCP socket path the same way Ragex.MCP.SocketPath.compute_string/0
+-- (Elixir) and bin/ragex-mcp (Bash) do, so the plugin always talks to the
+-- correct per-project/per-port server instead of a stale/foreign one:
+--   1. RAGEX_MCP_SOCK (explicit override, used verbatim)
+--   2. DLLB_PORT      (namespace by dllb server port)
+--   3. otherwise       namespace by the current working directory (sanitized)
+local function default_socket_path()
+  local override = vim.fn.getenv("RAGEX_MCP_SOCK")
+  if override ~= vim.NIL and override ~= "" then
+    return override
+  end
+
+  local dllb_port = vim.fn.getenv("DLLB_PORT")
+  if dllb_port ~= vim.NIL and dllb_port ~= "" then
+    return "/tmp/ragex_mcp_" .. dllb_port .. ".sock"
+  end
+
+  local sanitized = vim.fn.getcwd():gsub("^/", ""):gsub("[^%w]+", "_"):gsub("_+$", "")
+  return "/tmp/ragex_mcp_" .. sanitized .. ".sock"
+end
+
 -- Configuration with defaults
 M.config = {
   project_root = vim.fn.getcwd(),
@@ -19,7 +40,7 @@ M.config = {
     strategy = "fusion",
   },
   
-  socket_path = "/tmp/ragex_mcp.sock",
+  socket_path = default_socket_path(),
   
   timeout = {
     default = 60000,

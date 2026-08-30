@@ -3,6 +3,29 @@
 
 local M = {}
 
+-- Resolve the MCP socket path the same way Ragex.MCP.SocketPath.compute_string/0
+-- (Elixir) and bin/ragex-mcp (Bash) do, so we always talk to the correct
+-- per-project/per-port server instead of a stale/foreign one:
+--   1. RAGEX_MCP_SOCK (explicit override, used verbatim)
+--   2. DLLB_PORT      (namespace by dllb server port)
+--   3. otherwise       namespace by the current working directory (sanitized)
+local function default_socket_path()
+  local override = vim.fn.getenv("RAGEX_MCP_SOCK")
+  if override ~= vim.NIL and override ~= "" then
+    return override
+  end
+
+  local dllb_port = vim.fn.getenv("DLLB_PORT")
+  if dllb_port ~= vim.NIL and dllb_port ~= "" then
+    return "/tmp/ragex_mcp_" .. dllb_port .. ".sock"
+  end
+
+  local sanitized = vim.fn.getcwd():gsub("^/", ""):gsub("[^%w]+", "_"):gsub("_+$", "")
+  return "/tmp/ragex_mcp_" .. sanitized .. ".sock"
+end
+
+local socket_path = default_socket_path()
+
 -- Configuration
 M.config = {
   project_root = vim.fn.getcwd(),
@@ -12,6 +35,7 @@ M.config = {
   auto_analyze = false,  -- Disabled by default, enable with :lua require('user.ragex').config.auto_analyze = true
   auto_analyze_on_start = true,  -- Analyze current directory on startup
   auto_analyze_dirs = {},  -- List of directories to analyze on startup, e.g. {"/path/to/project1", "/path/to/project2"}
+  socket_path = socket_path,
 }
 
 -- Log debug messages
@@ -48,8 +72,9 @@ function M.execute(method, params, callback, timeout_ms)
   -- Use subshell with sleep to keep stdin open until server responds
   -- Without the sleep, socat closes the connection before the response arrives
   local cmd = string.format(
-    "(printf '%%s\\n' %s; sleep 10) | socat -T5 STDIO UNIX-CONNECT:/tmp/ragex_mcp.sock",
-    vim.fn.shellescape(request)
+    "(printf '%%s\\n' %s; sleep 10) | socat -T5 STDIO UNIX-CONNECT:%s",
+    vim.fn.shellescape(request),
+    M.config.socket_path
   )
 
   debug_log("Executing: " .. method .. " (timeout: " .. math.ceil(timeout_ms / 1000) .. "s)")
@@ -445,8 +470,9 @@ function M.read_resource(uri, callback)
   debug_log("Resource request: " .. request)
 
   local cmd = string.format(
-    "printf '%%s\\n' %s | socat - UNIX-CONNECT:/tmp/ragex_mcp.sock",
-    vim.fn.shellescape(request)
+    "printf '%%s\\n' %s | socat - UNIX-CONNECT:%s",
+    vim.fn.shellescape(request),
+    M.config.socket_path
   )
 
   if callback then
@@ -989,8 +1015,9 @@ function M.get_prompt(name, arguments, callback)
   })
 
   local cmd = string.format(
-    "printf '%%s\\n' %s | socat - UNIX-CONNECT:/tmp/ragex_mcp.sock",
-    vim.fn.shellescape(request)
+    "printf '%%s\\n' %s | socat - UNIX-CONNECT:%s",
+    vim.fn.shellescape(request),
+    M.config.socket_path
   )
 
   if callback then

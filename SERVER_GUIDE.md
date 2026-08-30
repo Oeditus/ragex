@@ -1,24 +1,42 @@
 # Ragex MCP Server Guide
 
+## Socket naming
+
+Ragex may run several independent instances at once (one per project, or one
+per `dllb` server port), so the MCP Unix socket is namespaced instead of
+using a single fixed path. The resolution order (identical across the
+Elixir server, `bin/ragex-mcp`, `start_server.sh`/`test_socket.sh`, and the
+nvim/lvim clients) is:
+
+1. `RAGEX_MCP_SOCK` -- explicit override, used verbatim.
+2. `DLLB_PORT` -- if set, the socket is `/tmp/ragex_mcp_<port>.sock`.
+3. Otherwise, the socket is namespaced by the project directory being
+   served: `/tmp/ragex_mcp_<sanitized_path>.sock`.
+
+To find the socket for the server you started, run `ls /tmp/ragex_mcp_*.sock`
+or check the `MCP Socket Server listening on ...` line the server logs on
+startup. The examples below use `$SOCKET_PATH` as a stand-in for whichever
+path applies to your instance.
+
 ## Quick Start
 
 ```bash
-# 1. Clean up any old server
+# 1. Clean up any old server for this project
 pkill -f "mix run"
-rm -f /tmp/ragex_mcp.sock
+rm -f /tmp/ragex_mcp_*.sock
 
 # 2. Start the server
 cd ~/Proyectos/Oeditus/ragex
 ./start_server.sh
 
-# 3. Test in another terminal
+# 3. Test in another terminal (auto-detects the socket for this directory)
 ./test_socket.sh
 ```
 
 ## The Problem
 
 If you see "Searching..." hanging forever in LunarVim, it means:
-- The socket file exists at `/tmp/ragex_mcp.sock`
+- The socket file exists at `$SOCKET_PATH`
 - BUT no process is listening on it (dead socket)
 
 This happens when:
@@ -34,8 +52,8 @@ This happens when:
 # Kill any existing Ragex processes
 pkill -f "mix run"
 
-# Remove the dead socket
-rm -f /tmp/ragex_mcp.sock
+# Remove the dead socket (use the exact path from `ls /tmp/ragex_mcp_*.sock`)
+rm -f "$SOCKET_PATH"
 ```
 
 ### Step 2: Start Server Properly
@@ -47,8 +65,8 @@ mix run --no-halt
 ```
 
 Watch for:
-- `MCP Socket Server listening on /tmp/ragex_mcp.sock`
-- `Socket file verified: /tmp/ragex_mcp.sock`
+- `MCP Socket Server listening on /tmp/ragex_mcp_<...>.sock`
+- `Socket file verified: /tmp/ragex_mcp_<...>.sock`
 - `Accept loop started with PID: ...`
 
 **Option B: Background with logging**
@@ -86,7 +104,7 @@ You should see:
 ### "Connection refused" error
 
 **Symptoms:**
-- Socket file exists: `ls /tmp/ragex_mcp.sock` shows the file
+- Socket file exists: `ls /tmp/ragex_mcp_*.sock` shows the file
 - But `./test_socket.sh` fails with "Connection refused"
 
 **Cause:** Dead socket - file exists but no process listening
@@ -94,7 +112,7 @@ You should see:
 **Fix:**
 ```bash
 pkill -f "mix run"
-rm -f /tmp/ragex_mcp.sock
+rm -f /tmp/ragex_mcp_*.sock
 ./start_server.sh
 ```
 
@@ -125,7 +143,7 @@ tail -f /tmp/ragex_server.log
 pkill -9 -f "mix run"
 
 # Clean up
-rm -f /tmp/ragex_mcp.sock
+rm -f /tmp/ragex_mcp_*.sock
 
 # Start fresh
 ./start_server.sh
@@ -155,7 +173,9 @@ rm -f /tmp/ragex_mcp.sock
    -- In LunarVim
    :lua print(require('ragex').config.socket_path)
    ```
-   Should print: `/tmp/ragex_mcp.sock`
+   Should print the socket for the project you're editing, e.g.
+   `/tmp/ragex_mcp_home_user_myproject.sock` (or `/tmp/ragex_mcp_<port>.sock`
+   if `DLLB_PORT` is set).
 
 ## Server Management
 
@@ -167,13 +187,13 @@ rm -f /tmp/ragex_mcp.sock
 ### Stop Server
 ```bash
 pkill -f "mix run"
-rm -f /tmp/ragex_mcp.sock
+rm -f /tmp/ragex_mcp_*.sock
 ```
 
 ### Restart Server
 ```bash
 pkill -f "mix run"
-rm -f /tmp/ragex_mcp.sock
+rm -f /tmp/ragex_mcp_*.sock
 ./start_server.sh
 ```
 
@@ -199,7 +219,8 @@ When started, the Ragex application:
    - AI Cache & Usage tracking
 
 2. **Starts MCP Servers:**
-   - Socket Server: Unix domain socket at `/tmp/ragex_mcp.sock`
+   - Socket Server: Unix domain socket at `/tmp/ragex_mcp_<port_or_project>.sock`
+     (see "Socket naming" above)
    - Stdio Server: For stdio-based clients
 
 3. **Waits for Connections:**

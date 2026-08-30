@@ -13,8 +13,11 @@ defmodule Ragex.MCP.SocketServer do
 
   alias Ragex.MCP.Handlers.{Prompts, Resources, Tools}
   alias Ragex.MCP.Protocol
+  alias Ragex.MCP.SocketPath
 
-  @socket_path ~c"/tmp/ragex_mcp.sock"
+  # How long to wait when probing whether an existing socket file has a live
+  # server behind it, before deciding it's safe to steal.
+  @liveness_probe_timeout 200
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -22,49 +25,79 @@ defmodule Ragex.MCP.SocketServer do
 
   @impl true
   def init(_opts) do
-    # Remove existing socket file (use charlist path)
-    case File.rm(to_string(@socket_path)) do
-      :ok -> :ok
-      {:error, :enoent} -> :ok
-      {:error, reason} -> Logger.warning("Could not remove socket file: #{inspect(reason)}")
+    socket_path = SocketPath.compute_string()
+    socket_path_cl = to_charlist(socket_path)
+
+    if socket_alive?(socket_path_cl) do
+      Logger.warning(
+        "MCP socket #{socket_path} is already in use by a running Ragex instance; " <>
+          "not starting a second socket server for this project/port."
+      )
+
+      :ignore
+    else
+      # Remove stale socket file, if any (use charlist path)
+      case File.rm(socket_path) do
+        :ok -> :ok
+        {:error, :enoent} -> :ok
+        {:error, reason} -> Logger.warning("Could not remove socket file: #{inspect(reason)}")
+      end
+
+      # Create Unix domain socket using gen_tcp with local address family
+      # The key is using ip: {:local, charlist_path}
+      listen_opts = [
+        :binary,
+        {:active, false},
+        {:reuseaddr, true},
+        {:ip, {:local, socket_path_cl}}
+      ]
+
+      case :gen_tcp.listen(0, listen_opts) do
+        {:ok, listen_socket} ->
+          Logger.info("MCP Socket Server listening on #{socket_path}")
+
+          # Verify socket file was created
+          if File.exists?(socket_path) do
+            Logger.info("Socket file verified: #{socket_path}")
+          else
+            Logger.error("Socket file not created!")
+          end
+
+          # Start accept loop with better error handling
+          pid = spawn_link(fn -> accept_loop(listen_socket) end)
+          Logger.info("Accept loop started with PID: #{inspect(pid)}")
+
+          {:ok, %{socket: listen_socket, acceptor: pid, socket_path: socket_path}}
+
+        {:error, reason} ->
+          Logger.error("Failed to create Unix socket: #{inspect(reason)}")
+          {:stop, reason}
+      end
     end
+  end
 
-    # Create Unix domain socket using gen_tcp with local address family
-    # The key is using ip: {:local, charlist_path}
-    listen_opts = [
-      :binary,
-      {:active, false},
-      {:reuseaddr, true},
-      {:ip, {:local, @socket_path}}
-    ]
+  # Probes whether a socket file already has a live server listening on it,
+  # so we never blindly delete and steal another running instance's socket.
+  defp socket_alive?(socket_path_cl) do
+    case :gen_tcp.connect(
+           {:local, socket_path_cl},
+           0,
+           [:binary, {:active, false}],
+           @liveness_probe_timeout
+         ) do
+      {:ok, socket} ->
+        :gen_tcp.close(socket)
+        true
 
-    case :gen_tcp.listen(0, listen_opts) do
-      {:ok, listen_socket} ->
-        Logger.info("MCP Socket Server listening on #{@socket_path}")
-
-        # Verify socket file was created
-        if File.exists?(to_string(@socket_path)) do
-          Logger.info("Socket file verified: #{@socket_path}")
-        else
-          Logger.error("Socket file not created!")
-        end
-
-        # Start accept loop with better error handling
-        pid = spawn_link(fn -> accept_loop(listen_socket) end)
-        Logger.info("Accept loop started with PID: #{inspect(pid)}")
-
-        {:ok, %{socket: listen_socket, acceptor: pid}}
-
-      {:error, reason} ->
-        Logger.error("Failed to create Unix socket: #{inspect(reason)}")
-        {:stop, reason}
+      {:error, _reason} ->
+        false
     end
   end
 
   @impl true
-  def terminate(_reason, %{socket: socket}) do
+  def terminate(_reason, %{socket: socket, socket_path: socket_path}) do
     :gen_tcp.close(socket)
-    File.rm(to_string(@socket_path))
+    File.rm(socket_path)
     :ok
   end
 
