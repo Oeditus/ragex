@@ -472,13 +472,14 @@ defmodule Ragex.Dllb.ProjectManager do
         "Starting per-project dllb server for #{project_path} on port #{port} (db: #{db_path})"
       )
 
-      env = [
-        {~c"DLLB_PATH", to_charlist(db_path)},
-        {~c"DLLB_BIND", to_charlist("127.0.0.1:#{port}")},
-        {~c"DLLB_DB", ~c"default"},
-        {~c"DLLB_NS", ~c"default"},
-        {~c"DLLB_WATCH_STDIN", ~c"1"}
-      ]
+      env =
+        [
+          {~c"DLLB_PATH", to_charlist(db_path)},
+          {~c"DLLB_BIND", to_charlist("127.0.0.1:#{port}")},
+          {~c"DLLB_DB", ~c"default"},
+          {~c"DLLB_NS", ~c"default"},
+          {~c"DLLB_WATCH_STDIN", ~c"1"}
+        ] ++ dllb_log_level_env()
 
       port_proc =
         Port.open(
@@ -502,6 +503,23 @@ defmodule Ragex.Dllb.ProjectManager do
           safe_close_port(port_proc)
           {:error, reason}
       end
+    end
+  end
+
+  # dllb-server's own `tracing-subscriber` setup honors `RUST_LOG` first,
+  # falling back to `DLLB_LOG`, and defaults to `"info"` when neither is
+  # set -- which is chatty enough to print noisy status lines directly to
+  # the raw-mode TTY at arbitrary moments (mid-keystroke, mid-modal). Default
+  # the spawned instance to a quieter level unless the user has explicitly
+  # opted into more verbose dllb diagnostics via either env var or the
+  # `:ragex, :dllb_log_level` config key, so real warnings/errors (e.g. a
+  # redb lock conflict) still surface through `log_dllb_output/3`.
+  defp dllb_log_level_env do
+    if System.get_env("RUST_LOG") || System.get_env("DLLB_LOG") do
+      []
+    else
+      level = Application.get_env(:ragex, :dllb_log_level, "warn")
+      [{~c"DLLB_LOG", to_charlist(level)}]
     end
   end
 
