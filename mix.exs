@@ -235,6 +235,7 @@ defmodule Ragex.MixProject do
         Ragex.MCP.SingleRequest,
         Ragex.MCP.SocketServer,
         Ragex.MCP.Server,
+        Ragex.MCP.SocketPath,
         Ragex.MCP.Protocol,
         Ragex.MCP.Telemetry,
         Ragex.MCP.Handlers.GitTools,
