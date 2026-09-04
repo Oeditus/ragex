@@ -29,10 +29,20 @@ config :ragex, :auto_analyze_dirs, dirs
 #     anthropic: System.fetch_env!("ANTHROPIC_API_KEY"),
 #     deepseek: System.fetch_env!("DEEPSEEK_API_KEY")
 # else
-# Dev/test: use env vars or default to test keys
-config :ragex, :ai_keys,
-  openai: System.get_env("OPENAI_API_KEY"),
-  anthropic: System.get_env("ANTHROPIC_API_KEY"),
-  deepseek_r1: System.get_env("DEEPSEEK_API_KEY")
+if config_env() == :test do
+  # Test: never use real credentials, even if set in the host environment.
+  # This keeps the test suite hermetic (no real network calls to AI
+  # providers) and makes "provider unavailable" tests deterministic.
+  config :ragex, :ai_keys,
+    openai: nil,
+    anthropic: nil,
+    deepseek_r1: nil
+else
+  # Dev/prod: use env vars or default to test keys
+  config :ragex, :ai_keys,
+    openai: System.get_env("OPENAI_API_KEY"),
+    anthropic: System.get_env("ANTHROPIC_API_KEY"),
+    deepseek_r1: System.get_env("DEEPSEEK_API_KEY")
+end
 
 # end

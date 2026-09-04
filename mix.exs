@@ -89,6 +89,8 @@ defmodule Ragex.MixProject do
         nil -> {:metacredo, "~> 0.1"}
         _ -> {:metacredo, path: "../metacredo"}
       end,
+      # Image processing library
+      {:image, "~> 0.54"},
       # Development and documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test, runtime: false},
@@ -239,11 +241,16 @@ defmodule Ragex.MixProject do
         Ragex.MCP.Protocol,
         Ragex.MCP.Telemetry,
         Ragex.MCP.Handlers.GitTools,
+        Ragex.MCP.Handlers.ImageTools,
         Ragex.MCP.Handlers.Initialization,
         Ragex.MCP.Handlers.Tools,
         Ragex.MCP.Handlers.Prompts,
         Ragex.MCP.Handlers.Resources,
         Ragex.MCP.Handlers.SCIPTools
+      ],
+      "Image Processing": [
+        Ragex.Image,
+        Ragex.MCP.Handlers.ImageTools
       ],
       RAG: [
         Ragex.Agent.Core,

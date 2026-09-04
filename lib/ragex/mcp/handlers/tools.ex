@@ -33,6 +33,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   """
   alias Ragex.AI.{Cache, Usage}
   alias Ragex.MCP.Handlers.GitTools
+  alias Ragex.MCP.Handlers.ImageTools
   alias Ragex.MCP.Handlers.SCIPTools
   alias Ragex.MCP.Telemetry, as: MCPTelemetry
 
@@ -2303,6 +2304,7 @@ defmodule Ragex.MCP.Handlers.Tools do
         ] ++
           GitTools.tool_definitions() ++
           SCIPTools.tool_definitions() ++
+          ImageTools.tool_definitions() ++
           [
             %{
               name: "search_strings",
@@ -2594,6 +2596,11 @@ defmodule Ragex.MCP.Handlers.Tools do
       # SCIP bridge tools (delegated to SCIPTools handler)
       scip_tool when scip_tool in ~w[scip_status scip_index] ->
         SCIPTools.call_tool(scip_tool, arguments)
+
+      # Image manipulation tools (delegated to ImageTools handler)
+      image_tool
+      when image_tool in ~w[image_info image_resize image_crop image_rotate image_convert image_apply_filter image_composite image_compare image_avatar image_draw_text] ->
+        ImageTools.call_tool(image_tool, arguments)
 
       # Deeper indexing: string literal search
       "search_strings" ->
