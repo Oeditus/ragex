@@ -188,22 +188,7 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def store_node(node_type, node_id, data) do
-    normalized_data =
-      data
-      |> to_plain_map()
-      |> map_key(:file, :file_path)
-      |> map_key(:line, :line_start)
-      |> map_key(:doc, :docstring)
-
-    fields =
-      normalized_data
-      |> Map.merge(%{
-        kind: to_string(node_type),
-        name: extract_name(node_type, node_id),
-        language: Map.get(normalized_data, :language, "elixir")
-      })
-      |> filter_schema_fields()
-
+    fields = prepare_node_fields(node_type, node_id, data)
     id = node_to_dllb_id({node_type, node_id})
     query_string = Dllb.Query.upsert("ast_node", id, fields)
 
@@ -219,27 +204,44 @@ defmodule Ragex.Store.Backend.Dllb do
   def store_nodes(nodes) when is_list(nodes) do
     queries =
       Enum.map(nodes, fn {node_type, node_id, data} ->
-        normalized_data =
-          data
-          |> to_plain_map()
-          |> map_key(:file, :file_path)
-          |> map_key(:line, :line_start)
-          |> map_key(:doc, :docstring)
-
-        fields =
-          normalized_data
-          |> Map.merge(%{
-            kind: to_string(node_type),
-            name: extract_name(node_type, node_id),
-            language: Map.get(normalized_data, :language, "elixir")
-          })
-          |> filter_schema_fields()
-
+        fields = prepare_node_fields(node_type, node_id, data)
         id = node_to_dllb_id({node_type, node_id})
         Dllb.Query.upsert("ast_node", id, fields)
       end)
 
     exec_batch_queries(queries)
+  end
+
+  defp prepare_node_fields(node_type, node_id, data) do
+    plain_data = to_plain_map(data)
+
+    normalized_data =
+      plain_data
+      |> map_key(:file, :file_path)
+      |> map_key(:line, :line_start)
+      |> map_key(:doc, :docstring)
+
+    ast_serialized =
+      case Map.get(normalized_data, :ast_serialized) || Map.get(normalized_data, "ast_serialized") do
+        nil ->
+          try do
+            Jason.encode!(plain_data)
+          rescue
+            _ -> nil
+          end
+
+        existing ->
+          existing
+      end
+
+    normalized_data
+    |> Map.put(:ast_serialized, ast_serialized)
+    |> Map.merge(%{
+      kind: to_string(node_type),
+      name: extract_name(node_type, node_id),
+      language: Map.get(normalized_data, :language, "elixir")
+    })
+    |> filter_schema_fields()
   end
 
   @impl true
@@ -708,9 +710,34 @@ defmodule Ragex.Store.Backend.Dllb do
   end
 
   defp dllb_row_to_node_data(row) do
-    row
-    |> Map.drop([:id])
-    |> add_backwards_compatible_keys()
+    data =
+      row
+      |> Map.drop([:id])
+      |> add_backwards_compatible_keys()
+
+    case Map.get(row, :ast_serialized) || Map.get(row, "ast_serialized") do
+      json when is_binary(json) and json != "" ->
+        decoded =
+          try do
+            Jason.decode!(json, keys: :atoms)
+          rescue
+            _ ->
+              try do
+                Jason.decode!(json)
+              rescue
+                _ -> %{}
+              end
+          end
+
+        if is_map(decoded) do
+          Map.merge(decoded, data)
+        else
+          data
+        end
+
+      _ ->
+        data
+    end
   end
 
   defp add_backwards_compatible_keys(row) do

@@ -119,9 +119,12 @@ defmodule Ragex.Analysis.QualityStore do
     @quality_metrics_type
     |> Store.list_nodes(:infinity)
     |> Enum.reduce([], fn node, acc ->
-      with value when not is_nil(value) <- Map.get(node.data, metric),
+      path = Map.get(node.data, :path) || Map.get(node.data, "path")
+      val = Map.get(node.data, metric) || Map.get(node.data, to_string(metric))
+
+      with value when not is_nil(value) <- val,
            true <- compare(value, threshold, operator),
-           do: [node.data.path | acc],
+           do: if(path, do: [path | acc], else: acc),
            else: (_ -> acc)
     end)
   end
@@ -137,10 +140,13 @@ defmodule Ragex.Analysis.QualityStore do
   def find_with_warnings do
     Store.list_nodes(@quality_metrics_type, :infinity)
     |> Enum.filter(fn node ->
-      match?([_ | _], Map.get(node.data, :warnings, []))
+      warnings = Map.get(node.data, :warnings) || Map.get(node.data, "warnings") || []
+      match?([_ | _], warnings)
     end)
     |> Enum.map(fn node ->
-      {node.data.path, node.data.warnings}
+      path = Map.get(node.data, :path) || Map.get(node.data, "path")
+      warnings = Map.get(node.data, :warnings) || Map.get(node.data, "warnings") || []
+      {path, warnings}
     end)
   end
 
@@ -155,9 +161,10 @@ defmodule Ragex.Analysis.QualityStore do
   def find_impure do
     Store.list_nodes(@quality_metrics_type, :infinity)
     |> Enum.filter(fn node ->
-      Map.get(node.data, :purity_pure?) == false
+      Map.get(node.data, :purity_pure?) == false or Map.get(node.data, "purity_pure?") == false
     end)
-    |> Enum.map(fn node -> node.data.path end)
+    |> Enum.map(fn node -> Map.get(node.data, :path) || Map.get(node.data, "path") end)
+    |> Enum.reject(&is_nil/1)
   end
 
   @doc """
@@ -196,7 +203,9 @@ defmodule Ragex.Analysis.QualityStore do
   @spec stats_by_language() :: %{atom() => map()}
   def stats_by_language do
     Store.list_nodes(@quality_metrics_type, :infinity)
-    |> Enum.group_by(fn node -> node.data.language end)
+    |> Enum.group_by(fn node ->
+      Map.get(node.data, :language) || Map.get(node.data, "language") || :elixir
+    end)
     |> Enum.map(fn {lang, nodes} ->
       {lang, calculate_stats(nodes, length(nodes))}
     end)
@@ -222,8 +231,11 @@ defmodule Ragex.Analysis.QualityStore do
 
     Store.list_nodes(@quality_metrics_type, :infinity)
     |> Enum.map(fn node ->
-      {node.data.path, Map.get(node.data, metric, 0)}
+      path = Map.get(node.data, :path) || Map.get(node.data, "path")
+      val = Map.get(node.data, metric) || Map.get(node.data, to_string(metric)) || 0
+      {path, val}
     end)
+    |> Enum.reject(fn {path, _} -> is_nil(path) end)
     |> Enum.sort_by(fn {_path, value} -> value end, :desc)
     |> Enum.take(limit)
   end
@@ -293,18 +305,24 @@ defmodule Ragex.Analysis.QualityStore do
   end
 
   defp calculate_stats(nodes, total_files) do
-    cyclomatic_values = Enum.map(nodes, fn n -> n.data.cyclomatic || 0 end)
-    cognitive_values = Enum.map(nodes, fn n -> n.data.cognitive || 0 end)
-    nesting_values = Enum.map(nodes, fn n -> n.data.max_nesting || 0 end)
+    cyclomatic_values = Enum.map(nodes, fn n -> Map.get(n.data, :cyclomatic) || Map.get(n.data, "cyclomatic") || 0 end)
+    cognitive_values = Enum.map(nodes, fn n -> Map.get(n.data, :cognitive) || Map.get(n.data, "cognitive") || 0 end)
+    nesting_values = Enum.map(nodes, fn n -> Map.get(n.data, :max_nesting) || Map.get(n.data, "max_nesting") || 0 end)
 
     files_with_warnings =
-      Enum.count(nodes, fn n -> match?([_ | _], Map.get(n.data, :warnings, [])) end)
+      Enum.count(nodes, fn n ->
+        warnings = Map.get(n.data, :warnings) || Map.get(n.data, "warnings") || []
+        match?([_ | _], warnings)
+      end)
 
-    impure_files = Enum.count(nodes, fn n -> Map.get(n.data, :purity_pure?) == false end)
+    impure_files =
+      Enum.count(nodes, fn n ->
+        Map.get(n.data, :purity_pure?) == false or Map.get(n.data, "purity_pure?") == false
+      end)
 
     languages =
       nodes
-      |> Enum.group_by(fn n -> n.data.language end)
+      |> Enum.group_by(fn n -> Map.get(n.data, :language) || Map.get(n.data, "language") || :elixir end)
       |> Enum.map(fn {lang, lang_nodes} -> {lang, length(lang_nodes)} end)
       |> Enum.into(%{})
 
