@@ -87,6 +87,9 @@ defmodule Ragex.Analyzers.Directory do
     timeout = Keyword.get(opts, :timeout, 300_000)
     max_concurrency = Keyword.get(opts, :max_concurrency, 4)
 
+    # Filter out unsupported file types (e.g. markdown docs, binary assets)
+    file_paths = Enum.filter(file_paths, &supported_file?/1)
+
     # Filter files based on incremental mode
     {files_to_analyze, skipped_files} =
       if incremental and not force_refresh do

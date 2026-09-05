@@ -245,6 +245,7 @@ defmodule Ragex.Analysis.Runner do
       {:ok, all_metrics} ->
         unstable =
           all_metrics
+          |> Enum.reject(fn {mod, _} -> entrypoint_module?(mod) end)
           |> Enum.filter(fn {_mod, metrics} ->
             metrics.instability > config.instability_threshold
           end)
@@ -263,6 +264,16 @@ defmodule Ragex.Analysis.Runner do
       {:error, _} ->
         %{modules: [], threshold: config.instability_threshold}
     end
+  end
+
+  defp entrypoint_module?(module) do
+    mod_str = to_string(module)
+
+    String.starts_with?(mod_str, "Mix.Tasks.") or
+      String.ends_with?(mod_str, "MixProject") or
+      String.ends_with?(mod_str, "Application") or
+      String.ends_with?(mod_str, "Test") or
+      String.contains?(mod_str, ".Test.")
   end
 
   defp run_unused_modules do

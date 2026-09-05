@@ -64,6 +64,24 @@ defmodule Ragex.Analysis.MetaCredoBridge do
     end)
   end
 
+  @doc """
+  Filters a list of `{check_module, params}` check tuples, removing any check modules
+  that are disabled in the `.metacredo.exs` configuration file.
+  """
+  @spec filter_enabled_checks([{module(), keyword()}]) :: [{module(), keyword()}]
+  def filter_enabled_checks(checks) when is_list(checks) do
+    config = MetaCredo.Config.read()
+    disabled = Map.get(config, :checks, %{}) |> Map.get(:disabled, [])
+
+    disabled_modules =
+      Enum.map(disabled, fn
+        {mod, _} -> mod
+        mod when is_atom(mod) -> mod
+      end)
+
+    Enum.reject(checks, fn {mod, _} -> mod in disabled_modules end)
+  end
+
   # -- Issue conversion: Business Logic --
 
   @doc """

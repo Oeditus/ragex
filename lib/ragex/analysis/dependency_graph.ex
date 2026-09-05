@@ -888,10 +888,12 @@ defmodule Ragex.Analysis.DependencyGraph do
     String.ends_with?(module_str, "Test") || String.contains?(module_str, ".Test.")
   end
 
-  # Helper: check if module is a Mix task
+  # Helper: check if module is a Mix task or Mix project
   defp mix_task?(module) do
     module_str = to_string(module)
-    String.starts_with?(module_str, "Mix.Tasks.")
+
+    String.starts_with?(module_str, "Mix.Tasks.") or
+      String.ends_with?(module_str, ".MixProject") or module_str == "MixProject"
   end
 
   # Conditionally add AI insights to analysis

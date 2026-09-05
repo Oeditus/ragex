@@ -437,7 +437,9 @@ defmodule Ragex.Analysis.BusinessLogic do
 
   # Resolve analyzer names to MetaCredo check tuples [{module, params}]
   defp resolve_checks(:all) do
-    Enum.map(Map.values(@analyzer_modules), &{&1, []})
+    Map.values(@analyzer_modules)
+    |> Enum.map(&{&1, []})
+    |> MetaCredoBridge.filter_enabled_checks()
   end
 
   defp resolve_checks(analyzer_names) when is_list(analyzer_names) do
@@ -445,6 +447,7 @@ defmodule Ragex.Analysis.BusinessLogic do
     |> Enum.map(&Map.get(@analyzer_modules, &1))
     |> Enum.reject(&is_nil/1)
     |> Enum.map(&{&1, []})
+    |> MetaCredoBridge.filter_enabled_checks()
   end
 
   defp build_result(path, language, mc_issues, min_severity) do

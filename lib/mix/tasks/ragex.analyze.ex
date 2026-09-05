@@ -710,12 +710,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     Enum.map(modules, fn mod -> "UNUSED: #{format_module_name(mod)}" end)
   end
 
-  defp ci_lines_for(:coupling, %{metrics: metrics}) do
-    Enum.map(metrics, fn m ->
-      "COUPLING: #{format_module_name(m.module)} afferent=#{m.afferent} efferent=#{m.efferent} instability=#{Float.round(m.instability, 2)}"
-    end)
-  end
-
+  defp ci_lines_for(:coupling, _), do: []
   defp ci_lines_for(:dependencies, _), do: []
   defp ci_lines_for(:quality, _), do: []
   defp ci_lines_for(_, _), do: []
