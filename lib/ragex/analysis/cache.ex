@@ -25,6 +25,7 @@ defmodule Ragex.Analysis.Cache do
 
   alias Ragex.Embeddings.FileTracker
   alias Ragex.Embeddings.Persistence, as: EmbeddingsPersistence
+  alias Ragex.Store.Backend.Dllb, as: DllbBackend
 
   @version 1
   @cache_file_name "analysis.etf"
@@ -294,7 +295,10 @@ defmodule Ragex.Analysis.Cache do
   defp dllb_available? do
     Application.get_env(:ragex, :store_backend, :ets) == :dllb and
       Application.get_env(:dllb, :enabled, false) and
-      match?({:ok, %Dllb.Result.Rows{}}, Dllb.query("SELECT * FROM _dllb_ping_"))
+      match?(
+        {:ok, %Dllb.Result.Rows{}},
+        DllbBackend.query("SELECT * FROM _dllb_ping_")
+      )
   rescue
     _ -> false
   catch
@@ -319,7 +323,7 @@ defmodule Ragex.Analysis.Cache do
     id = EmbeddingsPersistence.generate_project_hash(path)
 
     query = "CREATE _analysis_cache:#{id} SET payload = '#{b64}' ON CONFLICT UPDATE"
-    Dllb.query(query)
+    DllbBackend.query(query)
     :ok
   rescue
     e ->
@@ -333,7 +337,7 @@ defmodule Ragex.Analysis.Cache do
     id = EmbeddingsPersistence.generate_project_hash(path)
     query = "SELECT * FROM _analysis_cache:#{id}"
 
-    case Dllb.query(query) do
+    case DllbBackend.query(query) do
       {:ok, %Dllb.Result.Rows{data: [row | _]}} ->
         payload_b64 = row["payload"] || row[:payload]
 

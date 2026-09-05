@@ -765,11 +765,29 @@ defmodule Ragex.Analysis.DependencyGraph do
   # Get all functions in a module
   defp get_module_functions(module) do
     Store.list_nodes(:function, :infinity)
-    |> Enum.filter(fn
-      %{id: {mod, _name, _arity}} -> mod == module
-      _ -> false
+    |> Enum.map(fn node ->
+      case node do
+        %{id: {mod, name, arity}} ->
+          {mod, name, arity}
+
+        %{id: id, data: data} when is_map(data) ->
+          m = Map.get(data, :module) || Map.get(data, "module")
+          n = Map.get(data, :name) || Map.get(data, :function) || Map.get(data, "name") || id
+          a = Map.get(data, :arity) || Map.get(data, "arity")
+          {m, n, a}
+
+        _ ->
+          {nil, nil, nil}
+      end
     end)
-    |> Enum.map(fn %{id: {mod, name, arity}} -> {:function, mod, name, arity} end)
+    |> Enum.filter(fn {mod, name, _arity} ->
+      not is_nil(mod) and not is_nil(name) and
+        (mod == module or
+           ((is_binary(mod) or is_atom(mod)) and (is_binary(module) or is_atom(module)) and
+              String.replace_prefix(to_string(mod), "Elixir.", "") ==
+                String.replace_prefix(to_string(module), "Elixir.", "")))
+    end)
+    |> Enum.map(fn {mod, name, arity} -> {:function, mod, name, arity} end)
   end
 
   # Get direct module dependencies (modules this module depends on)

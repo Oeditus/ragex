@@ -10,6 +10,7 @@ defmodule Ragex.Graph.Algorithms do
   """
 
   alias Ragex.Graph.Store
+  alias Ragex.Store.Backend.Dllb, as: DllbBackend
 
   @doc """
   Computes PageRank scores for all nodes in the graph.
@@ -428,7 +429,7 @@ defmodule Ragex.Graph.Algorithms do
 
   # Query the dllb engine for the connected-component count over `calls`.
   defp connected_components_via_dllb(_opts) do
-    case Dllb.query(Dllb.Query.graph_components("calls")) do
+    case DllbBackend.query(Dllb.Query.graph_components("calls")) do
       {:ok, %Dllb.Result.Components{component_count: count}} -> {:ok, count}
       {:ok, %Dllb.Result.Error{message: msg}} -> {:error, {:dllb_error, msg}}
       {:error, reason} -> {:error, reason}
@@ -510,7 +511,7 @@ defmodule Ragex.Graph.Algorithms do
         resolution: resolution
       )
 
-    case Dllb.query(query) do
+    case DllbBackend.query(query) do
       {:ok, %Dllb.Result.Communities{data: data}} ->
         communities =
           Map.new(data, fn group ->
@@ -542,7 +543,7 @@ defmodule Ragex.Graph.Algorithms do
 
     query = Dllb.Query.graph_pagerank("calls", damping: damping, max_iter: max_iter)
 
-    case Dllb.query(query) do
+    case DllbBackend.query(query) do
       {:ok, %Dllb.Result.Rows{data: data}} ->
         scores =
           Map.new(data, fn row ->
@@ -561,7 +562,7 @@ defmodule Ragex.Graph.Algorithms do
   defp degree_centrality_via_dllb do
     query = Dllb.Query.graph_centrality("calls", mode: :degree)
 
-    case Dllb.query(query) do
+    case DllbBackend.query(query) do
       {:ok, %Dllb.Result.Rows{data: data}} ->
         metrics =
           Map.new(data, fn row ->
@@ -589,9 +590,11 @@ defmodule Ragex.Graph.Algorithms do
     edge_count_query = Dllb.Query.count("_edge_idx")
     pagerank_query = Dllb.Query.graph_pagerank("calls", limit: 10)
 
-    with {:ok, %Dllb.Result.Rows{data: type_rows}} <- Dllb.query(node_counts_query),
-         {:ok, %Dllb.Result.Count{count: edge_count}} <- Dllb.query(edge_count_query),
-         {:ok, %Dllb.Result.Rows{data: pr_rows}} <- Dllb.query(pagerank_query) do
+    with {:ok, %Dllb.Result.Rows{data: type_rows}} <-
+           DllbBackend.query(node_counts_query),
+         {:ok, %Dllb.Result.Count{count: edge_count}} <-
+           DllbBackend.query(edge_count_query),
+         {:ok, %Dllb.Result.Rows{data: pr_rows}} <- DllbBackend.query(pagerank_query) do
       node_counts_by_type =
         Map.new(type_rows, fn row ->
           type_atom = safe_type_atom(unwrap_dllb_value(row["kind"]))

@@ -10,8 +10,10 @@ defmodule Ragex.Store.Backend do
 
   The active backend is selected at startup via:
 
-      config :ragex, :store_backend, :ets   # or :dllb
+    config :ragex, :store_backend, :ets   # or :dllb
   """
+
+  alias Ragex.Store.Backend.Dllb, as: DllbBackend
 
   # ---------------------------------------------------------------------------
   # Lifecycle
@@ -111,7 +113,7 @@ defmodule Ragex.Store.Backend do
   defp dllb_available? do
     Application.get_env(:dllb, :enabled, false) &&
       Code.ensure_loaded?(Dllb) &&
-      match?({:ok, _}, Dllb.query("SELECT 1"))
+      match?({:ok, _}, DllbBackend.query("SELECT 1"))
   rescue
     _ -> false
   catch

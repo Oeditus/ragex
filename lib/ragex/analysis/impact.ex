@@ -26,6 +26,7 @@ defmodule Ragex.Analysis.Impact do
   """
 
   alias Ragex.Graph.Store
+  alias Ragex.Store.Backend.Dllb, as: DllbBackend
   require Logger
 
   @type node_ref :: {:module, module()} | {:function, module(), atom(), non_neg_integer()}
@@ -431,7 +432,7 @@ defmodule Ragex.Analysis.Impact do
 
       query = "SELECT ast::complexity(meta_ast) AS c FROM ast_node:#{id}"
 
-      case Dllb.query(query) do
+      case DllbBackend.query(query) do
         {:ok, %Dllb.Result.Rows{data: [%{"c" => val} | _]}} when is_number(val) ->
           min(val / 10.0, 1.0)
 

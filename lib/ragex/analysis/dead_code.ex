@@ -279,7 +279,10 @@ defmodule Ragex.Analysis.DeadCode do
           # Get all functions in the module
           functions =
             Store.list_nodes(:function, :infinity)
-            |> Enum.filter(fn %{id: {mod, _name, _arity}} -> mod == module end)
+            |> Enum.filter(fn node ->
+              {mod, _, _} = extract_func_identity(node)
+              match_module?(mod, module)
+            end)
 
           # Filter by visibility if specified
           functions =
@@ -528,8 +531,8 @@ defmodule Ragex.Analysis.DeadCode do
   # Private functions
 
   # Analyze a function to determine if it's dead code
-  defp analyze_function(%{id: {module, name, arity}, data: metadata}) do
-    # func_ref = {:function, module, name, arity}
+  defp analyze_function(%{data: metadata} = node) do
+    {module, name, arity} = extract_func_identity(node)
     func_ref = %{type: :function, module: module, name: name, arity: arity}
     caller_count = count_callers(func_ref)
 
@@ -557,6 +560,8 @@ defmodule Ragex.Analysis.DeadCode do
     end
   end
 
+  defp analyze_function(_), do: nil
+
   # Count the number of callers for a function
   defp count_callers(func_ref) do
     # Convert to tuple format for Store lookup
@@ -578,13 +583,36 @@ defmodule Ragex.Analysis.DeadCode do
   end
 
   # Check if we should analyze this module
-  defp should_check_module?(%{id: {module, _name, _arity}}, exclude_tests) do
-    if exclude_tests do
+  defp should_check_module?(node, exclude_tests) do
+    {module, _name, _arity} = extract_func_identity(node)
+
+    if exclude_tests and module do
       !test_module?(module)
     else
       true
     end
   end
+
+  defp extract_func_identity(%{id: {module, function, arity}}) do
+    {module, function, arity}
+  end
+
+  defp extract_func_identity(%{id: id, data: data}) when is_map(data) do
+    module = Map.get(data, :module) || Map.get(data, "module")
+    function = Map.get(data, :name) || Map.get(data, :function) || Map.get(data, "name") || id
+    arity = Map.get(data, :arity) || Map.get(data, "arity")
+    {module, function, arity}
+  end
+
+  defp extract_func_identity(_), do: {nil, nil, nil}
+
+  defp match_module?(mod1, mod2) when not is_nil(mod1) and not is_nil(mod2) do
+    s1 = mod1 |> to_string() |> String.replace_prefix("Elixir.", "")
+    s2 = mod2 |> to_string() |> String.replace_prefix("Elixir.", "")
+    s1 == s2
+  end
+
+  defp match_module?(_, _), do: false
 
   # Check if function matches callback patterns
   defp callback_pattern?(name, arity) do

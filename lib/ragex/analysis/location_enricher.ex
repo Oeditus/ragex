@@ -260,11 +260,13 @@ defmodule Ragex.Analysis.LocationEnricher do
     try do
       file_index = get_file_index()
       functions = Map.get(file_index, normalized_path, [])
+      target_name = to_string(function_name)
 
       # Find function with matching name (any arity)
       functions
-      |> Enum.find(fn %{id: {_module, func, _arity}} ->
-        func == function_name
+      |> Enum.find(fn node ->
+        {_mod, func, _arity} = extract_func_identity(node)
+        to_string(func) == target_name
       end)
       |> case do
         nil ->
@@ -297,16 +299,21 @@ defmodule Ragex.Analysis.LocationEnricher do
           {:error, :not_found}
 
         funcs ->
-          # Find the function whose start line is <= target line
-          # and is the maximum such line (closest function before target)
           funcs
-          |> Enum.filter(fn func -> func.data.line <= line end)
-          |> Enum.max_by(fn func -> func.data.line end, fn -> nil end)
+          |> Enum.filter(fn func ->
+            func_line = get_node_line(func)
+            is_integer(func_line) and func_line <= line
+          end)
+          |> Enum.max_by(
+            fn func -> get_node_line(func) || 0 end,
+            fn -> nil end
+          )
           |> case do
             nil ->
-              # No function found before this line, maybe it's in the first function?
-              # Return first function as fallback
-              {:ok, build_function_info(List.first(funcs))}
+              case List.first(funcs) do
+                nil -> {:error, :not_found}
+                f -> {:ok, build_function_info(f)}
+              end
 
             func_node ->
               {:ok, build_function_info(func_node)}
@@ -337,9 +344,13 @@ defmodule Ragex.Analysis.LocationEnricher do
   defp find_function_by_name_no_arity(module, function) do
     # Search for any arity using the name index
     name_index = get_name_index()
+    func_str = to_string(function)
 
-    Map.get(name_index, function, [])
-    |> Enum.find(fn %{id: {mod, _func, _arity}} -> mod == module end)
+    Map.get(name_index, func_str, [])
+    |> Enum.find(fn node ->
+      {mod, _func, _arity} = extract_func_identity(node)
+      match_module?(mod, module)
+    end)
     |> case do
       nil -> {:error, :not_found}
       func_node -> {:ok, build_function_info(func_node)}
@@ -372,13 +383,18 @@ defmodule Ragex.Analysis.LocationEnricher do
 
     index =
       all_functions
-      |> Enum.filter(fn
-        %{data: %{file: file}} when is_binary(file) -> true
-        _ -> false
+      |> Enum.filter(fn node ->
+        file = get_node_file(node)
+        is_binary(file)
       end)
-      |> Enum.group_by(fn %{data: %{file: file}} -> Path.expand(file) end)
+      |> Enum.group_by(fn node ->
+        Path.expand(get_node_file(node))
+      end)
       |> Map.new(fn {path, funcs} ->
-        {path, Enum.sort_by(funcs, fn f -> Map.get(f.data, :line, 0) end, :asc)}
+        sorted =
+          Enum.sort_by(funcs, fn f -> get_node_line(f) || 0 end, :asc)
+
+        {path, sorted}
       end)
 
     Process.put(@cache_key_file_index, index)
@@ -390,29 +406,79 @@ defmodule Ragex.Analysis.LocationEnricher do
 
     index =
       all_functions
-      |> Enum.group_by(fn %{id: {_mod, func, _arity}} -> func end)
+      |> Enum.group_by(fn node ->
+        {_mod, func, _arity} = extract_func_identity(node)
+        if func, do: to_string(func), else: nil
+      end)
 
     Process.put(@cache_key_name_index, index)
     index
   end
+
+  defp extract_func_identity(%{id: {module, function, arity}}) do
+    {module, function, arity}
+  end
+
+  defp extract_func_identity(%{id: id, data: data}) when is_map(data) do
+    module = Map.get(data, :module) || Map.get(data, "module")
+    function = Map.get(data, :name) || Map.get(data, :function) || Map.get(data, "name") || id
+    arity = Map.get(data, :arity) || Map.get(data, "arity")
+    {module, function, arity}
+  end
+
+  defp extract_func_identity(_), do: {nil, nil, nil}
+
+  defp get_node_file(%{data: data}) when is_map(data) do
+    Map.get(data, :file) || Map.get(data, :file_path) || Map.get(data, "file")
+  end
+
+  defp get_node_file(_), do: nil
+
+  defp get_node_line(%{data: data}) when is_map(data) do
+    Map.get(data, :line) || Map.get(data, :line_start) || Map.get(data, "line")
+  end
+
+  defp get_node_line(_), do: nil
+
+  defp match_module?(mod1, mod2) when not is_nil(mod1) and not is_nil(mod2) do
+    s1 = mod1 |> to_string() |> String.replace_prefix("Elixir.", "")
+    s2 = mod2 |> to_string() |> String.replace_prefix("Elixir.", "")
+    s1 == s2
+  end
+
+  defp match_module?(_, _), do: false
 
   defp build_function_info(%{id: {module, function, arity}, data: data}) do
     %{
       module: module,
       function: function,
       arity: arity,
-      file: Map.get(data, :file),
-      line: Map.get(data, :line)
+      file: get_node_file(%{data: data}),
+      line: get_node_line(%{data: data})
     }
   end
+
+  defp build_function_info(%{data: data} = node) when is_map(data) do
+    {module, function, arity} = extract_func_identity(node)
+
+    %{
+      module: module,
+      function: function,
+      arity: arity,
+      file: get_node_file(node),
+      line: get_node_line(node)
+    }
+  end
+
+  defp build_function_info(_), do: nil
 
   defp build_function_info_from_data({module, function, arity}, data) do
     %{
       module: module,
       function: function,
       arity: arity,
-      file: Map.get(data, :file),
-      line: Map.get(data, :line)
+      file: Map.get(data, :file) || Map.get(data, :file_path) || Map.get(data, "file"),
+      line: Map.get(data, :line) || Map.get(data, :line_start) || Map.get(data, "line")
     }
   end
 

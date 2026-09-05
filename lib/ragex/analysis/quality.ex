@@ -966,7 +966,7 @@ defmodule Ragex.Analysis.Quality do
         query_opts = [limit: limit, project_path: Path.expand(path)]
         query_string = Query.complex_functions(min_complexity, query_opts)
 
-        case Query.exec(query_string, &Dllb.query/1) do
+        case Query.exec(query_string, &Backend.Dllb.query/1) do
           {:ok, rows} ->
             res =
               Enum.map(rows, fn row ->
