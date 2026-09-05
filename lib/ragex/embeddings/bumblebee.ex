@@ -31,6 +31,19 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   # Client API
 
+  @doc """
+  Returns `true` when the optional ML dependencies (`bumblebee`, `nx`, `exla`)
+  are compiled and loadable.
+
+  These are native/NIF-backed dependencies that cannot be loaded from inside
+  an escript archive, so callers embedding Ragex as a library should check
+  this before relying on embedding/semantic-search features.
+  """
+  @spec available?() :: boolean()
+  def available? do
+    Code.ensure_loaded?(Bumblebee) and Code.ensure_loaded?(Nx) and Code.ensure_loaded?(EXLA)
+  end
+
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end

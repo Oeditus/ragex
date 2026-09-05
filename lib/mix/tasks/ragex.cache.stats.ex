@@ -200,9 +200,15 @@ defmodule Mix.Tasks.Ragex.Cache.Stats do
     end
 
     unless stats.valid? do
+      model_desc =
+        case Bumblebee.model_info() do
+          {:error, _reason} -> "unavailable (bumblebee/nx/exla not present)"
+          model_info -> model_info.id
+        end
+
       IO.puts(
         Colors.warning(
-          "⚠  Cache is incompatible with the current embedding model (#{Bumblebee.model_info().id})."
+          "⚠  Cache is incompatible with the current embedding model (#{model_desc})."
         )
       )
 

@@ -194,25 +194,37 @@ defmodule Ragex.MCP.Handlers.Resources do
   end
 
   defp read_model_config do
-    model_info = Bumblebee.model_info()
+    case Bumblebee.model_info() do
+      {:error, reason} ->
+        {:ok,
+         %{
+           available: false,
+           reason: inspect(reason),
+           message:
+             "Embedding model unavailable: bumblebee/nx/exla dependencies are not " <>
+               "present or the embedding server is not running (skip_bumblebee?)"
+         }}
 
-    result = %{
-      model_name: model_info.name,
-      dimensions: model_info.dimensions,
-      ready: Bumblebee.ready?(),
-      memory_usage_mb: estimate_memory_usage(model_info),
-      capabilities: %{
-        supports_batch: true,
-        supports_normalization: true,
-        local_inference: true
-      },
-      parameters: %{
-        max_sequence_length: model_info.max_length || 512,
-        pooling: model_info.pooling || "mean"
-      }
-    }
+      model_info ->
+        result = %{
+          available: true,
+          model_name: model_info.name,
+          dimensions: model_info.dimensions,
+          ready: Bumblebee.ready?(),
+          memory_usage_mb: estimate_memory_usage(model_info),
+          capabilities: %{
+            supports_batch: true,
+            supports_normalization: true,
+            local_inference: true
+          },
+          parameters: %{
+            max_sequence_length: model_info.max_length || 512,
+            pooling: model_info.pooling || "mean"
+          }
+        }
 
-    {:ok, result}
+        {:ok, result}
+    end
   end
 
   defp read_project_index do

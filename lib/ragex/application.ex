@@ -6,6 +6,7 @@ defmodule Ragex.Application do
   use Application
   alias Ragex.AI.Config, as: AIConfig
   alias Ragex.Analyzers.Directory
+  alias Ragex.Embeddings.Bumblebee, as: BumblebeeEmbeddings
   alias Ragex.Git.Backend, as: GitBackend
 
   require Logger
@@ -26,8 +27,13 @@ defmodule Ragex.Application do
 
     # When :skip_bumblebee is set (e.g. mix tasks while a server is already
     # running on the GPU), skip the heavyweight ML children to avoid
-    # allocating GPU memory a second time.
-    skip_bumblebee = Application.get_env(:ragex, :skip_bumblebee, false)
+    # allocating GPU memory a second time. Also skip automatically when the
+    # optional bumblebee/nx/exla dependencies are genuinely absent from the
+    # build (e.g. a `mix escript.build` consumer that excludes them because
+    # their NIFs cannot load from inside an escript archive).
+    skip_bumblebee =
+      Application.get_env(:ragex, :skip_bumblebee, false) or
+        not BumblebeeEmbeddings.available?()
 
     # Base children that always start
     base_children =

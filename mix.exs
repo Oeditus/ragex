@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.28.0"
+  @version "0.29.0"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -70,10 +70,12 @@ defmodule Ragex.MixProject do
       {:dllb, "~> 0.9"},
       # TUI Framework
       {:owl, "~> 0.12"},
-      # Embeddings and ML
-      {:bumblebee, "~> 0.5"},
-      {:nx, "~> 0.12", optional: false},
-      {:exla, "~> 0.9"},
+      # Embeddings and ML (optional -- native/NIF-backed, cannot load from
+      # inside an escript archive; degrades gracefully when absent, see
+      # Ragex.Embeddings.Bumblebee.available?/0)
+      {:bumblebee, "~> 0.5", optional: true},
+      {:nx, "~> 0.12", optional: true},
+      {:exla, "~> 0.9", optional: true},
       # AI Provider
       {:req, "~> 0.5"},
       # Terminal Markdown rendering
@@ -89,8 +91,9 @@ defmodule Ragex.MixProject do
         nil -> {:metacredo, "~> 0.1"}
         _ -> {:metacredo, path: "../metacredo"}
       end,
-      # Image processing library
-      {:image, "~> 0.54"},
+      # Image processing library (optional -- native/NIF-backed via Vix/libvips,
+      # degrades gracefully when absent, see Ragex.Image.available?/0)
+      {:image, "~> 0.54", optional: true},
       # Development and documentation
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test, runtime: false},

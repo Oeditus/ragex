@@ -7,6 +7,19 @@ defmodule Ragex.Embeddings.BumblebeeTest do
   # Embedding model can take time to load
   @moduletag timeout: 120_000
 
+  describe "available?/0" do
+    test "returns a boolean" do
+      assert is_boolean(Bumblebee.available?())
+    end
+
+    test "returns true when bumblebee/nx/exla are compiled and loadable" do
+      # In the standard dev/test environment these optional deps are present.
+      # See scripts/verify_optional_ml_deps.sh for a test that exercises the
+      # genuinely-absent case (compile + boot with the deps removed).
+      assert Bumblebee.available?() == true
+    end
+  end
+
   describe "embed/1" do
     test "generates embedding for simple text" do
       # Wait for model to be ready

@@ -267,6 +267,15 @@ defmodule Ragex.MCP.Handlers.ImageTools do
 
   @doc "Dispatch an image tool call. Returns `{:ok, result}` or `{:error, reason}`."
   def call_tool(name, arguments) do
+    if RagexImage.available?() do
+      dispatch(name, arguments)
+    else
+      {:error,
+       "Image processing unavailable: the optional :image dependency is not present in this build"}
+    end
+  end
+
+  defp dispatch(name, arguments) do
     case name do
       "image_info" -> handle_info(arguments)
       "image_resize" -> handle_resize(arguments)

@@ -44,6 +44,7 @@ defmodule Mix.Tasks.Ragex.Models.Download do
   """
 
   require Logger
+  alias Ragex.Embeddings.Bumblebee, as: RagexBumblebee
   alias Ragex.Embeddings.Registry
 
   @impl Mix.Task
@@ -60,6 +61,13 @@ defmodule Mix.Tasks.Ragex.Models.Download do
 
     # Start the application dependencies
     Mix.Task.run("app.start")
+
+    unless RagexBumblebee.available?() do
+      Mix.raise(
+        "mix ragex.models.download requires the optional bumblebee/nx/exla dependencies, " <>
+          "which are not present in this build. Add them back to mix.exs deps to use this task."
+      )
+    end
 
     # Set custom cache dir if provided
     if cache_dir = opts[:cache_dir] do

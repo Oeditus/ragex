@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.29.0]
+
+### Changed
+
+- `bumblebee`, `nx`, `exla`, and `image` are now `optional: true` dependencies
+  in `mix.exs`. These are native/NIF-backed libraries that cannot load from
+  inside an `mix escript.build` archive (their shared objects are packed in
+  the escript zip, not present on a real filesystem path), which previously
+  crashed the entire OTP boot chain for any downstream consumer building an
+  escript against ragex.
+- `Ragex.Application` now skips starting `Ragex.Embeddings.Bumblebee` and
+  `Ragex.VectorStore` automatically when `bumblebee`/`nx`/`exla` are absent
+  from the build, in addition to the existing `config :ragex, skip_bumblebee:
+  true` manual override.
+- Added `Ragex.Embeddings.Bumblebee.available?/0` and `Ragex.Image.available?/0`,
+  which use `Code.ensure_loaded?/1` to detect the optional ML/image
+  dependencies at runtime, mirroring the existing
+  `Ragex.Git.Backend.egit_available?/0` pattern for the optional `egit` NIF.
+- `mix ragex.models.download` now fails fast with a clear error message
+  instead of an `UndefinedFunctionError` when the optional ML dependencies
+  are not present in the build.
+- `mix ragex.cache.stats` and the `ragex://model/config` MCP resource now
+  report embedding-model unavailability clearly instead of raising when the
+  embedding server has not started.
+- Image MCP tools (`image_*`) now return a clear
+  `{:error, "Image processing unavailable..."}` tuple instead of crashing
+  when the optional `:image` dependency is absent.
+- Fixed a compile-time-only break: `lib/ragex/image.ex` matched on the
+  `%Image.Error{}` struct literal, which fails to compile when `:image` is
+  not fetched. Replaced with an equivalent plain-map pattern.
+
+### Added
+
+- `scripts/verify_optional_ml_deps.sh` -- verifies, in an isolated temporary
+  copy of the repository, that ragex compiles and `Ragex.Application` boots
+  successfully with `bumblebee`/`nx`/`exla`/`image` genuinely removed from
+  `mix.exs` and `mix.lock` (not just unstarted via configuration).
+
 ## [0.11.0]
 
 ### Changed
@@ -145,6 +183,7 @@ re-analysis tools are excluded so the pipeline is not re-triggered.
 - STREAMING.md: Streaming notifications guide
 - USAGE.md: Usage examples
 
+[0.29.0]: https://github.com/Oeditus/ragex/releases/tag/v0.29.0
 [0.11.0]: https://github.com/Oeditus/ragex/releases/tag/v0.11.0
 [0.2.0]: https://github.com/Oeditus/ragex/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Oeditus/ragex/releases/tag/v0.1.0

@@ -16,6 +16,15 @@ defmodule Ragex.ImageTest do
     %{tmp_dir: tmp_dir, base_path: base_path}
   end
 
+  describe "available?/0" do
+    test "returns true when the optional :image dependency is compiled and loadable" do
+      # In the standard dev/test environment :image is present. See
+      # scripts/verify_optional_ml_deps.sh for a test that exercises the
+      # genuinely-absent case (compile + boot with the dependency removed).
+      assert RagexImage.available?() == true
+    end
+  end
+
   test "info/1 returns image metadata", %{base_path: base_path} do
     assert {:ok, info} = RagexImage.info(base_path)
     assert info.width == 200

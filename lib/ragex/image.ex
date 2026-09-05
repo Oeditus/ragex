@@ -4,6 +4,18 @@ defmodule Ragex.Image do
   """
 
   @doc """
+  Returns `true` when the optional `:image` dependency is compiled and loadable.
+
+  `:image` is a native/NIF-backed dependency (Vix/libvips) that cannot be
+  loaded from inside an escript archive, so callers embedding Ragex as a
+  library should check this before relying on image-processing features.
+  """
+  @spec available?() :: boolean()
+  def available? do
+    Code.ensure_loaded?(Image)
+  end
+
+  @doc """
   Get detailed information and metadata for an image file.
   """
   def info(path) when is_binary(path) do
@@ -131,7 +143,10 @@ defmodule Ragex.Image do
         if auto_trim do
           case Image.trim(image) do
             {:ok, trimmed} -> {:ok, trimmed}
-            {:error, %Image.Error{message: "Could not find anything to trim"}} -> {:ok, image}
+            # Matched as a plain map (not `%Image.Error{}`) so this module
+            # still compiles when the optional `:image` dependency -- and
+            # thus `Image.Error` -- is absent from the build.
+            {:error, %{message: "Could not find anything to trim"}} -> {:ok, image}
             error -> error
           end
         else
