@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.29.0"
+  @version "0.29.1"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -148,6 +148,9 @@ defmodule Ragex.MixProject do
         stuff/docs/CI.md
         stuff/docs/RAGEX-VS-CICADA.md
         stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md
+        docs/FEATURE_GUIDE.md
+        docs/CHEATSHEET.cheatmd
+        docs/WHY_RAGEX.md
         bin/ragex-mcp
         examples/product_cart/README.md
         examples/product_cart/DEMO.md
@@ -168,6 +171,7 @@ defmodule Ragex.MixProject do
       assets: %{"stuff/img" => "assets"},
       extras: extras(),
       extra_section: "GUIDES",
+      groups_for_extras: groups_for_extras(),
       source_url: @source_url,
       source_ref: "v#{@version}",
       formatters: ["html", "epub"],
@@ -219,7 +223,22 @@ defmodule Ragex.MixProject do
       "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md": [title: "Using Ragex as MCP Server"],
       "stuff/docs/CI.md": [title: "CI / Diff-Based Analysis"],
       "stuff/docs/RAGEX-VS-CICADA.md": [title: "Ragex vs Cicada"],
-      "examples/product_cart/DEMO.md": [title: "Cart demo: README"]
+      "examples/product_cart/DEMO.md": [title: "Cart demo: README"],
+      "docs/FEATURE_GUIDE.md": [title: "Feature Reference Manual"],
+      "docs/CHEATSHEET.cheatmd": [title: "Cheatsheet"],
+      "docs/WHY_RAGEX.md": [title: "Why Ragex (Article)"]
+    ]
+  end
+
+  defp groups_for_extras do
+    [
+      Cheatsheets: [
+        "docs/CHEATSHEET.cheatmd"
+      ],
+      "Features & Philosophy": [
+        "docs/FEATURE_GUIDE.md",
+        "docs/WHY_RAGEX.md"
+      ]
     ]
   end
 

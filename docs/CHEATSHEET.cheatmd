@@ -1,0 +1,344 @@
+# Ragex Cheatsheet
+
+## Getting Started
+
+### Installation & Setup
+
+Add `:ragex` to your `mix.exs` dependencies:
+
+```elixir
+def deps do
+  [
+    {:ragex, "~> 0.29.0"},
+    # Optional local ML vector search acceleration
+    {:bumblebee, "~> 0.5", optional: true},
+    {:exla, "~> 0.9", optional: true}
+  ]
+end
+```
+
+Fetch dependencies and compile:
+
+```bash
+mix deps.get
+mix compile
+```
+
+### Essential Mix Tasks
+
+```bash
+# Setup & Initial Configuration Wizard
+mix ragex.configure
+
+# Analyze current project codebase
+mix ragex.analyze
+
+# Start interactive AI Chat loop in terminal
+mix ragex.chat
+
+# Start interactive CLI refactoring wizard
+mix ragex.refactor
+
+# Run automated AI codebase audit report
+mix ragex.audit --format markdown
+
+# Launch real-time TUI dashboard monitor
+mix ragex.dashboard
+
+# Run CI diff-based analysis on pull requests
+mix ragex.ci --base main
+
+# Migrate embedding models & recalculate vectors
+mix ragex.embeddings.migrate --model sentence-transformers/all-MiniLM-L6-v2
+
+# Cache maintenance
+mix ragex.cache.stats
+mix ragex.cache.refresh
+mix ragex.cache.clear --all
+
+# Shell completions & man pages installation
+mix ragex.completions
+mix ragex.install_man
+```
+
+### Configuration (`config/config.exs` or `.ragex.exs`)
+
+```elixir
+import Config
+
+config :ragex,
+  # Directory auto-indexing on startup
+  auto_analyze_dirs: ["lib", "apps"],
+  
+  # ML Vector Embedding configuration
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2",
+  embedding_batch_size: 32,
+  
+  # Persistent Database backend (:ets or :per_project dllb Rust server)
+  store_backend: :dllb,
+  dllb_mode: :per_project,
+  
+  # AI Provider settings (:deepseek_r1, :openai, :anthropic, :ollama)
+  ai: [
+    provider: :deepseek_r1,
+    model: "deepseek-reasoner",
+    api_key: System.get_env("DEEPSEEK_API_KEY"),
+    max_tokens: 4096,
+    temperature: 0.2
+  ],
+  
+  # Safety & Editing Backups
+  backup_dir: ".ragex/backups",
+  max_backups: 50,
+  auto_format: true
+```
+
+---
+
+## Code Search & Knowledge Graph
+
+### Graph Entity Queries (`Ragex.Graph.Store`)
+
+```elixir
+# Initialize or fetch default store
+{:ok, store} = Ragex.Graph.Store.start_link(name: :my_store)
+
+# Analyze a single file
+Ragex.Analyzers.Elixir.analyze_file("lib/my_app/user.ex", store)
+
+# List all indexed modules
+modules = Ragex.Graph.Store.list_nodes(store, type: :module)
+
+# Find function calls & relationship edges
+callers = Ragex.Graph.Store.get_callers(store, "User.create/1")
+callees = Ragex.Graph.Store.get_callees(store, "User.create/1")
+```
+
+### Graph Algorithms (`Ragex.Graph.Algorithms`)
+
+```elixir
+# Compute PageRank for codebase entity importance
+{:ok, ranks} = Ragex.Graph.Algorithms.page_rank(store, damping_factor: 0.85)
+
+# Find execution call paths between two functions
+{:ok, paths} = Ragex.Graph.Algorithms.find_paths(
+  store,
+  "MyAppWeb.UserController.create/2",
+  "MyApp.Repo.insert/1",
+  max_depth: 6,
+  max_paths: 50
+)
+
+# Betweenness Centrality (detect bottleneck modules)
+{:ok, centrality} = Ragex.Graph.Algorithms.betweenness_centrality(store)
+
+# Architectural Community Detection (Louvain algorithm)
+{:ok, communities} = Ragex.Graph.Algorithms.detect_communities(store, algorithm: :louvain)
+
+# Export graph visualizer file (DOT format)
+{:ok, dot_string} = Ragex.Graph.Algorithms.export_graph(store, format: :dot)
+File.write!("graph.dot", dot_string)
+```
+
+### Neural Vector Search (`Ragex.VectorStore`)
+
+```elixir
+# Natural language semantic code query (<50ms execution)
+{:ok, results} = Ragex.VectorStore.search(
+  store,
+  "function that validates password hash and strength",
+  limit: 10,
+  min_score: 0.65
+)
+
+# Inspect vector score and node metadata
+Enum.each(results, fn %{node: node, score: score} ->
+  IO.puts("[#{Float.round(score, 3)}] #{node.name} (#{node.file}:#{node.line})")
+end)
+```
+
+### Hybrid Retrieval & RRF Fusion (`Ragex.Retrieval.Hybrid`)
+
+```elixir
+# Reciprocal Rank Fusion (combining vector search + graph centrality)
+{:ok, hybrid_results} = Ragex.Retrieval.Hybrid.search(
+  store,
+  "handle Stripe webhook event idempotency",
+  strategy: :rrf,        # :rrf, :semantic_first, or :graph_first
+  rrf_k: 60,
+  limit: 15
+)
+```
+
+---
+
+## Code Editing & Refactoring Engine
+
+### Safe File Operations (`Ragex.Editor`)
+
+```elixir
+# Safe atomic file edit with automatic syntax checking & backup creation
+{:ok, edit_result} = Ragex.Editor.Core.edit_file(
+  "lib/my_app/user.ex",
+  [
+    %{
+      type: :replace,
+      start_line: 14,
+      end_line: 18,
+      replacement: """
+      def verify_password(user, password) do
+        Bcrypt.verify_pass(password, user.password_hash)
+      end
+      """
+    }
+  ],
+  format: true  # Auto-invoke mix format
+)
+
+# Undo / Rollback to previous version
+{:ok, restored_file} = Ragex.Editor.Undo.rollback("lib/my_app/user.ex")
+```
+
+### Multi-File Transaction Editing (`Ragex.Editor.Transaction`)
+
+```elixir
+# Atomic multi-file edit transaction (All-or-Nothing guarantee)
+edits_by_file = %{
+  "lib/my_app/auth.ex" => [%{type: :replace, start_line: 5, end_line: 5, replacement: "def check_token(t) do"}],
+  "lib/my_app_web/plug.ex" => [%{type: :replace, start_line: 12, end_line: 12, replacement: "Auth.check_token(token)"}]
+}
+
+case Ragex.Editor.Transaction.apply_transaction(edits_by_file) do
+  {:ok, results} -> IO.puts("Multi-file edits applied cleanly!")
+  {:error, reason, failed_file} -> IO.puts("Transaction aborted & rolled back on #{failed_file}: #{inspect(reason)}")
+end
+```
+
+### AST Semantic Refactorings (`Ragex.Editor.Refactor`)
+
+```elixir
+# Project-wide function rename across all caller sites & arities
+{:ok, report} = Ragex.Editor.Refactor.rename_function(
+  store,
+  "MyApp.Auth",
+  "valid_credentials?",  # old name
+  "authenticated?",      # new name
+  arity: 2
+)
+
+# Project-wide module rename (updates definitions, aliases, and imports)
+{:ok, report} = Ragex.Editor.Refactor.rename_module(
+  store,
+  "MyApp.OldAccount",
+  "MyApp.UserAccount"
+)
+
+# Advanced Refactorings: Change Parameter Signature
+{:ok, report} = Ragex.Editor.Advanced.change_signature(
+  store,
+  "MyApp.User.create/2",
+  add_params: [%{name: "opts", default: "[]", index: 2}]
+)
+```
+
+---
+
+## Code Quality, Security & Business Logic
+
+### Quality & Complexity Audits (`Ragex.Analysis`)
+
+```elixir
+# Dead code detection with confidence scoring
+{:ok, dead_functions} = Ragex.Analysis.DeadCode.analyze(store, min_confidence: 0.7)
+
+# Coupling & Instability analysis (Ca, Ce, Instability score)
+{:ok, coupling_report} = Ragex.Analysis.DependencyGraph.analyze_coupling(store)
+IO.puts("Instability (I): #{coupling_report["MyApp.User"].instability}")
+
+# Duplication Analysis (Type I - Type IV clones)
+{:ok, duplicates} = Ragex.Analysis.Duplication.analyze_directory("lib/", min_similarity: 0.85)
+
+# Cyclomatic & Cognitive Complexity metrics
+{:ok, quality} = Ragex.Analysis.Quality.analyze_file("lib/my_app/complex_service.ex")
+IO.puts("Cognitive Complexity: #{quality.cognitive_complexity}")
+```
+
+### Business Logic & Security Scans
+
+```elixir
+# Run 20 Business Logic Analyzers (callback hell, missing telemetry, N+1 queries)
+{:ok, logic_issues} = Ragex.Analysis.BusinessLogic.analyze_project(".")
+
+# Security Vulnerability & Secret Audit
+{:ok, sec_report} = Ragex.Analysis.Security.audit_codebase(".")
+{:ok, secrets} = Ragex.Analysis.Security.check_secrets(".")
+```
+
+---
+
+## Model Context Protocol (MCP) Integration
+
+### Client Launcher Script (`bin/ragex-mcp`)
+
+Run directly from stdin/stdout MCP client harness:
+
+```bash
+# Stdio mode (default launcher)
+bin/ragex-mcp --project /path/to/my_project
+
+# Socket daemon bridge mode
+bin/ragex-mcp --socket /tmp/ragex.sock
+```
+
+### IDE Configuration Manifests
+
+#### Claude Desktop (`~/.config/Claude/claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "ragex": {
+      "command": "/path/to/ragex/bin/ragex-mcp",
+      "args": ["--project", "/path/to/your/elixir_app"]
+    }
+  }
+}
+```
+
+#### Zed Editor (`~/.config/zed/settings.json`)
+
+```json
+{
+  "context_servers": {
+    "ragex": {
+      "command": {
+        "path": "/path/to/ragex/bin/ragex-mcp",
+        "args": ["--project", "/path/to/your/elixir_app"]
+      }
+    }
+  }
+}
+```
+
+### Top MCP Tool Signatures for Prompt Engineering
+
+| MCP Tool Name | Primary Purpose | Key Parameters |
+| :--- | :--- | :--- |
+| `hybrid_search` | Search code by text + structure | `query` (str), `strategy` ("rrf"), `limit` (int) |
+| `query_graph` | Direct node/edge lookup | `symbol` (str), `relationship` ("calls"\|"callees") |
+| `find_paths` | Find execution chains | `start_node` (str), `target_node` (str), `max_depth` (int) |
+| `edit_file` | Safe atomic line replacement | `path` (str), `edits` (list), `format` (bool) |
+| `edit_files` | Atomic multi-file transaction | `edits_by_file` (map) |
+| `refactor_code` | Semantic AST rename | `operation` ("rename_function"), `params` (map) |
+| `rag_query` | Ask codebase AI questions | `prompt` (str), `provider` ("deepseek_r1"\|"openai") |
+| `rag_explain` | Deep explanation of module | `symbol` (str), `aspect` ("complexity"\|"all") |
+| `analyze_impact` | Predict consequences of edit | `symbol` (str), `operation` ("rename_function") |
+| `security_audit` | OWASP & Vulnerability scan | `path` (str), `severity` ("high"\|"all") |
+
+### MCP Resource URIs (`ragex://`)
+
+- `ragex://stats/graph` — Node/edge counts, PageRank distribution, degree statistics.
+- `ragex://cache/status` — Vector cache integrity, file tracking metadata, stale entities.
+- `ragex://models/config` — Local embedding model details and RAM footprint.
+- `ragex://index/project` — Tracked files list and language percentage breakdown.
+- `ragex://analysis/summary` — High-level code quality, community modularity clusters.
