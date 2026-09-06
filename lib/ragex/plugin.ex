@@ -33,7 +33,8 @@ defmodule Ragex.Plugin do
               inputSchema: %{
                 type: "object",
                 properties: %{}
-              }
+              },
+              destruction_level: :none
             }
           ]
         end
@@ -45,10 +46,13 @@ defmodule Ragex.Plugin do
       end
   """
 
+  @type destruction_level :: :none | :low | :medium | :high | :full
+
   @type tool_schema :: %{
           name: String.t(),
           description: String.t(),
-          inputSchema: map()
+          inputSchema: map(),
+          destruction_level: destruction_level()
         }
 
   @type plugin_category ::

@@ -2410,6 +2410,21 @@ defmodule Ragex.MCP.Handlers.Tools do
     {:error, "Tool arguments must be a map"}
   end
 
+  @doc """
+  Executes multiple tool calls concurrently in parallel.
+  """
+  def call_tools(tool_requests) when is_list(tool_requests) do
+    try do
+      if Process.whereis(Ragex.Plugin.Registry) do
+        Ragex.Plugin.Registry.dispatch_tools(tool_requests)
+      else
+        {:error, :plugin_registry_unavailable}
+      end
+    catch
+      _, _ -> {:error, :plugin_registry_unavailable}
+    end
+  end
+
   defp do_call_tool(tool_name, arguments) do
     plugin_result =
       try do

@@ -72,7 +72,8 @@ defmodule MyCompany.Plugins.JiraIntegration do
             }
           },
           required: ["ticket_key"]
-        }
+        },
+        destruction_level: :none
       }
     ]
   end

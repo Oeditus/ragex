@@ -58,6 +58,8 @@ defmodule Ragex.Application do
         Ragex.Agent.Memory,
         # MCP tool telemetry tracking
         Ragex.MCP.Telemetry,
+        # Task Supervisor for parallel plugin tool execution
+        {Task.Supervisor, name: Ragex.Plugin.TaskSupervisor},
         # Plugin Registry for dynamic MCP tools & extensions
         Ragex.Plugin.Registry,
         # Inter-Plugin EventBus

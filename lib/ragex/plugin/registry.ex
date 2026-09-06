@@ -1,7 +1,7 @@
 defmodule Ragex.Plugin.Registry do
   @moduledoc """
   Manages the lifecycle, discovery, topological dependency sorting, tool aggregation,
-  and execution routing for Ragex plugins.
+  destruction-level safety checks, parallel execution scheduling, and execution routing for Ragex plugins.
   """
 
   use GenServer
@@ -52,9 +52,22 @@ defmodule Ragex.Plugin.Registry do
     GenServer.call(__MODULE__, :list_tools)
   end
 
-  @doc "Dispatches a tool call to the responsible plugin, if registered."
+  @doc "Dispatches a single tool call."
   def dispatch_tool(tool_name, args) when is_binary(tool_name) and is_map(args) do
-    GenServer.call(__MODULE__, {:dispatch, tool_name, args})
+    GenServer.call(__MODULE__, {:dispatch_tool, tool_name, args})
+  end
+
+  @doc """
+  Dispatches multiple tool calls in parallel for non-destructive tools (:destruction_level == :none).
+  Accepts a list of tool calls: `[{"tool1", %{...}}, {"tool2", %{...}}]` or `[%{name: "tool1", args: %{...}}]`.
+  """
+  def dispatch_tools(tool_requests, opts \\ []) when is_list(tool_requests) do
+    GenServer.call(__MODULE__, {:dispatch_tools, tool_requests, opts})
+  end
+
+  @doc "Lists currently running tools executing in parallel."
+  def list_running_tools do
+    GenServer.call(__MODULE__, :list_running_tools)
   end
 
   @doc "Returns dependency mapping for all registered plugins."
@@ -71,7 +84,8 @@ defmodule Ragex.Plugin.Registry do
 
     state = %{
       plugins: %{},
-      tool_map: %{}
+      tool_map: %{},
+      running_tools: %{}
     }
 
     state =
@@ -169,17 +183,17 @@ defmodule Ragex.Plugin.Registry do
   end
 
   @impl true
-  def handle_call({:dispatch, tool_name, args}, _from, state) do
+  def handle_call(:list_running_tools, _from, state) do
+    list = Map.values(state.running_tools)
+    {:reply, list, state}
+  end
+
+  @impl true
+  def handle_call({:dispatch_tool, tool_name, args}, _from, state) do
     case Map.fetch(state.tool_map, tool_name) do
-      {:ok, %{module: mod, enabled: true}} ->
-        try do
-          result = mod.execute(tool_name, args)
-          {:reply, result, state}
-        catch
-          kind, reason ->
-            Logger.error("Plugin execution error in #{inspect(mod)} for #{tool_name}: #{inspect({kind, reason})}")
-            {:reply, {:error, "Plugin execution failure: #{inspect(reason)}"}, state}
-        end
+      {:ok, %{module: mod, enabled: true, destruction_level: destruction_level}} ->
+        result = execute_single_tool(mod, tool_name, args, destruction_level)
+        {:reply, result, state}
 
       {:ok, %{enabled: false}} ->
         {:reply, {:error, "Plugin for tool '#{tool_name}' is currently disabled"}, state}
@@ -189,15 +203,96 @@ defmodule Ragex.Plugin.Registry do
     end
   end
 
+  @impl true
+  def handle_call({:dispatch_tools, tool_requests, opts}, _from, state) do
+    timeout = Keyword.get(opts, :timeout, 30_000)
+
+    # Normalize requests into [{tool_name, args}]
+    normalized_requests =
+      Enum.map(tool_requests, fn
+        {name, args} when is_binary(name) and is_map(args) -> {name, args}
+        %{"name" => name, "args" => args} -> {name, args}
+        %{name: name, args: args} -> {name, args}
+      end)
+
+    results =
+      normalized_requests
+      |> Enum.map(fn {tool_name, args} ->
+        case Map.fetch(state.tool_map, tool_name) do
+          {:ok, %{module: mod, enabled: true, destruction_level: level}} ->
+            {:valid, mod, tool_name, args, level}
+
+          {:ok, %{enabled: false}} ->
+            {:error, tool_name, "Plugin for tool '#{tool_name}' is currently disabled"}
+
+          :error ->
+            {:error, tool_name, :unhandled_by_plugins}
+        end
+      end)
+
+    # Partition non-destructive tools (:none) for parallel execution
+    {valid_tools, errors} =
+      Enum.reduce(results, {[], []}, fn
+        {:valid, mod, name, args, level}, {v, e} -> {[{mod, name, args, level} | v], e}
+        {:error, name, reason}, {v, e} -> {v, [{name, {:error, reason}} | e]}
+      end)
+
+    valid_tools = Enum.reverse(valid_tools)
+
+    # Execute non-destructive tools in parallel using Task.async
+    parallel_results =
+      if Process.whereis(Ragex.Plugin.TaskSupervisor) do
+        valid_tools
+        |> Enum.map(fn {mod, name, args, level} ->
+          Task.Supervisor.async_nolink(Ragex.Plugin.TaskSupervisor, fn ->
+            {name, execute_single_tool(mod, name, args, level)}
+          end)
+        end)
+        |> Task.yield_many(timeout)
+        |> Enum.map(fn {task, res} ->
+          case res do
+            {:ok, {name, tool_res}} -> {name, tool_res}
+            {:exit, reason} -> Task.shutdown(task, :bruteforce); {"unknown", {:error, {:task_exit, reason}}}
+            nil -> Task.shutdown(task, :bruteforce); {"unknown", {:error, :timeout}}
+          end
+        end)
+      else
+        # Fallback sequential execution
+        Enum.map(valid_tools, fn {mod, name, args, level} ->
+          {name, execute_single_tool(mod, name, args, level)}
+        end)
+      end
+
+    combined_results = parallel_results ++ errors
+    {:reply, {:ok, combined_results}, state}
+  end
+
+  defp execute_single_tool(mod, tool_name, args, destruction_level) do
+    try do
+      Logger.debug("Executing plugin tool '#{tool_name}' (destruction_level: #{destruction_level}) via #{inspect(mod)}")
+      mod.execute(tool_name, args)
+    catch
+      kind, reason ->
+        Logger.error("Plugin execution error in #{inspect(mod)} for #{tool_name}: #{inspect({kind, reason})}")
+        {:error, "Plugin execution failure: #{inspect(reason)}"}
+    end
+  end
+
   defp do_register_plugin(plugin_module, opts, state) do
     if Code.ensure_loaded?(plugin_module) and function_exported?(plugin_module, :info, 0) and function_exported?(plugin_module, :tools, 0) do
       info = plugin_module.info()
-      tools = plugin_module.tools()
+      raw_tools = plugin_module.tools()
       plugin_id = Map.get(info, :id) || plugin_module
 
       if function_exported?(plugin_module, :init, 1) do
         plugin_module.init(opts)
       end
+
+      # Enrich tools with destruction_level (defaults to :none)
+      tools =
+        Enum.map(raw_tools, fn tool ->
+          Map.put_new(tool, :destruction_level, :none)
+        end)
 
       entry = %{
         id: plugin_id,
@@ -229,23 +324,21 @@ defmodule Ragex.Plugin.Registry do
     |> get_topological_sorted_plugins()
     |> Enum.flat_map(fn entry ->
       Enum.map(entry.tools, fn tool ->
-        {tool.name, %{module: entry.module, plugin_id: entry.id, enabled: entry.enabled}}
+        destruction_level = Map.get(tool, :destruction_level, :none)
+        {tool.name, %{module: entry.module, plugin_id: entry.id, enabled: entry.enabled, destruction_level: destruction_level}}
       end)
     end)
     |> Enum.into(%{})
   end
 
-  # Performs topological sorting on plugins based on dependency graph + priority integer
   defp get_topological_sorted_plugins(plugins_map) when is_map(plugins_map) do
     graph = :digraph.new()
 
     try do
-      # Add all plugin vertices
       Enum.each(plugins_map, fn {id, _entry} ->
         :digraph.add_vertex(graph, id)
       end)
 
-      # Add dependency edges (dependency -> plugin)
       Enum.each(plugins_map, fn {id, entry} ->
         Enum.each(entry.dependencies, fn dep_id ->
           if Map.has_key?(plugins_map, dep_id) do
