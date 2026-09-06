@@ -8,6 +8,10 @@ defmodule Ragex.Plugin.Registry do
   require Logger
 
   @default_plugins [
+    Ragex.Plugins.GraphAnalytics,
+    Ragex.Plugins.GitArchaeology,
+    Ragex.Plugins.CodeQuality,
+    Ragex.Plugins.SecurityAudit,
     Ragex.Plugins.URLAnalyzer
   ]
 

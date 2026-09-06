@@ -2,6 +2,15 @@
 
 Ragex features an **Extended Plugin Architecture** (`Ragex.Plugin` & `Ragex.Plugin.Registry`) that allows developers and teams to create custom MCP tools, code analyzers, and service integrations without modifying Ragex core files.
 
+### Built-in Domain Plugins
+
+Ragex comes pre-packaged with modular domain plugins:
+- **`Ragex.Plugins.GraphAnalytics`**: Knowledge Graph entity lookup & centrality algorithms.
+- **`Ragex.Plugins.GitArchaeology`**: Line-by-line git blame, history, PR details, and co-change coupling.
+- **`Ragex.Plugins.CodeQuality`**: Code smell detection, dead code analysis, and duplication scanner.
+- **`Ragex.Plugins.SecurityAudit`**: CWE security vulnerability scanner and secret checker.
+- **`Ragex.Plugins.URLAnalyzer`**: URL analysis for remote Git repositories, web pages, and API specs.
+
 ---
 
 ## 🚀 Quick Start: Scaffolding a New Plugin
