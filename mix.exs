@@ -220,7 +220,7 @@ defmodule Ragex.MixProject do
       "stuff/docs/RAGEX-VS-CICADA.md": [title: "Ragex vs Cicada"],
       "examples/product_cart/DEMO.md": [title: "Cart demo: README"],
       "docs/WHY_RAGEX.md": [title: "Why Ragex (Article)"],
-      "stuff/docs/ZED.md": [title: "Zed Editor Integration"],
+      "stuff/docs/ZED.md": [title: "Zed Integration (Deprecated)"],
       "docs/CHEATSHEET.cheatmd": [title: "Cheatsheet"],
       "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md": [title: "Using Ragex as MCP Server"],
       "stuff/docs/PROMPTS.md": [title: "MCP Prompts"],
