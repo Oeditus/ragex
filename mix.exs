@@ -195,6 +195,7 @@ defmodule Ragex.MixProject do
         Ragex.Graph,
         Ragex.MCP,
         Ragex.MCP.Handlers,
+        Ragex.Plugins,
         Ragex.RAG,
         Ragex.Retrieval,
         Ragex.Store,
