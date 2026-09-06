@@ -196,7 +196,8 @@ defmodule Ragex.MixProject do
         Ragex.MCP.Handlers,
         Ragex.RAG,
         Ragex.Retrieval,
-        Ragex.Store
+        Ragex.Store,
+        Ragex.URLAnalyzer
       ],
       authors: ["Aleksei Matiushkin"],
       canonical: "https://hexdocs.pm/#{@app}",
@@ -250,8 +251,16 @@ defmodule Ragex.MixProject do
       "Core Components": [
         Ragex,
         Ragex.LanguageSupport,
-        Ragex.Application,
-        Ragex.LanguageSupport
+        Ragex.Plugin,
+        Ragex.Plugin.EventBus,
+        Ragex.Plugin.Registry
+      ],
+      Plugins: [
+        Ragex.Plugins.CodeQuality,
+        Ragex.Plugins.GitArchaeology,
+        Ragex.Plugins.GraphAnalytics,
+        Ragex.Plugins.SecurityAudit,
+        Ragex.Plugins.URLAnalyzer
       ],
       "MCP Server": [
         Ragex.MCP.Client,
@@ -442,6 +451,11 @@ defmodule Ragex.MixProject do
         Ragex.CLI.Prompt
       ],
       Utilities: [
+        Ragex.URLAnalyzer,
+        Ragex.URLAnalyzer.Classifier,
+        Ragex.URLAnalyzer.GitFetcher,
+        Ragex.URLAnalyzer.Report,
+        Ragex.URLAnalyzer.WebFetcher,
         Ragex.Watcher
       ]
     ]
