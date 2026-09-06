@@ -145,7 +145,7 @@ Experience the power of an AI code intelligence harness that **you** own, **you*
 
 1. **Add to `mix.exs`**:
    ```elixir
-   {:ragex, "~> 0.29.0"}
+   {:ragex, "~> 0.30"}
    ```
 
 2. **Configure Your Project**:

@@ -1073,9 +1073,16 @@ The following streaming improvements are planned but not yet implemented:
 
 ## Supported Languages
 
-| Language | Extensions | Parser | Status |
-|----------|-----------|--------|--------|
-| Elixir | `.ex`, `.exs` | Native AST (`Code.string_to_quoted`) | ✓ Full |
-| Erlang | `.erl`, `.hrl` | Native AST (`:erl_scan`, `:erl_parse`) | ✓ Full |
-| Python | `.py` | Python `ast` module (subprocess) | ✓ Full |
-| JavaScript/TypeScript | `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs` | Regex-based | ✗ Basic |
+Everything that’s supported by [`metastatic`](https://metastatic.hexdocs.pm)
+
+| Language | Atom Identifier | Extensions   | Adapter Module | Parser Strategy                                      |
+|----------|-----------------|--------------|----------------|------------------------------------------------------|
+| Cure     | :cure           | .cure        | cure.ex        | In-process BEAM modules with Subprocess fallback     |
+| Elixir   | :elixir         | .ex, .exs	| elixir.ex      | Native Elixir Code.string_to_quoted/2                |
+| Erlang   | :erlang         | .erl, .hrl	| erlang.ex      | Native BEAM :erl_scan and :erl_parse                 |
+| Haskell  | :haskell        | .hs, .lhs	| haskell.ex     | Subprocess Stack binary (priv/parsers/haskell)       |
+| JS       | :javascript     | .js, .jsx	| javascript.ex  | Subprocess Node.js Babel parser (priv/parsers/js)    |
+| March    | :march          | .march, .mch	| march.ex       | Subprocess OCaml Dune binary (priv/parsers/march)    |
+| Python   | :python         | .py          | python.ex      | Subprocess Python ast parser (priv/parsers/python)   |
+| Ruby     | :ruby           | .rb          | ruby.ex        | Subprocess Prism / Parser gem (priv/parsers/ruby)    |
+| TS       | :typescript     | .ts, .tsx    | typescript.ex  | Subprocess TypeScript compiler API (priv/parsers/js) |
