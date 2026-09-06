@@ -133,6 +133,7 @@ defmodule Ragex.MixProject do
         CHANGELOG.md
         LICENSE
         stuff/img
+        stuff/img/*
         stuff/docs/ALGORITHMS.md
         stuff/docs/ANALYSIS.md
         stuff/docs/CONFIGURATION.md
@@ -169,7 +170,7 @@ defmodule Ragex.MixProject do
   defp docs do
     [
       main: "readme",
-      logo: "stuff/img/logo-48x48.png",
+      logo: "stuff/img/logo.png",
       assets: %{"stuff/img" => "assets"},
       extras: extras(),
       extra_section: "GUIDES",
@@ -220,7 +221,17 @@ defmodule Ragex.MixProject do
       "examples/product_cart/DEMO.md": [title: "Cart demo: README"],
       "docs/WHY_RAGEX.md": [title: "Why Ragex (Article)"],
       "stuff/docs/ZED.md": [title: "Zed Editor Integration"],
-      "docs/CHEATSHEET.cheatmd": [title: "Cheatsheet"]
+      "docs/CHEATSHEET.cheatmd": [title: "Cheatsheet"],
+      "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md": [title: "Using Ragex as MCP Server"],
+      "stuff/docs/PROMPTS.md": [title: "MCP Prompts"],
+      "stuff/docs/RESOURCES.md": [title: "MCP Resources"],
+      "stuff/docs/TOOLS.md": [title: "MCP Tools Reference"],
+      "stuff/docs/ANALYSIS.md": [title: "Code Analysis"],
+      "stuff/docs/ALGORITHMS.md": [title: "Graph Algorithms"],
+      "stuff/docs/SUGGESTIONS.md": [title: "Refactoring Suggestions"],
+      "stuff/docs/PERSISTENCE.md": [title: "Persistence & Caching"],
+      "stuff/docs/STREAMING.md": [title: "Streaming Notifications"],
+      "SERVER_GUIDE.md": [title: "Socket Server Guide"]
     ]
   end
 
@@ -231,21 +242,23 @@ defmodule Ragex.MixProject do
       ],
       "Features & Philosophy": [
         "docs/FEATURE_GUIDE.md",
-        "docs/WHY_RAGEX.md"
+        "docs/WHY_RAGEX.md",
+        "stuff/docs/RAGEX-VS-CICADA.md",
+        "stuff/docs/CUSTOM_PLUGINS.md"
       ],
       MCP: [
-        "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md": [title: "Using Ragex as MCP Server"],
-        "stuff/docs/PROMPTS.md": [title: "MCP Prompts"],
-        "stuff/docs/RESOURCES.md": [title: "MCP Resources"],
-        "stuff/docs/TOOLS.md": [title: "MCP Tools"]
+        "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md",
+        "stuff/docs/PROMPTS.md",
+        "stuff/docs/RESOURCES.md",
+        "stuff/docs/TOOLS.md",
+        "SERVER_GUIDE.md"
       ],
       "Under the Hood": [
-        "stuff/docs/ANALYSIS.md": [title: "Code Analysis"],
-        "stuff/docs/ALGORITHMS.md": [title: "Graph Algorithms"],
-        "stuff/docs/SUGGESTIONS.md": [title: "Refactoring Suggestions"],
-        "stuff/docs/PERSISTENCE.md": [title: "Persistence & Caching"],
-        "stuff/docs/STREAMING.md": [title: "Streaming Notifications"],
-        "SERVER_GUIDE.md": [title: "Socket Server Guide"]
+        "stuff/docs/ANALYSIS.md",
+        "stuff/docs/ALGORITHMS.md",
+        "stuff/docs/SUGGESTIONS.md",
+        "stuff/docs/PERSISTENCE.md",
+        "stuff/docs/STREAMING.md"
       ]
     ]
   end
