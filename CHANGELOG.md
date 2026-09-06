@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.30.0]
+
+### Added
+
+- **URL Analyzer Engine (`Ragex.URLAnalyzer`)**:
+  - Automatically classifies input URLs (`:git_repo`, `:web_page`, `:raw_code`, `:api_spec`).
+  - Supports shallow cloning of remote GitHub/GitLab repositories with full AST and directory analysis.
+  - Fetches web documentation, OpenAPI specs, and raw files, formatting machine-understandable JSON reports (`ragex.url_analysis.v1`) and indexing resources into the Knowledge Graph.
+- **Extended Plugin Architecture (`Ragex.Plugin` & `Ragex.Plugin.Registry`)**:
+  - Converts Ragex into an Orchestrator Core supported by modular domain plugins.
+  - Implements topological graph sorting (`:digraph`) for plugin initialization based on `dependencies` and `priority`.
+  - Built-in domain plugins: `Ragex.Plugins.GraphAnalytics`, `Ragex.Plugins.GitArchaeology`, `Ragex.Plugins.CodeQuality`, `Ragex.Plugins.SecurityAudit`, and `Ragex.Plugins.URLAnalyzer`.
+- **Parallel Execution & Safety Classification (`destruction_level`)**:
+  - Tools declare a `:destruction_level` (`:none`, `:low`, `:medium`, `:high`, `:full`).
+  - Non-destructive tools (`destruction_level: :none`) run concurrently in parallel via `Task.Supervisor` (`Ragex.Plugin.TaskSupervisor`).
+  - Multi-tool batch execution API `dispatch_tools/2` and `call_tools/1`.
+- **Inter-Plugin Event Bus (`Ragex.Plugin.EventBus`)**:
+  - Asynchronous and synchronous event broadcasting (`broadcast/2`, `sync_broadcast/2`) to plugins implementing `@callback handle_event/2`.
+- **Plugin Scaffold Generator (`mix ragex.plugin`)**:
+  - Mix task `mix ragex.plugin NAME` generates plugin module and unit test scaffolds out of the box.
+- **HexDocs Documentation Guide**:
+  - Published comprehensive "Writing Custom Plugins" guide in `docs/WRITING_CUSTOM_PLUGINS.md`.
+
 ## [0.29.0]
 
 ### Changed
