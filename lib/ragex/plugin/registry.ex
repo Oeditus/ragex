@@ -1,6 +1,7 @@
 defmodule Ragex.Plugin.Registry do
   @moduledoc """
-  Manages the lifecycle, discovery, tool aggregation, and execution routing for Ragex plugins.
+  Manages the lifecycle, discovery, topological dependency sorting, tool aggregation,
+  and execution routing for Ragex plugins.
   """
 
   use GenServer
@@ -37,12 +38,12 @@ defmodule Ragex.Plugin.Registry do
     GenServer.call(__MODULE__, {:disable, plugin_id})
   end
 
-  @doc "Lists all registered plugins and their current status."
+  @doc "Lists all registered plugins ordered topologically by dependency and priority."
   def list_plugins do
     GenServer.call(__MODULE__, :list_plugins)
   end
 
-  @doc "Returns aggregated tool schemas across all active plugins."
+  @doc "Returns aggregated tool schemas across all active plugins in priority order."
   def list_tools do
     GenServer.call(__MODULE__, :list_tools)
   end
@@ -50,6 +51,11 @@ defmodule Ragex.Plugin.Registry do
   @doc "Dispatches a tool call to the responsible plugin, if registered."
   def dispatch_tool(tool_name, args) when is_binary(tool_name) and is_map(args) do
     GenServer.call(__MODULE__, {:dispatch, tool_name, args})
+  end
+
+  @doc "Returns dependency mapping for all registered plugins."
+  def list_plugin_dependencies do
+    GenServer.call(__MODULE__, :list_dependencies)
   end
 
   # Server Callbacks
@@ -127,11 +133,11 @@ defmodule Ragex.Plugin.Registry do
 
   @impl true
   def handle_call(:list_plugins, _from, state) do
+    ordered_entries = get_topological_sorted_plugins(state.plugins)
+
     list =
-      state.plugins
-      |> Map.values()
-      |> Enum.map(fn entry ->
-        Map.take(entry, [:id, :name, :version, :description, :module, :enabled, :tools_count])
+      Enum.map(ordered_entries, fn entry ->
+        Map.take(entry, [:id, :name, :version, :description, :category, :dependencies, :priority, :capabilities, :module, :enabled, :tools_count])
       end)
 
     {:reply, list, state}
@@ -141,11 +147,21 @@ defmodule Ragex.Plugin.Registry do
   def handle_call(:list_tools, _from, state) do
     tools =
       state.plugins
-      |> Map.values()
+      |> get_topological_sorted_plugins()
       |> Enum.filter(& &1.enabled)
       |> Enum.flat_map(& &1.tools)
 
     {:reply, tools, state}
+  end
+
+  @impl true
+  def handle_call(:list_dependencies, _from, state) do
+    deps_map =
+      state.plugins
+      |> Enum.map(fn {id, entry} -> {id, entry.dependencies} end)
+      |> Enum.into(%{})
+
+    {:reply, deps_map, state}
   end
 
   @impl true
@@ -184,6 +200,10 @@ defmodule Ragex.Plugin.Registry do
         name: Map.get(info, :name, to_string(plugin_id)),
         version: Map.get(info, :version, "1.0.0"),
         description: Map.get(info, :description, ""),
+        category: Map.get(info, :category, :tool),
+        dependencies: Map.get(info, :dependencies, []),
+        priority: Map.get(info, :priority, 50),
+        capabilities: Map.get(info, :capabilities, []),
         module: plugin_module,
         enabled: true,
         tools: tools,
@@ -202,12 +222,55 @@ defmodule Ragex.Plugin.Registry do
 
   defp rebuild_tool_map(plugins) do
     plugins
-    |> Map.values()
+    |> get_topological_sorted_plugins()
     |> Enum.flat_map(fn entry ->
       Enum.map(entry.tools, fn tool ->
         {tool.name, %{module: entry.module, plugin_id: entry.id, enabled: entry.enabled}}
       end)
     end)
     |> Enum.into(%{})
+  end
+
+  # Performs topological sorting on plugins based on dependency graph + priority integer
+  defp get_topological_sorted_plugins(plugins_map) when is_map(plugins_map) do
+    graph = :digraph.new()
+
+    try do
+      # Add all plugin vertices
+      Enum.each(plugins_map, fn {id, _entry} ->
+        :digraph.add_vertex(graph, id)
+      end)
+
+      # Add dependency edges (dependency -> plugin)
+      Enum.each(plugins_map, fn {id, entry} ->
+        Enum.each(entry.dependencies, fn dep_id ->
+          if Map.has_key?(plugins_map, dep_id) do
+            :digraph.add_vertex(graph, dep_id)
+            :digraph.add_edge(graph, dep_id, id)
+          else
+            Logger.warning("Plugin #{inspect(id)} has missing dependency: #{inspect(dep_id)}")
+          end
+        end)
+      end)
+
+      case :digraph_utils.topsort(graph) do
+        sorted_ids when is_list(sorted_ids) ->
+          sorted_ids
+          |> Enum.filter(&Map.has_key?(plugins_map, &1))
+          |> Enum.map(&Map.fetch!(plugins_map, &1))
+
+        false ->
+          Logger.warning("Cyclic plugin dependency detected! Falling back to priority sorting.")
+          sort_by_priority(plugins_map)
+      end
+    after
+      :digraph.delete(graph)
+    end
+  end
+
+  defp sort_by_priority(plugins_map) do
+    plugins_map
+    |> Map.values()
+    |> Enum.sort_by(& &1.priority)
   end
 end

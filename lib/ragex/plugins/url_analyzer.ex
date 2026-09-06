@@ -11,7 +11,11 @@ defmodule Ragex.Plugins.URLAnalyzer do
       id: :url_analyzer,
       name: "URL & Git Repository Analyzer",
       version: "1.0.0",
-      description: "Fetches and analyzes Git repositories, web documentation, API specs, and raw code files from URLs."
+      description: "Fetches and analyzes Git repositories, web documentation, API specs, and raw code files from URLs.",
+      category: :analyzer,
+      dependencies: [],
+      priority: 50,
+      capabilities: [:url_analysis, :git_analysis]
     }
   end
 

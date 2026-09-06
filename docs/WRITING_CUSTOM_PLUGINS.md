@@ -37,7 +37,11 @@ defmodule MyCompany.Plugins.JiraIntegration do
       name: "Jira Issue Tracker",
       version: "1.0.0",
       description: "Integrates Ragex with Jira to link code elements to active tickets.",
-      author: "DevOps Team"
+      author: "DevOps Team",
+      category: :integration,
+      dependencies: [],
+      priority: 50,
+      capabilities: [:jira_sync]
     }
   end
 

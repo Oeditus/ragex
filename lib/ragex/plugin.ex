@@ -16,7 +16,11 @@ defmodule Ragex.Plugin do
             id: :my_plugin,
             name: "My Custom Plugin",
             version: "1.0.0",
-            description: "Provides custom project tools."
+            description: "Provides custom project tools.",
+            category: :tool,
+            dependencies: [],
+            priority: 50,
+            capabilities: [:custom_tools]
           }
         end
 
@@ -47,12 +51,19 @@ defmodule Ragex.Plugin do
           inputSchema: map()
         }
 
+  @type plugin_category ::
+          :analyzer | :editor | :security | :search | :ai_provider | :git | :integration | :tool
+
   @type plugin_info :: %{
           id: atom(),
           name: String.t(),
           version: String.t(),
           description: String.t(),
-          author: String.t() | nil
+          author: String.t() | nil,
+          category: plugin_category(),
+          dependencies: [atom()],
+          priority: integer(),
+          capabilities: [atom()]
         }
 
   @doc "Returns metadata describing the plugin."
@@ -68,5 +79,8 @@ defmodule Ragex.Plugin do
   @doc "Optional initialization hook called when registering the plugin."
   @callback init(opts :: keyword()) :: :ok | {:error, term()}
 
-  @optional_callbacks [init: 1]
+  @doc "Optional event callback invoked when system events are broadcast."
+  @callback handle_event(event_name :: atom(), payload :: map()) :: :ok | term()
+
+  @optional_callbacks [init: 1, handle_event: 2]
 end
