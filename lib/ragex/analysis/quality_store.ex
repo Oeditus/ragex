@@ -305,9 +305,18 @@ defmodule Ragex.Analysis.QualityStore do
   end
 
   defp calculate_stats(nodes, total_files) do
-    cyclomatic_values = Enum.map(nodes, fn n -> Map.get(n.data, :cyclomatic) || Map.get(n.data, "cyclomatic") || 0 end)
-    cognitive_values = Enum.map(nodes, fn n -> Map.get(n.data, :cognitive) || Map.get(n.data, "cognitive") || 0 end)
-    nesting_values = Enum.map(nodes, fn n -> Map.get(n.data, :max_nesting) || Map.get(n.data, "max_nesting") || 0 end)
+    cyclomatic_values =
+      Enum.map(nodes, fn n ->
+        Map.get(n.data, :cyclomatic) || Map.get(n.data, "cyclomatic") || 0
+      end)
+
+    cognitive_values =
+      Enum.map(nodes, fn n -> Map.get(n.data, :cognitive) || Map.get(n.data, "cognitive") || 0 end)
+
+    nesting_values =
+      Enum.map(nodes, fn n ->
+        Map.get(n.data, :max_nesting) || Map.get(n.data, "max_nesting") || 0
+      end)
 
     files_with_warnings =
       Enum.count(nodes, fn n ->
@@ -322,7 +331,9 @@ defmodule Ragex.Analysis.QualityStore do
 
     languages =
       nodes
-      |> Enum.group_by(fn n -> Map.get(n.data, :language) || Map.get(n.data, "language") || :elixir end)
+      |> Enum.group_by(fn n ->
+        Map.get(n.data, :language) || Map.get(n.data, "language") || :elixir
+      end)
       |> Enum.map(fn {lang, lang_nodes} -> {lang, length(lang_nodes)} end)
       |> Enum.into(%{})
 

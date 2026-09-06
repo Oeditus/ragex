@@ -180,6 +180,38 @@ defmodule Ragex.MCP.Handlers.Tools do
             }
           },
           %{
+            name: "analyze_url",
+            description:
+              "Fetches and analyzes a URL (GitHub/GitLab repo, web page, API specification, or raw code file). Returns a machine-understandable report and indexes findings into the knowledge graph.",
+            inputSchema: %{
+              type: "object",
+              properties: %{
+                url: %{
+                  type: "string",
+                  description:
+                    "Target URL to analyze (e.g., https://github.com/owner/repo or web page)"
+                },
+                depth: %{
+                  type: "string",
+                  enum: ["shallow", "deep"],
+                  default: "shallow",
+                  description: "Depth of analysis (shallow or deep)"
+                },
+                index_graph: %{
+                  type: "boolean",
+                  default: true,
+                  description: "Whether to index findings into the Ragex knowledge graph"
+                },
+                auth_token: %{
+                  type: "string",
+                  description:
+                    "Optional authentication token for private GitHub/GitLab repositories"
+                }
+              },
+              required: ["url"]
+            }
+          },
+          %{
             name: "watch_directory",
             description: "Start watching a directory for file changes and auto-reindex",
             inputSchema: %{
@@ -2374,6 +2406,9 @@ defmodule Ragex.MCP.Handlers.Tools do
       "analyze_directory" ->
         analyze_directory(arguments)
 
+      "analyze_url" ->
+        analyze_url(arguments)
+
       "query_graph" ->
         query_graph(arguments)
 
@@ -2716,6 +2751,43 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp analyze_directory(_), do: {:error, "Invalid parameters for analyze_directory"}
+
+  defp analyze_url(%{"url" => url} = params) do
+    opts = []
+
+    opts =
+      if Map.has_key?(params, "auth_token") do
+        Keyword.put(opts, :auth_token, params["auth_token"])
+      else
+        opts
+      end
+
+    opts =
+      if Map.has_key?(params, "depth") do
+        depth_val = if params["depth"] == "deep", do: 5, else: 1
+        Keyword.put(opts, :depth, depth_val)
+      else
+        opts
+      end
+
+    opts =
+      if Map.has_key?(params, "index_graph") do
+        Keyword.put(opts, :index_graph, params["index_graph"])
+      else
+        opts
+      end
+
+    case Ragex.URLAnalyzer.analyze(url, opts) do
+      {:ok, report} ->
+        {:ok, report}
+
+      {:error, reason} ->
+        {:error, "Failed to analyze URL: #{inspect(reason)}"}
+    end
+  end
+
+  defp analyze_url(_),
+    do: {:error, "Invalid parameters for analyze_url: 'url' parameter is required"}
 
   defp watch_directory(%{"path" => path}) do
     case Watcher.watch_directory(path) do
