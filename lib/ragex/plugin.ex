@@ -49,25 +49,25 @@ defmodule Ragex.Plugin do
   @type destruction_level :: :none | :low | :medium | :high | :full
 
   @type tool_schema :: %{
-          name: String.t(),
-          description: String.t(),
-          inputSchema: map(),
-          destruction_level: destruction_level()
+          required(:name) => String.t(),
+          required(:description) => String.t(),
+          required(:inputSchema) => map(),
+          optional(:destruction_level) => destruction_level()
         }
 
   @type plugin_category ::
           :analyzer | :editor | :security | :search | :ai_provider | :git | :integration | :tool
 
   @type plugin_info :: %{
-          id: atom(),
-          name: String.t(),
-          version: String.t(),
-          description: String.t(),
-          author: String.t() | nil,
-          category: plugin_category(),
-          dependencies: [atom()],
-          priority: integer(),
-          capabilities: [atom()]
+          required(:id) => atom(),
+          required(:name) => String.t(),
+          required(:version) => String.t(),
+          required(:description) => String.t(),
+          optional(:author) => String.t() | nil,
+          optional(:category) => plugin_category(),
+          optional(:dependencies) => [atom()],
+          optional(:priority) => integer(),
+          optional(:capabilities) => [atom()]
         }
 
   @doc "Returns metadata describing the plugin."

@@ -11,7 +11,8 @@ defmodule Ragex.Plugins.URLAnalyzer do
       id: :url_analyzer,
       name: "URL & Git Repository Analyzer",
       version: "1.0.0",
-      description: "Fetches and analyzes Git repositories, web documentation, API specs, and raw code files from URLs.",
+      description:
+        "Fetches and analyzes Git repositories, web documentation, API specs, and raw code files from URLs.",
       category: :analyzer,
       dependencies: [],
       priority: 50,
@@ -31,7 +32,8 @@ defmodule Ragex.Plugins.URLAnalyzer do
           properties: %{
             url: %{
               type: "string",
-              description: "Target URL to analyze (e.g., https://github.com/owner/repo or web page)"
+              description:
+                "Target URL to analyze (e.g., https://github.com/owner/repo or web page)"
             },
             depth: %{
               type: "string",
@@ -90,7 +92,8 @@ defmodule Ragex.Plugins.URLAnalyzer do
     end
   end
 
-  def execute("analyze_url", _), do: {:error, "Invalid parameters for analyze_url: 'url' parameter is required"}
+  def execute("analyze_url", _),
+    do: {:error, "Invalid parameters for analyze_url: 'url' parameter is required"}
 
   def execute(tool_name, _args) do
     {:error, "Unknown tool '#{tool_name}' for plugin URLAnalyzer"}

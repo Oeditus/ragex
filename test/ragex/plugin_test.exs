@@ -58,6 +58,7 @@ defmodule Ragex.PluginTest do
         capabilities: [:base]
       }
     end
+
     @impl true
     def tools, do: []
     @impl true
@@ -79,6 +80,7 @@ defmodule Ragex.PluginTest do
         capabilities: [:child]
       }
     end
+
     @impl true
     def tools, do: []
     @impl true
@@ -138,14 +140,17 @@ defmodule Ragex.PluginTest do
       PluginRegistry.register_plugin(DummyTestPlugin)
 
       assert :ok == PluginRegistry.disable_plugin(:dummy_test_plugin)
-      assert {:error, "Plugin for tool 'dummy_ping' is currently disabled"} = PluginRegistry.dispatch_tool("dummy_ping", %{})
+
+      assert {:error, "Plugin for tool 'dummy_ping' is currently disabled"} =
+               PluginRegistry.dispatch_tool("dummy_ping", %{})
 
       assert :ok == PluginRegistry.enable_plugin(:dummy_test_plugin)
       assert {:ok, %{"pong" => true}} = PluginRegistry.dispatch_tool("dummy_ping", %{})
     end
 
     test "returns :unhandled_by_plugins for unregistered tools" do
-      assert {:error, :unhandled_by_plugins} == PluginRegistry.dispatch_tool("nonexistent_tool_12345", %{})
+      assert {:error, :unhandled_by_plugins} ==
+               PluginRegistry.dispatch_tool("nonexistent_tool_12345", %{})
     end
   end
 

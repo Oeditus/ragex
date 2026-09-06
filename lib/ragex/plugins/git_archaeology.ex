@@ -12,7 +12,8 @@ defmodule Ragex.Plugins.GitArchaeology do
       id: :git_archaeology,
       name: "Git Archaeology & History Insights",
       version: "1.0.0",
-      description: "Extracts git commit history, line-by-line blame, PR associations, co-change patterns, and repo enrichment.",
+      description:
+        "Extracts git commit history, line-by-line blame, PR associations, co-change patterns, and repo enrichment.",
       category: :git,
       dependencies: [],
       priority: 20,
@@ -25,7 +26,8 @@ defmodule Ragex.Plugins.GitArchaeology do
     [
       %{
         name: "git_blame",
-        description: "Get line-by-line git blame information for a file, including author, commit hash, and timestamp.",
+        description:
+          "Get line-by-line git blame information for a file, including author, commit hash, and timestamp.",
         inputSchema: %{
           type: "object",
           properties: %{
@@ -38,7 +40,8 @@ defmodule Ragex.Plugins.GitArchaeology do
       },
       %{
         name: "git_history",
-        description: "Get git commit history for a file or directory with optional date and author filters.",
+        description:
+          "Get git commit history for a file or directory with optional date and author filters.",
         inputSchema: %{
           type: "object",
           properties: %{
@@ -50,7 +53,8 @@ defmodule Ragex.Plugins.GitArchaeology do
       },
       %{
         name: "co_change_analysis",
-        description: "Analyze files that frequently change together with a target file based on commit history.",
+        description:
+          "Analyze files that frequently change together with a target file based on commit history.",
         inputSchema: %{
           type: "object",
           properties: %{

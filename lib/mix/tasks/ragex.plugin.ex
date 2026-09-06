@@ -63,7 +63,10 @@ defmodule Mix.Tasks.Ragex.Plugin do
     module_name = Macro.camelize(raw_name)
     snake_name = Macro.underscore(raw_name)
     tool_name = opts[:tool] || snake_name
-    description = opts[:description] || "Custom Ragex plugin providing #{tool_name} functionality."
+
+    description =
+      opts[:description] || "Custom Ragex plugin providing #{tool_name} functionality."
+
     force = Keyword.get(opts, :force, false)
     target_dir = opts[:dir] || "lib/ragex/plugins"
     test_dir = "test/ragex/plugins"
@@ -71,7 +74,12 @@ defmodule Mix.Tasks.Ragex.Plugin do
     module_file = Path.join(target_dir, "#{snake_name}.ex")
     test_file = Path.join(test_dir, "#{snake_name}_test.exs")
 
-    create_file_safely(module_file, render_plugin_template(module_name, snake_name, tool_name, description), force)
+    create_file_safely(
+      module_file,
+      render_plugin_template(module_name, snake_name, tool_name, description),
+      force
+    )
+
     create_file_safely(test_file, render_test_template(module_name, snake_name, tool_name), force)
 
     Mix.shell().info("""

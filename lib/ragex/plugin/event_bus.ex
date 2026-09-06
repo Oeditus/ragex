@@ -74,7 +74,10 @@ defmodule Ragex.Plugin.EventBus do
         {mod, {:ok, res}}
       catch
         kind, reason ->
-          Logger.error("Event handle failure in #{inspect(mod)} for #{event_name}: #{inspect({kind, reason})}")
+          Logger.error(
+            "Event handle failure in #{inspect(mod)} for #{event_name}: #{inspect({kind, reason})}"
+          )
+
           {mod, {:error, reason}}
       end
     end)

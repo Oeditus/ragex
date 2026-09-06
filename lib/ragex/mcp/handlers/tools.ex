@@ -101,2251 +101,2254 @@ defmodule Ragex.MCP.Handlers.Tools do
     %{
       tools:
         plugin_tools ++
-        [
-          %{
-            name: "analyze_file",
-            description:
-              "Parse a single source file into the knowledge graph. Use this before searching or querying a file that hasn't been indexed yet. Prefer analyze_directory for first-time project indexing. Returns extracted modules, functions, and relationships.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Absolute or relative path to the file to analyze"
-                },
-                language: %{
-                  type: "string",
-                  description: "Programming language (auto-detect if not specified)",
-                  enum: ["elixir", "erlang", "python", "javascript", "typescript", "auto"]
-                },
-                generate_embeddings: %{
-                  type: "boolean",
-                  description: "Generate embeddings for semantic search (default: true)",
-                  default: true
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "query_graph",
-            description:
-              "Structured lookup of specific code entities by exact type and identifier. Use when you know the module name, function name, or want all callers/dependencies of a known entity. Better than semantic_search when the exact name is known. Returns typed graph nodes and edges.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                query_type: %{
-                  type: "string",
-                  description: "Type of query to perform",
-                  enum: ["find_module", "find_function", "get_calls", "get_dependencies"]
-                },
-                params: %{
-                  type: "object",
-                  description: "Query-specific parameters"
-                }
-              },
-              required: ["query_type", "params"]
-            }
-          },
-          %{
-            name: "list_nodes",
-            description:
-              "Enumerate all indexed entities of a given type (modules, functions, etc.). Use for discovery — e.g., listing all modules before deciding which to query. Faster than semantic_search for browsing; less precise for concept-based lookup.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                node_type: %{
-                  type: "string",
-                  description: "Filter by node type (module, function, etc.)"
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of results",
-                  default: 100
-                }
-              }
-            }
-          },
-          %{
-            name: "analyze_directory",
-            description:
-              "Index an entire project directory recursively. Use this once at the start of a session to populate the knowledge graph before searching or analyzing. Prefer this over repeated analyze_file calls. Returns a count of indexed files, modules, and functions.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Path to the directory (or file) to analyze"
-                },
-                max_depth: %{
-                  type: "integer",
-                  description: "Maximum directory depth to traverse",
-                  default: 10
-                },
-                exclude_patterns: %{
-                  type: "array",
-                  description: "Directory/file patterns to exclude (e.g., node_modules, .git)",
-                  items: %{type: "string"}
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "analyze_url",
-            description:
-              "Fetches and analyzes a URL (GitHub/GitLab repo, web page, API specification, or raw code file). Returns a machine-understandable report and indexes findings into the knowledge graph.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                url: %{
-                  type: "string",
-                  description:
-                    "Target URL to analyze (e.g., https://github.com/owner/repo or web page)"
-                },
-                depth: %{
-                  type: "string",
-                  enum: ["shallow", "deep"],
-                  default: "shallow",
-                  description: "Depth of analysis (shallow or deep)"
-                },
-                index_graph: %{
-                  type: "boolean",
-                  default: true,
-                  description: "Whether to index findings into the Ragex knowledge graph"
-                },
-                auth_token: %{
-                  type: "string",
-                  description:
-                    "Optional authentication token for private GitHub/GitLab repositories"
-                }
-              },
-              required: ["url"]
-            }
-          },
-          %{
-            name: "watch_directory",
-            description: "Start watching a directory for file changes and auto-reindex",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Path to the directory to watch"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "unwatch_directory",
-            description: "Stop watching a directory",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Path to the directory to stop watching"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "list_watched",
-            description: "List all currently watched directories",
-            inputSchema: %{
-              type: "object",
-              properties: %{}
-            }
-          },
-          %{
-            name: "semantic_search",
-            description:
-              "Find code by meaning using embedding similarity — best for concept queries like 'function that retries HTTP requests' or 'error handling pattern'. Returns ranked results by cosine similarity only, no graph context. Use hybrid_search when you also want call-graph relationships, or rag_query when you need an AI-generated answer.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                query: %{
-                  type: "string",
-                  description: "Natural language search query (e.g., 'function to parse JSON')"
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of results",
-                  default: 10
-                },
-                threshold: %{
-                  type: "number",
-                  description: "Minimum similarity score (0.0 to 1.0, typical: 0.1-0.3)",
-                  default: 0.2
-                },
-                node_type: %{
-                  type: "string",
-                  description: "Filter by entity type",
-                  enum: ["module", "function"]
-                },
-                include_context: %{
-                  type: "boolean",
-                  description: "Include related entities (callers, callees, etc.)",
-                  default: true
-                },
-                match_source: %{
-                  type: "string",
-                  description:
-                    "Filter results by match source: all (default), docs, strings, comments, names",
-                  enum: ["all", "docs", "strings", "comments", "names"],
-                  default: "all"
-                }
-              },
-              required: ["query"]
-            }
-          },
-          %{
-            name: "get_embeddings_stats",
-            description:
-              "Report the number of indexed embeddings, active model name, and vector dimensions. Use to verify that analyze_file/analyze_directory has successfully generated embeddings before running semantic or hybrid search.",
-            inputSchema: %{
-              type: "object",
-              properties: %{}
-            }
-          },
-          %{
-            name: "get_ai_usage",
-            description: "Get AI provider usage statistics (requests, tokens, costs)",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                provider: %{
-                  type: "string",
-                  description: "Filter by provider (openai, anthropic, deepseek_r1, ollama)",
-                  enum: ["openai", "anthropic", "deepseek_r1", "ollama"]
-                }
-              }
-            }
-          },
-          %{
-            name: "get_ai_cache_stats",
-            description: "Get AI response cache statistics and hit rates",
-            inputSchema: %{
-              type: "object",
-              properties: %{}
-            }
-          },
-          %{
-            name: "clear_ai_cache",
-            description: "Clear AI response cache (all or specific operation)",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                operation: %{
-                  type: "string",
-                  description: "Operation to clear (query, explain, suggest, or all)",
-                  enum: ["query", "explain", "suggest", "all"]
-                }
-              }
-            }
-          },
-          %{
-            name: "find_paths",
-            description:
-              "Find all call-chain paths between two specific functions or modules in the graph. Use to answer 'how does A reach B?' — useful for tracing data flow or understanding indirect dependencies. Returns all paths up to max_depth hops. Use find_callers if you only want direct callers, not full chains.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                from: %{
-                  type: "string",
-                  description: "Source node ID (e.g., 'ModuleA.function/1')"
-                },
-                to: %{
-                  type: "string",
-                  description: "Target node ID (e.g., 'ModuleB.function/2')"
-                },
-                max_depth: %{
-                  type: "integer",
-                  description: "Maximum path length",
-                  default: 10
-                }
-              },
-              required: ["from", "to"]
-            }
-          },
-          %{
-            name: "find_callers",
-            description:
-              "List every function that directly calls a given function (one hop only). Use before refactoring to understand blast radius, or to find all usage sites of an API. Returns caller identifiers with file and line. Use find_paths if you need transitive callers across multiple hops.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                module: %{
-                  type: "string",
-                  description: "Module name (e.g., 'MyModule')"
-                },
-                function_name: %{
-                  type: "string",
-                  description: "Function name (e.g., 'process')"
-                },
-                arity: %{
-                  type: "integer",
-                  description:
-                    "Function arity (optional - will search for any arity if not provided)"
-                }
-              },
-              required: ["module", "function_name"]
-            }
-          },
-          %{
-            name: "graph_stats",
-            description:
-              "Summary statistics of the knowledge graph: node/edge counts, top PageRank modules (most-depended-on), top betweenness nodes (architectural bottlenecks), and connected component count. Use to get a quick health check or identify structurally important modules without running a full analysis.",
-            inputSchema: %{
-              type: "object",
-              properties: %{}
-            }
-          },
-          %{
-            name: "hybrid_search",
-            description:
-              "Best-quality search combining embedding similarity + call-graph traversal via Reciprocal Rank Fusion. Use this as the default search tool when you need both conceptual relevance and structural context. Slower than semantic_search but returns richer results including callers, callees, and import chains. Use semantic_search for pure speed, metaast_search for cross-language structural matches.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                query: %{
-                  type: "string",
-                  description: "Natural language search query"
-                },
-                strategy: %{
-                  type: "string",
-                  description: "Search strategy",
-                  enum: ["fusion", "semantic_first", "graph_first"],
-                  default: "fusion"
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of results",
-                  default: 10
-                },
-                threshold: %{
-                  type: "number",
-                  description: "Minimum similarity score (0.0 to 1.0, typical: 0.1-0.3)",
-                  default: 0.15
-                },
-                node_type: %{
-                  type: "string",
-                  description: "Filter by entity type",
-                  enum: ["module", "function"]
-                },
-                include_context: %{
-                  type: "boolean",
-                  description: "Include related entities in results",
-                  default: true
-                }
-              },
-              required: ["query"]
-            }
-          },
-          %{
-            name: "metaast_search",
-            description:
-              "Find structurally equivalent code patterns across languages using the MetaAST universal representation. Use when you want 'the same construct but in Python' or 'all places where a map/transform pattern appears across Elixir and Ruby'. Different from hybrid_search (which searches by text similarity) and cross_language_alternatives (which generates new code). Returns matched nodes grouped by MetaAST equivalence.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                source_language: %{
-                  type: "string",
-                  description: "Source language",
-                  enum: ["elixir", "erlang", "python", "javascript"]
-                },
-                source_construct: %{
-                  type: "string",
-                  description:
-                    "Source construct (e.g., 'Enum.map/2', 'list_comprehension', or MetaAST pattern)"
-                },
-                target_languages: %{
-                  type: "array",
-                  description: "Target languages to search (empty = all languages)",
-                  items: %{
+          [
+            %{
+              name: "analyze_file",
+              description:
+                "Parse a single source file into the knowledge graph. Use this before searching or querying a file that hasn't been indexed yet. Prefer analyze_directory for first-time project indexing. Returns extracted modules, functions, and relationships.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
                     type: "string",
-                    enum: ["elixir", "erlang", "python", "javascript"]
+                    description: "Absolute or relative path to the file to analyze"
                   },
-                  default: []
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum results per language",
-                  default: 5
-                },
-                threshold: %{
-                  type: "number",
-                  description: "Semantic similarity threshold (0.0-1.0)",
-                  default: 0.6
-                },
-                strict_equivalence: %{
-                  type: "boolean",
-                  description: "Require exact AST match (default: false)",
-                  default: false
-                }
-              },
-              required: ["source_language", "source_construct"]
-            }
-          },
-          %{
-            name: "cross_language_alternatives",
-            description:
-              "Generate new code showing how a given snippet would be written in other languages. Use when you want to translate or port code — not for searching existing code (use metaast_search for that). Returns generated code samples with explanations per target language.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                language: %{
-                  type: "string",
-                  description: "Source language",
-                  enum: ["elixir", "erlang", "python", "javascript"]
-                },
-                code: %{
-                  type: "string",
-                  description: "Code snippet or construct description"
-                },
-                target_languages: %{
-                  type: "array",
-                  description: "Languages to generate alternatives for",
-                  items: %{
+                  language: %{
                     type: "string",
-                    enum: ["elixir", "erlang", "python", "javascript"]
+                    description: "Programming language (auto-detect if not specified)",
+                    enum: ["elixir", "erlang", "python", "javascript", "typescript", "auto"]
                   },
-                  default: []
-                }
-              },
-              required: ["language", "code"]
-            }
-          },
-          %{
-            name: "expand_query",
-            description:
-              "Augment a search query with synonyms, intent-specific terms, and cross-language equivalents before passing it to semantic_search or hybrid_search. Use as a preprocessing step when initial search results are sparse. Returns the expanded query string — you must then pass it to a search tool.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                query: %{
-                  type: "string",
-                  description: "Original search query"
-                },
-                intent: %{
-                  type: "string",
-                  description: "Query intent (auto-detected if not specified)",
-                  enum: ["explain", "refactor", "example", "debug", "general"]
-                },
-                max_terms: %{
-                  type: "integer",
-                  description: "Maximum expansion terms to add",
-                  default: 5
-                },
-                include_synonyms: %{
-                  type: "boolean",
-                  description: "Include semantic synonyms",
-                  default: true
-                },
-                include_cross_language: %{
-                  type: "boolean",
-                  description: "Include cross-language terms",
-                  default: true
-                }
-              },
-              required: ["query"]
-            }
-          },
-          %{
-            name: "find_metaast_pattern",
-            description:
-              "Find every place in the codebase where a specific MetaAST node type appears (e.g., all 'lambda' nodes, all 'loop:for' nodes). Use for audit-style questions like 'where do we use async patterns?' or 'all recursive functions'. Broader than metaast_search (which compares to a specific source construct). Returns a flat list of matching nodes with file locations.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                pattern: %{
-                  type: "string",
-                  description: "MetaAST pattern (e.g., 'collection_op:map', 'loop:for', 'lambda')"
-                },
-                languages: %{
-                  type: "array",
-                  description: "Filter by languages (empty = all)",
-                  items: %{
-                    type: "string",
-                    enum: ["elixir", "erlang", "python", "javascript"]
-                  },
-                  default: []
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum results",
-                  default: 20
-                }
-              },
-              required: ["pattern"]
-            }
-          },
-          %{
-            name: "edit_file",
-            description:
-              "Safely edit a file with automatic backup, validation, and atomic operations",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Path to the file to edit"
-                },
-                changes: %{
-                  type: "array",
-                  description: "List of changes to apply",
-                  items: %{
-                    type: "object",
-                    properties: %{
-                      type: %{
-                        type: "string",
-                        enum: ["replace", "insert", "delete"],
-                        description: "Type of change (default: replace)"
-                      },
-                      line_start: %{
-                        type: "integer",
-                        description:
-                          "Starting line number (1-indexed, accepts aliases: start_line, line)"
-                      },
-                      line_end: %{
-                        type: "integer",
-                        description:
-                          "Ending line number for replace/delete (accepts aliases: end_line)"
-                      },
-                      content: %{
-                        type: "string",
-                        description:
-                          "New content (for replace/insert, accepts aliases: new_content, replacement)"
-                      },
-                      old_content: %{
-                        type: "string",
-                        description:
-                          "Original text expected at line_start (optional, used to verify/locate correct lines if line numbers shifted, accepts aliases: search, target_content)"
-                      }
-                    },
-                    required: ["line_start"]
+                  generate_embeddings: %{
+                    type: "boolean",
+                    description: "Generate embeddings for semantic search (default: true)",
+                    default: true
                   }
                 },
-                validate: %{
-                  type: "boolean",
-                  description: "Validate syntax before applying (default: true)",
-                  default: true
-                },
-                create_backup: %{
-                  type: "boolean",
-                  description: "Create backup before editing (default: true)",
-                  default: true
-                },
-                language: %{
-                  type: "string",
-                  description: "Explicit language for validation (auto-detected from extension)",
-                  enum: ["elixir", "erlang", "python", "javascript"]
-                }
-              },
-              required: ["path", "changes"]
-            }
-          },
-          %{
-            name: "validate_edit",
-            description: "Preview validation of changes without applying them",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Path to the file"
-                },
-                changes: %{
-                  type: "array",
-                  description: "List of changes to validate",
-                  items: %{
+                required: ["path"]
+              }
+            },
+            %{
+              name: "query_graph",
+              description:
+                "Structured lookup of specific code entities by exact type and identifier. Use when you know the module name, function name, or want all callers/dependencies of a known entity. Better than semantic_search when the exact name is known. Returns typed graph nodes and edges.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  query_type: %{
+                    type: "string",
+                    description: "Type of query to perform",
+                    enum: ["find_module", "find_function", "get_calls", "get_dependencies"]
+                  },
+                  params: %{
                     type: "object",
-                    properties: %{
-                      type: %{type: "string", enum: ["replace", "insert", "delete"]},
-                      line_start: %{type: "integer"},
-                      line_end: %{type: "integer"},
-                      content: %{type: "string"}
-                    },
-                    required: ["type", "line_start"]
+                    description: "Query-specific parameters"
                   }
                 },
-                language: %{
-                  type: "string",
-                  description: "Explicit language for validation",
-                  enum: ["elixir", "erlang", "python", "javascript"]
-                }
-              },
-              required: ["path", "changes"]
-            }
-          },
-          %{
-            name: "rollback_edit",
-            description: "Undo a recent edit by restoring from backup",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Path to the file to rollback"
-                },
-                backup_id: %{
-                  type: "string",
-                  description: "Specific backup to restore (default: most recent)"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "edit_history",
-            description: "Query backup history for a file",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Path to the file"
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of backups to return",
-                  default: 10
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "refactor_code",
-            description: "Semantic refactoring operations using AST analysis and knowledge graph",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                operation: %{
-                  type: "string",
-                  description: "Type of refactoring operation",
-                  enum: ["rename_function", "rename_module"]
-                },
-                params: %{
-                  type: "object",
-                  description: "Operation-specific parameters",
-                  properties: %{
-                    module: %{
-                      type: "string",
-                      description: "Module name (for rename_function)"
-                    },
-                    old_name: %{
-                      type: "string",
-                      description: "Current function or module name"
-                    },
-                    new_name: %{
-                      type: "string",
-                      description: "New function or module name"
-                    },
-                    arity: %{
-                      type: "integer",
-                      description: "Function arity (for rename_function)"
-                    }
+                required: ["query_type", "params"]
+              }
+            },
+            %{
+              name: "list_nodes",
+              description:
+                "Enumerate all indexed entities of a given type (modules, functions, etc.). Use for discovery — e.g., listing all modules before deciding which to query. Faster than semantic_search for browsing; less precise for concept-based lookup.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  node_type: %{
+                    type: "string",
+                    description: "Filter by node type (module, function, etc.)"
                   },
-                  required: ["old_name", "new_name"]
-                },
-                scope: %{
-                  type: "string",
-                  description: "Refactoring scope",
-                  enum: ["module", "project"],
-                  default: "project"
-                },
-                validate: %{
-                  type: "boolean",
-                  description: "Validate before and after refactoring",
-                  default: true
-                },
-                format: %{
-                  type: "boolean",
-                  description: "Format code after refactoring",
-                  default: true
-                }
-              },
-              required: ["operation", "params"]
-            }
-          },
-          %{
-            name: "advanced_refactor",
-            description:
-              "Advanced refactoring operations: extract_function, inline_function, convert_visibility, rename_parameter, modify_attributes, change_signature, move_function, extract_module",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                operation: %{
-                  type: "string",
-                  description: "Type of advanced refactoring operation",
-                  enum: [
-                    "extract_function",
-                    "inline_function",
-                    "convert_visibility",
-                    "rename_parameter",
-                    "modify_attributes",
-                    "change_signature",
-                    "move_function",
-                    "extract_module"
-                  ]
-                },
-                params: %{
-                  type: "object",
-                  description:
-                    "Operation-specific parameters. See documentation for each operation type."
-                },
-                validate: %{
-                  type: "boolean",
-                  description: "Validate before and after refactoring",
-                  default: true
-                },
-                format: %{
-                  type: "boolean",
-                  description: "Format code after refactoring",
-                  default: true
-                },
-                scope: %{
-                  type: "string",
-                  description: "Refactoring scope (for applicable operations)",
-                  enum: ["module", "project"],
-                  default: "project"
-                }
-              },
-              required: ["operation", "params"]
-            }
-          },
-          %{
-            name: "betweenness_centrality",
-            description:
-              "Compute betweenness centrality to identify bridge/bottleneck functions in the call graph",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                max_nodes: %{
-                  type: "integer",
-                  description: "Limit computation to N highest-degree nodes",
-                  default: 1000
-                },
-                normalize: %{
-                  type: "boolean",
-                  description: "Return normalized scores (0-1)",
-                  default: true
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of results",
+                    default: 100
+                  }
                 }
               }
-            }
-          },
-          %{
-            name: "closeness_centrality",
-            description:
-              "Compute closeness centrality to identify central functions in the call graph",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                normalize: %{
-                  type: "boolean",
-                  description: "Return normalized scores (0-1)",
-                  default: true
+            },
+            %{
+              name: "analyze_directory",
+              description:
+                "Index an entire project directory recursively. Use this once at the start of a session to populate the knowledge graph before searching or analyzing. Prefer this over repeated analyze_file calls. Returns a count of indexed files, modules, and functions.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Path to the directory (or file) to analyze"
+                  },
+                  max_depth: %{
+                    type: "integer",
+                    description: "Maximum directory depth to traverse",
+                    default: 10
+                  },
+                  exclude_patterns: %{
+                    type: "array",
+                    description: "Directory/file patterns to exclude (e.g., node_modules, .git)",
+                    items: %{type: "string"}
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "analyze_url",
+              description:
+                "Fetches and analyzes a URL (GitHub/GitLab repo, web page, API specification, or raw code file). Returns a machine-understandable report and indexes findings into the knowledge graph.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  url: %{
+                    type: "string",
+                    description:
+                      "Target URL to analyze (e.g., https://github.com/owner/repo or web page)"
+                  },
+                  depth: %{
+                    type: "string",
+                    enum: ["shallow", "deep"],
+                    default: "shallow",
+                    description: "Depth of analysis (shallow or deep)"
+                  },
+                  index_graph: %{
+                    type: "boolean",
+                    default: true,
+                    description: "Whether to index findings into the Ragex knowledge graph"
+                  },
+                  auth_token: %{
+                    type: "string",
+                    description:
+                      "Optional authentication token for private GitHub/GitLab repositories"
+                  }
+                },
+                required: ["url"]
+              }
+            },
+            %{
+              name: "watch_directory",
+              description: "Start watching a directory for file changes and auto-reindex",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Path to the directory to watch"
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "unwatch_directory",
+              description: "Stop watching a directory",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Path to the directory to stop watching"
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "list_watched",
+              description: "List all currently watched directories",
+              inputSchema: %{
+                type: "object",
+                properties: %{}
+              }
+            },
+            %{
+              name: "semantic_search",
+              description:
+                "Find code by meaning using embedding similarity — best for concept queries like 'function that retries HTTP requests' or 'error handling pattern'. Returns ranked results by cosine similarity only, no graph context. Use hybrid_search when you also want call-graph relationships, or rag_query when you need an AI-generated answer.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  query: %{
+                    type: "string",
+                    description: "Natural language search query (e.g., 'function to parse JSON')"
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of results",
+                    default: 10
+                  },
+                  threshold: %{
+                    type: "number",
+                    description: "Minimum similarity score (0.0 to 1.0, typical: 0.1-0.3)",
+                    default: 0.2
+                  },
+                  node_type: %{
+                    type: "string",
+                    description: "Filter by entity type",
+                    enum: ["module", "function"]
+                  },
+                  include_context: %{
+                    type: "boolean",
+                    description: "Include related entities (callers, callees, etc.)",
+                    default: true
+                  },
+                  match_source: %{
+                    type: "string",
+                    description:
+                      "Filter results by match source: all (default), docs, strings, comments, names",
+                    enum: ["all", "docs", "strings", "comments", "names"],
+                    default: "all"
+                  }
+                },
+                required: ["query"]
+              }
+            },
+            %{
+              name: "get_embeddings_stats",
+              description:
+                "Report the number of indexed embeddings, active model name, and vector dimensions. Use to verify that analyze_file/analyze_directory has successfully generated embeddings before running semantic or hybrid search.",
+              inputSchema: %{
+                type: "object",
+                properties: %{}
+              }
+            },
+            %{
+              name: "get_ai_usage",
+              description: "Get AI provider usage statistics (requests, tokens, costs)",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  provider: %{
+                    type: "string",
+                    description: "Filter by provider (openai, anthropic, deepseek_r1, ollama)",
+                    enum: ["openai", "anthropic", "deepseek_r1", "ollama"]
+                  }
                 }
               }
-            }
-          },
-          %{
-            name: "detect_communities",
-            description:
-              "Detect communities/clusters in the call graph to identify architectural modules",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                algorithm: %{
-                  type: "string",
-                  description: "Community detection algorithm",
-                  enum: ["louvain", "label_propagation"],
-                  default: "louvain"
-                },
-                max_iterations: %{
-                  type: "integer",
-                  description: "Maximum optimization iterations",
-                  default: 10
-                },
-                resolution: %{
-                  type: "number",
-                  description: "Resolution parameter for multi-scale detection (Louvain only)",
-                  default: 1.0
-                },
-                hierarchical: %{
-                  type: "boolean",
-                  description: "Return hierarchical community structure (Louvain only)",
-                  default: false
-                },
-                seed: %{
-                  type: "integer",
-                  description: "Random seed for deterministic results (label propagation only)"
+            },
+            %{
+              name: "get_ai_cache_stats",
+              description: "Get AI response cache statistics and hit rates",
+              inputSchema: %{
+                type: "object",
+                properties: %{}
+              }
+            },
+            %{
+              name: "clear_ai_cache",
+              description: "Clear AI response cache (all or specific operation)",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  operation: %{
+                    type: "string",
+                    description: "Operation to clear (query, explain, suggest, or all)",
+                    enum: ["query", "explain", "suggest", "all"]
+                  }
                 }
               }
-            }
-          },
-          %{
-            name: "export_graph",
-            description:
-              "Export the call graph in visualization formats (Graphviz DOT or D3.js JSON)",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                format: %{
-                  type: "string",
-                  description: "Export format",
-                  enum: ["graphviz", "d3"],
-                  default: "graphviz"
+            },
+            %{
+              name: "find_paths",
+              description:
+                "Find all call-chain paths between two specific functions or modules in the graph. Use to answer 'how does A reach B?' — useful for tracing data flow or understanding indirect dependencies. Returns all paths up to max_depth hops. Use find_callers if you only want direct callers, not full chains.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  from: %{
+                    type: "string",
+                    description: "Source node ID (e.g., 'ModuleA.function/1')"
+                  },
+                  to: %{
+                    type: "string",
+                    description: "Target node ID (e.g., 'ModuleB.function/2')"
+                  },
+                  max_depth: %{
+                    type: "integer",
+                    description: "Maximum path length",
+                    default: 10
+                  }
                 },
-                include_communities: %{
-                  type: "boolean",
-                  description: "Include community clustering",
-                  default: true
+                required: ["from", "to"]
+              }
+            },
+            %{
+              name: "find_callers",
+              description:
+                "List every function that directly calls a given function (one hop only). Use before refactoring to understand blast radius, or to find all usage sites of an API. Returns caller identifiers with file and line. Use find_paths if you need transitive callers across multiple hops.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  module: %{
+                    type: "string",
+                    description: "Module name (e.g., 'MyModule')"
+                  },
+                  function_name: %{
+                    type: "string",
+                    description: "Function name (e.g., 'process')"
+                  },
+                  arity: %{
+                    type: "integer",
+                    description:
+                      "Function arity (optional - will search for any arity if not provided)"
+                  }
                 },
-                color_by: %{
-                  type: "string",
-                  description: "Centrality metric for node coloring (graphviz only)",
-                  enum: ["pagerank", "betweenness", "degree"],
-                  default: "pagerank"
+                required: ["module", "function_name"]
+              }
+            },
+            %{
+              name: "graph_stats",
+              description:
+                "Summary statistics of the knowledge graph: node/edge counts, top PageRank modules (most-depended-on), top betweenness nodes (architectural bottlenecks), and connected component count. Use to get a quick health check or identify structurally important modules without running a full analysis.",
+              inputSchema: %{
+                type: "object",
+                properties: %{}
+              }
+            },
+            %{
+              name: "hybrid_search",
+              description:
+                "Best-quality search combining embedding similarity + call-graph traversal via Reciprocal Rank Fusion. Use this as the default search tool when you need both conceptual relevance and structural context. Slower than semantic_search but returns richer results including callers, callees, and import chains. Use semantic_search for pure speed, metaast_search for cross-language structural matches.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  query: %{
+                    type: "string",
+                    description: "Natural language search query"
+                  },
+                  strategy: %{
+                    type: "string",
+                    description: "Search strategy",
+                    enum: ["fusion", "semantic_first", "graph_first"],
+                    default: "fusion"
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of results",
+                    default: 10
+                  },
+                  threshold: %{
+                    type: "number",
+                    description: "Minimum similarity score (0.0 to 1.0, typical: 0.1-0.3)",
+                    default: 0.15
+                  },
+                  node_type: %{
+                    type: "string",
+                    description: "Filter by entity type",
+                    enum: ["module", "function"]
+                  },
+                  include_context: %{
+                    type: "boolean",
+                    description: "Include related entities in results",
+                    default: true
+                  }
                 },
-                max_nodes: %{
-                  type: "integer",
-                  description: "Maximum nodes to include",
-                  default: 500
-                }
-              },
-              required: ["format"]
-            }
-          },
-          %{
-            name: "edit_files",
-            description: "Atomically edit multiple files with automatic rollback on failure",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                files: %{
-                  type: "array",
-                  description: "List of files to edit",
-                  items: %{
-                    type: "object",
-                    properties: %{
-                      path: %{
-                        type: "string",
-                        description: "Path to the file to edit"
-                      },
-                      changes: %{
-                        type: "array",
-                        description: "List of changes to apply to this file",
-                        items: %{
-                          type: "object",
-                          properties: %{
-                            type: %{
-                              type: "string",
-                              enum: ["replace", "insert", "delete"],
-                              description: "Type of change"
-                            },
-                            line_start: %{
-                              type: "integer",
-                              description: "Starting line number (1-indexed)"
-                            },
-                            line_end: %{
-                              type: "integer",
-                              description: "Ending line number (for replace/delete)"
-                            },
-                            content: %{
-                              type: "string",
-                              description: "New content (for replace/insert)"
-                            }
-                          },
-                          required: ["type", "line_start"]
+                required: ["query"]
+              }
+            },
+            %{
+              name: "metaast_search",
+              description:
+                "Find structurally equivalent code patterns across languages using the MetaAST universal representation. Use when you want 'the same construct but in Python' or 'all places where a map/transform pattern appears across Elixir and Ruby'. Different from hybrid_search (which searches by text similarity) and cross_language_alternatives (which generates new code). Returns matched nodes grouped by MetaAST equivalence.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  source_language: %{
+                    type: "string",
+                    description: "Source language",
+                    enum: ["elixir", "erlang", "python", "javascript"]
+                  },
+                  source_construct: %{
+                    type: "string",
+                    description:
+                      "Source construct (e.g., 'Enum.map/2', 'list_comprehension', or MetaAST pattern)"
+                  },
+                  target_languages: %{
+                    type: "array",
+                    description: "Target languages to search (empty = all languages)",
+                    items: %{
+                      type: "string",
+                      enum: ["elixir", "erlang", "python", "javascript"]
+                    },
+                    default: []
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum results per language",
+                    default: 5
+                  },
+                  threshold: %{
+                    type: "number",
+                    description: "Semantic similarity threshold (0.0-1.0)",
+                    default: 0.6
+                  },
+                  strict_equivalence: %{
+                    type: "boolean",
+                    description: "Require exact AST match (default: false)",
+                    default: false
+                  }
+                },
+                required: ["source_language", "source_construct"]
+              }
+            },
+            %{
+              name: "cross_language_alternatives",
+              description:
+                "Generate new code showing how a given snippet would be written in other languages. Use when you want to translate or port code — not for searching existing code (use metaast_search for that). Returns generated code samples with explanations per target language.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  language: %{
+                    type: "string",
+                    description: "Source language",
+                    enum: ["elixir", "erlang", "python", "javascript"]
+                  },
+                  code: %{
+                    type: "string",
+                    description: "Code snippet or construct description"
+                  },
+                  target_languages: %{
+                    type: "array",
+                    description: "Languages to generate alternatives for",
+                    items: %{
+                      type: "string",
+                      enum: ["elixir", "erlang", "python", "javascript"]
+                    },
+                    default: []
+                  }
+                },
+                required: ["language", "code"]
+              }
+            },
+            %{
+              name: "expand_query",
+              description:
+                "Augment a search query with synonyms, intent-specific terms, and cross-language equivalents before passing it to semantic_search or hybrid_search. Use as a preprocessing step when initial search results are sparse. Returns the expanded query string — you must then pass it to a search tool.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  query: %{
+                    type: "string",
+                    description: "Original search query"
+                  },
+                  intent: %{
+                    type: "string",
+                    description: "Query intent (auto-detected if not specified)",
+                    enum: ["explain", "refactor", "example", "debug", "general"]
+                  },
+                  max_terms: %{
+                    type: "integer",
+                    description: "Maximum expansion terms to add",
+                    default: 5
+                  },
+                  include_synonyms: %{
+                    type: "boolean",
+                    description: "Include semantic synonyms",
+                    default: true
+                  },
+                  include_cross_language: %{
+                    type: "boolean",
+                    description: "Include cross-language terms",
+                    default: true
+                  }
+                },
+                required: ["query"]
+              }
+            },
+            %{
+              name: "find_metaast_pattern",
+              description:
+                "Find every place in the codebase where a specific MetaAST node type appears (e.g., all 'lambda' nodes, all 'loop:for' nodes). Use for audit-style questions like 'where do we use async patterns?' or 'all recursive functions'. Broader than metaast_search (which compares to a specific source construct). Returns a flat list of matching nodes with file locations.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  pattern: %{
+                    type: "string",
+                    description:
+                      "MetaAST pattern (e.g., 'collection_op:map', 'loop:for', 'lambda')"
+                  },
+                  languages: %{
+                    type: "array",
+                    description: "Filter by languages (empty = all)",
+                    items: %{
+                      type: "string",
+                      enum: ["elixir", "erlang", "python", "javascript"]
+                    },
+                    default: []
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum results",
+                    default: 20
+                  }
+                },
+                required: ["pattern"]
+              }
+            },
+            %{
+              name: "edit_file",
+              description:
+                "Safely edit a file with automatic backup, validation, and atomic operations",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Path to the file to edit"
+                  },
+                  changes: %{
+                    type: "array",
+                    description: "List of changes to apply",
+                    items: %{
+                      type: "object",
+                      properties: %{
+                        type: %{
+                          type: "string",
+                          enum: ["replace", "insert", "delete"],
+                          description: "Type of change (default: replace)"
+                        },
+                        line_start: %{
+                          type: "integer",
+                          description:
+                            "Starting line number (1-indexed, accepts aliases: start_line, line)"
+                        },
+                        line_end: %{
+                          type: "integer",
+                          description:
+                            "Ending line number for replace/delete (accepts aliases: end_line)"
+                        },
+                        content: %{
+                          type: "string",
+                          description:
+                            "New content (for replace/insert, accepts aliases: new_content, replacement)"
+                        },
+                        old_content: %{
+                          type: "string",
+                          description:
+                            "Original text expected at line_start (optional, used to verify/locate correct lines if line numbers shifted, accepts aliases: search, target_content)"
                         }
                       },
-                      validate: %{
-                        type: "boolean",
-                        description:
-                          "Validate syntax for this file (overrides transaction default)"
+                      required: ["line_start"]
+                    }
+                  },
+                  validate: %{
+                    type: "boolean",
+                    description: "Validate syntax before applying (default: true)",
+                    default: true
+                  },
+                  create_backup: %{
+                    type: "boolean",
+                    description: "Create backup before editing (default: true)",
+                    default: true
+                  },
+                  language: %{
+                    type: "string",
+                    description:
+                      "Explicit language for validation (auto-detected from extension)",
+                    enum: ["elixir", "erlang", "python", "javascript"]
+                  }
+                },
+                required: ["path", "changes"]
+              }
+            },
+            %{
+              name: "validate_edit",
+              description: "Preview validation of changes without applying them",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Path to the file"
+                  },
+                  changes: %{
+                    type: "array",
+                    description: "List of changes to validate",
+                    items: %{
+                      type: "object",
+                      properties: %{
+                        type: %{type: "string", enum: ["replace", "insert", "delete"]},
+                        line_start: %{type: "integer"},
+                        line_end: %{type: "integer"},
+                        content: %{type: "string"}
                       },
-                      format: %{
-                        type: "boolean",
-                        description: "Format code after editing (overrides transaction default)"
-                      },
-                      language: %{
+                      required: ["type", "line_start"]
+                    }
+                  },
+                  language: %{
+                    type: "string",
+                    description: "Explicit language for validation",
+                    enum: ["elixir", "erlang", "python", "javascript"]
+                  }
+                },
+                required: ["path", "changes"]
+              }
+            },
+            %{
+              name: "rollback_edit",
+              description: "Undo a recent edit by restoring from backup",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Path to the file to rollback"
+                  },
+                  backup_id: %{
+                    type: "string",
+                    description: "Specific backup to restore (default: most recent)"
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "edit_history",
+              description: "Query backup history for a file",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Path to the file"
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of backups to return",
+                    default: 10
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "refactor_code",
+              description:
+                "Semantic refactoring operations using AST analysis and knowledge graph",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  operation: %{
+                    type: "string",
+                    description: "Type of refactoring operation",
+                    enum: ["rename_function", "rename_module"]
+                  },
+                  params: %{
+                    type: "object",
+                    description: "Operation-specific parameters",
+                    properties: %{
+                      module: %{
                         type: "string",
-                        description:
-                          "Explicit language for validation (auto-detected from extension)",
-                        enum: ["elixir", "erlang", "python", "javascript"]
+                        description: "Module name (for rename_function)"
+                      },
+                      old_name: %{
+                        type: "string",
+                        description: "Current function or module name"
+                      },
+                      new_name: %{
+                        type: "string",
+                        description: "New function or module name"
+                      },
+                      arity: %{
+                        type: "integer",
+                        description: "Function arity (for rename_function)"
                       }
                     },
-                    required: ["path", "changes"]
+                    required: ["old_name", "new_name"]
+                  },
+                  scope: %{
+                    type: "string",
+                    description: "Refactoring scope",
+                    enum: ["module", "project"],
+                    default: "project"
+                  },
+                  validate: %{
+                    type: "boolean",
+                    description: "Validate before and after refactoring",
+                    default: true
+                  },
+                  format: %{
+                    type: "boolean",
+                    description: "Format code after refactoring",
+                    default: true
                   }
                 },
-                validate: %{
-                  type: "boolean",
-                  description: "Validate all files before applying changes (default: true)",
-                  default: true
-                },
-                create_backup: %{
-                  type: "boolean",
-                  description: "Create backups before editing (default: true)",
-                  default: true
-                },
-                format: %{
-                  type: "boolean",
-                  description: "Format code after editing (default: false)",
-                  default: false
-                }
-              },
-              required: ["files"]
-            }
-          },
-          %{
-            name: "rag_query",
-            description:
-              "Ask a free-form question about the codebase and get an AI-generated answer grounded in retrieved code. Use this when you need synthesis — an explanation, a summary, or reasoning over multiple files. More expensive than semantic_search (requires an LLM call) but returns prose answers with citations. Use semantic_search or hybrid_search when you just need matching code snippets.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                query: %{
-                  type: "string",
-                  description: "Natural language query about the codebase"
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of code snippets to retrieve",
-                  default: 10
-                },
-                include_code: %{
-                  type: "boolean",
-                  description: "Include full code snippets in context",
-                  default: true
-                },
-                provider: %{
-                  type: "string",
-                  description: "AI provider override",
-                  enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
-                }
-              },
-              required: ["query"]
-            }
-          },
-          %{
-            name: "rag_explain",
-            description:
-              "Generate an AI explanation of a specific module or function. Retrieves the target's source and related context automatically — you only need the identifier. Returns a structured prose explanation covering purpose, behavior, dependencies, and caveats. Prefer this over rag_query when you have a specific target in mind.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                target: %{
-                  type: "string",
-                  description: "File path or function identifier (e.g., 'MyModule.function/2')"
-                },
-                aspect: %{
-                  type: "string",
-                  description: "What to explain",
-                  enum: ["purpose", "complexity", "dependencies", "all"],
-                  default: "all"
-                }
-              },
-              required: ["target"]
-            }
-          },
-          %{
-            name: "rag_suggest",
-            description:
-              "Generate targeted improvement suggestions for a specific file or function using AI. Focuses on a named improvement dimension (performance, readability, testing, security). Returns actionable recommendations with code examples. Use rag_query for open-ended questions; use this when you want a focused review of a known target.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                target: %{
-                  type: "string",
-                  description: "File path or function identifier"
-                },
-                focus: %{
-                  type: "string",
-                  description: "Improvement focus area",
-                  enum: ["performance", "readability", "testing", "security", "all"],
-                  default: "all"
-                }
-              },
-              required: ["target"]
-            }
-          },
-          %{
-            name: "rag_query_stream",
-            description:
-              "Same as rag_query but uses the streaming AI provider internally for lower time-to-first-token. Returns the same complete result as rag_query — there is no difference in the final output, only in internal transport. Use this for long queries where you want to reduce latency.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                query: %{
-                  type: "string",
-                  description: "Natural language query about the codebase"
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of code snippets to retrieve",
-                  default: 10
-                },
-                include_code: %{
-                  type: "boolean",
-                  description: "Include full code snippets in context",
-                  default: true
-                },
-                provider: %{
-                  type: "string",
-                  description: "AI provider override",
-                  enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
-                },
-                show_chunks: %{
-                  type: "boolean",
-                  description: "Include intermediate chunks in response for debugging",
-                  default: false
-                }
-              },
-              required: ["query"]
-            }
-          },
-          %{
-            name: "rag_explain_stream",
-            description:
-              "Same as rag_explain but uses streaming AI internally for lower latency. Identical output to rag_explain. Prefer for interactive sessions where you want faster time-to-first-response.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                target: %{
-                  type: "string",
-                  description: "File path or function identifier (e.g., 'MyModule.function/2')"
-                },
-                aspect: %{
-                  type: "string",
-                  description: "What to explain",
-                  enum: ["purpose", "complexity", "dependencies", "all"],
-                  default: "all"
-                },
-                show_chunks: %{
-                  type: "boolean",
-                  description: "Include intermediate chunks in response for debugging",
-                  default: false
-                }
-              },
-              required: ["target"]
-            }
-          },
-          %{
-            name: "rag_suggest_stream",
-            description:
-              "Same as rag_suggest but uses streaming AI internally. Identical output to rag_suggest. Prefer for interactive sessions where you want faster time-to-first-response.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                target: %{
-                  type: "string",
-                  description: "File path or function identifier"
-                },
-                focus: %{
-                  type: "string",
-                  description: "Improvement focus area",
-                  enum: ["performance", "readability", "testing", "security", "all"],
-                  default: "all"
-                },
-                show_chunks: %{
-                  type: "boolean",
-                  description: "Include intermediate chunks in response for debugging",
-                  default: false
-                }
-              },
-              required: ["target"]
-            }
-          },
-          %{
-            name: "preview_refactor",
-            description:
-              "Preview refactoring changes without applying them - shows diffs, conflicts, and statistics with optional AI commentary",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                operation: %{
-                  type: "string",
-                  description: "Refactoring operation type",
-                  enum: [
-                    "rename_function",
-                    "rename_module",
-                    "extract_function",
-                    "inline_function"
-                  ]
-                },
-                params: %{
-                  type: "object",
-                  description: "Operation-specific parameters"
-                },
-                format: %{
-                  type: "string",
-                  description: "Preview output format",
-                  enum: ["unified", "side_by_side", "json"],
-                  default: "unified"
-                },
-                ai_commentary: %{
-                  type: "boolean",
-                  description:
-                    "Generate AI-powered summary and risk assessment (default: from config)",
-                  default: true
-                }
-              },
-              required: ["operation", "params"]
-            }
-          },
-          %{
-            name: "refactor_conflicts",
-            description:
-              "Check for conflicts before applying a refactoring operation - detects naming, dependency, and scope conflicts",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                operation: %{
-                  type: "string",
-                  description: "Refactoring operation type",
-                  enum: ["rename_function", "rename_module", "move_function", "extract_module"]
-                },
-                params: %{
-                  type: "object",
-                  description: "Operation-specific parameters"
-                }
-              },
-              required: ["operation", "params"]
-            }
-          },
-          %{
-            name: "undo_refactor",
-            description:
-              "Undo the most recent refactoring operation by restoring files to their previous state",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                project_path: %{
-                  type: "string",
-                  description: "Project root path (uses current directory if not specified)"
-                }
+                required: ["operation", "params"]
               }
-            }
-          },
-          %{
-            name: "refactor_history",
-            description: "List refactoring operation history with timestamps and file counts",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                project_path: %{
-                  type: "string",
-                  description: "Project root path (uses current directory if not specified)"
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of entries to return",
-                  default: 50
-                },
-                include_undone: %{
-                  type: "boolean",
-                  description: "Include undone operations",
-                  default: false
-                }
-              }
-            }
-          },
-          %{
-            name: "visualize_impact",
-            description:
-              "Visualize the impact of refactoring changes - shows affected functions, impact radius, and risk analysis",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                files: %{
-                  type: "array",
-                  description: "List of file paths affected by refactoring",
-                  items: %{type: "string"}
-                },
-                format: %{
-                  type: "string",
-                  description: "Visualization format",
-                  enum: ["graphviz", "d3_json", "ascii"],
-                  default: "ascii"
-                },
-                depth: %{
-                  type: "integer",
-                  description: "Impact radius depth (number of neighbor levels)",
-                  default: 1
-                },
-                include_risk: %{
-                  type: "boolean",
-                  description: "Include risk analysis based on centrality metrics",
-                  default: true
-                }
-              },
-              required: ["files"]
-            }
-          },
-          %{
-            name: "analyze_quality",
-            description:
-              "Compute per-function quality metrics (cyclomatic complexity, cognitive complexity, Halstead volume, nesting depth, purity) for a file or directory. Use to establish baseline metrics or identify which functions are candidates for refactoring. Results are stored for later querying via quality_report. Use find_complex_code to filter by threshold after running this.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File or directory path to analyze"
-                },
-                metrics: %{
-                  type: "array",
-                  description:
-                    "Specific metrics to compute (if not specified, computes all available metrics)",
-                  items: %{
+            },
+            %{
+              name: "advanced_refactor",
+              description:
+                "Advanced refactoring operations: extract_function, inline_function, convert_visibility, rename_parameter, modify_attributes, change_signature, move_function, extract_module",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  operation: %{
                     type: "string",
-                    enum: [
-                      "cyclomatic",
-                      "cognitive",
-                      "nesting",
-                      "halstead",
-                      "loc",
-                      "function_metrics",
-                      "purity"
-                    ]
-                  }
-                },
-                store_results: %{
-                  type: "boolean",
-                  description: "Store results in knowledge graph for later querying",
-                  default: true
-                },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively analyze directories",
-                  default: true
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "quality_report",
-            description:
-              "Summarize or trend quality metrics previously computed by analyze_quality. Use after analyze_quality to get aggregated statistics, language breakdowns, or trend comparisons. Returns no useful data if analyze_quality has not been run first.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                report_type: %{
-                  type: "string",
-                  description: "Type of report to generate",
-                  enum: ["summary", "detailed", "by_language", "trends"],
-                  default: "summary"
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["text", "json", "markdown"],
-                  default: "text"
-                },
-                include_files: %{
-                  type: "boolean",
-                  description: "Include individual file details",
-                  default: false
-                }
-              }
-            }
-          },
-          %{
-            name: "analyze_business_logic",
-            description:
-              "Analyze files for business logic issues using 33 language-agnostic analyzers - detects anti-patterns like callback hell, missing error handling, N+1 queries, plus 13 CWE-based security analyzers",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File or directory path to analyze"
-                },
-                analyzers: %{
-                  type: "array",
-                  description:
-                    "Specific analyzers to run (if not specified, runs all 33 analyzers)",
-                  items: %{
-                    type: "string",
-                    enum: [
-                      # Original 20 analyzers
-                      "callback_hell",
-                      "missing_error_handling",
-                      "silent_error_case",
-                      "swallowing_exception",
-                      "hardcoded_value",
-                      "n_plus_one_query",
-                      "inefficient_filter",
-                      "unmanaged_task",
-                      "telemetry_in_recursive_function",
-                      "missing_telemetry_for_external_http",
-                      "sync_over_async",
-                      "direct_struct_update",
-                      "missing_handle_async",
-                      "blocking_in_plug",
-                      "missing_telemetry_in_auth_plug",
-                      "missing_telemetry_in_liveview_mount",
-                      "missing_telemetry_in_oban_worker",
-                      "missing_preload",
-                      "inline_javascript",
-                      "missing_throttle",
-                      # 13 new CWE-based security analyzers
-                      "sql_injection",
-                      "xss_vulnerability",
-                      "ssrf_vulnerability",
-                      "path_traversal",
-                      "insecure_direct_object_reference",
-                      "missing_authentication",
-                      "missing_authorization",
-                      "incorrect_authorization",
-                      "missing_csrf_protection",
-                      "sensitive_data_exposure",
-                      "unrestricted_file_upload",
-                      "improper_input_validation",
-                      "toctou"
-                    ]
-                  }
-                },
-                min_severity: %{
-                  type: "string",
-                  description: "Minimum severity level to report",
-                  enum: ["info", "low", "medium", "high", "critical"],
-                  default: "info"
-                },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively analyze directories",
-                  default: true
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "find_complex_code",
-            description:
-              "Filter previously-computed quality results to find functions or files exceeding a complexity threshold. Requires analyze_quality to have been run first. Returns a ranked list of the worst offenders. Use to prioritize refactoring work or enforce complexity budgets.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                metric: %{
-                  type: "string",
-                  description: "Complexity metric to evaluate",
-                  enum: ["cyclomatic", "cognitive", "nesting"],
-                  default: "cyclomatic"
-                },
-                threshold: %{
-                  type: "number",
-                  description: "Threshold value (files exceeding this are returned)",
-                  default: 10
-                },
-                comparison: %{
-                  type: "string",
-                  description: "Comparison operator",
-                  enum: ["gt", "gte", "lt", "lte", "eq"],
-                  default: "gt"
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of results",
-                  default: 20
-                },
-                sort_order: %{
-                  type: "string",
-                  description: "Sort order for results",
-                  enum: ["asc", "desc"],
-                  default: "desc"
-                },
-                show_functions: %{
-                  type: "boolean",
-                  description:
-                    "Include per-function complexity breakdown with file:line locations",
-                  default: false
-                }
-              }
-            }
-          },
-          %{
-            name: "analyze_dependencies",
-            description:
-              "Build a dependency graph for a file or directory and compute coupling metrics. Returns afferent/efferent coupling per module and flags circular dependencies. Use before refactoring to understand what a module depends on and what depends on it. Use coupling_report for a pre-formatted summary, or find_circular_dependencies to focus only on cycles.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                module: %{
-                  type: "string",
-                  description:
-                    "Module name to analyze (optional - if not provided, analyzes all modules)"
-                },
-                include_transitive: %{
-                  type: "boolean",
-                  description: "Include transitive dependencies (dependencies of dependencies)",
-                  default: false
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              }
-            }
-          },
-          %{
-            name: "find_circular_dependencies",
-            description:
-              "Find circular dependencies in the codebase - helps identify architectural issues",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                scope: %{
-                  type: "string",
-                  description: "Analysis scope",
-                  enum: ["module", "function"],
-                  default: "module"
-                },
-                min_cycle_length: %{
-                  type: "integer",
-                  description: "Minimum cycle length to report",
-                  default: 2
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of cycles to return",
-                  default: 100
-                }
-              }
-            }
-          },
-          %{
-            name: "find_dead_code",
-            description:
-              "Find functions with no callers in the knowledge graph. Assigns a confidence score that distinguishes truly unreachable code from framework callbacks (GenServer, Phoenix handlers) that appear unused but are called by the runtime. Use before deleting code to avoid removing live callbacks. Requires the codebase to be indexed first.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                scope: %{
-                  type: "string",
-                  description: "Analysis scope",
-                  enum: ["exports", "private", "all", "modules"],
-                  default: "all"
-                },
-                min_confidence: %{
-                  type: "number",
-                  description: "Minimum confidence threshold (0.0-1.0)",
-                  default: 0.5
-                },
-                exclude_tests: %{
-                  type: "boolean",
-                  description: "Exclude test modules from analysis",
-                  default: true
-                },
-                include_callbacks: %{
-                  type: "boolean",
-                  description: "Include potential callbacks (GenServer, Phoenix, etc.)",
-                  default: false
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "suggestions"],
-                  default: "summary"
-                }
-              }
-            }
-          },
-          %{
-            name: "analyze_dead_code_patterns",
-            description:
-              "Detect unreachable code and constant conditionals inside function bodies using AST analysis. Complements find_dead_code (which finds whole unused functions) by looking at unreachable branches within live functions — e.g., code after early returns, or branches that always evaluate to the same result.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File path or directory to analyze"
-                },
-                min_confidence: %{
-                  type: "string",
-                  description: "Minimum confidence level for reporting",
-                  enum: ["low", "medium", "high"],
-                  default: "low"
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "coupling_report",
-            description:
-              "Pre-formatted summary of afferent coupling (Ca: how many modules depend on this), efferent coupling (Ce: how many modules this depends on), and Martin's instability metric (Ce / Ca+Ce) for every module. Use to identify unstable modules (high instability + high Ce) or god modules (high Ca). Requires analyze_dependencies to have been run first.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["text", "json", "markdown"],
-                  default: "text"
-                },
-                sort_by: %{
-                  type: "string",
-                  description: "Sort modules by metric",
-                  enum: ["name", "instability", "afferent", "efferent"],
-                  default: "instability"
-                },
-                include_transitive: %{
-                  type: "boolean",
-                  description: "Include transitive coupling metrics",
-                  default: false
-                },
-                threshold: %{
-                  type: "integer",
-                  description:
-                    "Only show modules with total coupling >= threshold (0 = show all)",
-                  default: 0
-                }
-              }
-            }
-          },
-          %{
-            name: "find_duplicates",
-            description:
-              "Detect copy-paste code clones using AST structural comparison (Type I: exact, Type II: renamed identifiers, Type III: modified statements, Type IV: semantic equivalents via MetaAST). Works across languages because comparison uses the Metastatic universal AST. Returns clone groups with similarity scores. Use find_similar_code for embedding-based similarity when AST is unavailable.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description:
-                    "File path or directory to analyze (if two paths separated by comma, compares them)"
-                },
-                threshold: %{
-                  type: "number",
-                  description: "Similarity threshold for Type III clones (0.0-1.0)",
-                  default: 0.8
-                },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively scan directories",
-                  default: true
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                },
-                exclude_patterns: %{
-                  type: "array",
-                  description: "Patterns to exclude from scan",
-                  items: %{type: "string"},
-                  default: ["_build", "deps", ".git"]
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "find_similar_code",
-            description:
-              "Find code that is semantically similar to a given snippet using embedding similarity, even if structurally different. Use when find_duplicates misses cases because the code was refactored or written differently in different languages. Returns results ranked by embedding cosine similarity.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                threshold: %{
-                  type: "number",
-                  description: "Similarity threshold (0.0-1.0)",
-                  default: 0.95
-                },
-                limit: %{
-                  type: "integer",
-                  description: "Maximum number of similar pairs to return",
-                  default: 100
-                },
-                node_type: %{
-                  type: "string",
-                  description: "Type of code entity to compare",
-                  enum: ["function", "module"],
-                  default: "function"
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              }
-            }
-          },
-          %{
-            name: "analyze_impact",
-            description:
-              "Find all code affected by a proposed change to specific files via graph traversal. Returns direct and transitive dependents up to a configurable depth. Use before making a change to understand blast radius. Pair with risk_assessment to get a combined impact + risk score.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                target: %{
-                  type: "string",
-                  description:
-                    "Target to analyze (format: 'Module.function/arity' or 'Module' for modules)"
-                },
-                depth: %{
-                  type: "integer",
-                  description: "Maximum traversal depth",
-                  default: 5
-                },
-                include_tests: %{
-                  type: "boolean",
-                  description: "Include test files in analysis",
-                  default: true
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["target"]
-            }
-          },
-          %{
-            name: "estimate_refactoring_effort",
-            description:
-              "Estimate the developer-hours and risk level of a refactoring operation based on graph metrics (coupling, impact radius, complexity). Use when scoping a refactoring task to give stakeholders a realistic effort range. Returns low/medium/high effort tier with contributing factors.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                operation: %{
-                  type: "string",
-                  description: "Refactoring operation type",
-                  enum: [
-                    "rename_function",
-                    "rename_module",
-                    "extract_function",
-                    "inline_function",
-                    "move_function",
-                    "change_signature"
-                  ]
-                },
-                target: %{
-                  type: "string",
-                  description:
-                    "Target to refactor (format: 'Module.function/arity' or 'Module' for modules)"
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["operation", "target"]
-            }
-          },
-          %{
-            name: "risk_assessment",
-            description:
-              "Score the risk of modifying a specific function or module by combining its PageRank importance, coupling (Ca+Ce), and cyclomatic complexity. Returns a 0-100 risk score with component breakdown. Use before editing high-traffic functions to understand whether extra testing or review is warranted.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                target: %{
-                  type: "string",
-                  description:
-                    "Target to assess (format: 'Module.function/arity' or 'Module' for modules)"
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["target"]
-            }
-          },
-          %{
-            name: "suggest_refactorings",
-            description:
-              "Detect refactoring opportunities in a file or module using pattern analysis and AI, ranked by priority. Returns actionable suggestions with expected benefit. Use explain_suggestion to get a detailed breakdown of any individual suggestion returned here.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                target: %{
-                  type: "string",
-                  description:
-                    "Target to analyze: file path, directory path, or module name (format: 'Module' or 'Module.function/arity')"
-                },
-                patterns: %{
-                  type: "array",
-                  description: "Filter by specific patterns (empty = all patterns)",
-                  items: %{
-                    type: "string",
+                    description: "Type of advanced refactoring operation",
                     enum: [
                       "extract_function",
                       "inline_function",
-                      "split_module",
-                      "merge_modules",
-                      "remove_dead_code",
-                      "reduce_coupling",
-                      "simplify_complexity",
+                      "convert_visibility",
+                      "rename_parameter",
+                      "modify_attributes",
+                      "change_signature",
+                      "move_function",
                       "extract_module"
                     ]
-                  }
-                },
-                min_priority: %{
-                  type: "string",
-                  description: "Minimum priority level to include",
-                  enum: ["info", "low", "medium", "high", "critical"],
-                  default: "low"
-                },
-                include_actions: %{
-                  type: "boolean",
-                  description: "Include action plans with step-by-step instructions",
-                  default: true
-                },
-                use_rag: %{
-                  type: "boolean",
-                  description: "Use RAG for AI-powered advice (requires AI provider)",
-                  default: false
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["target"]
-            }
-          },
-          %{
-            name: "explain_suggestion",
-            description:
-              "Get a detailed before/after explanation for a specific refactoring suggestion ID returned by suggest_refactorings. Returns rationale, concrete code change, expected improvement, and estimated effort. Requires a suggestion ID from suggest_refactorings — do not call without one.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                suggestion_id: %{
-                  type: "string",
-                  description: "ID of the suggestion (from suggest_refactorings response)"
-                },
-                include_code_context: %{
-                  type: "boolean",
-                  description: "Include relevant code snippets",
-                  default: true
-                },
-                use_rag: %{
-                  type: "boolean",
-                  description: "Generate enhanced explanation using RAG",
-                  default: false
-                }
-              },
-              required: ["suggestion_id"]
-            }
-          },
-          %{
-            name: "validate_with_ai",
-            description:
-              "Validate code syntax and semantics, then pass any errors through AI to generate human-readable explanations and fix suggestions. Use after edit_file if you want more than a pass/fail — the AI explains what the error means and how to resolve it.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                content: %{
-                  type: "string",
-                  description: "Code content to validate"
-                },
-                path: %{
-                  type: "string",
-                  description: "File path (for language detection)"
-                },
-                language: %{
-                  type: "string",
-                  description: "Explicit language override",
-                  enum: ["elixir", "erlang", "python", "javascript", "typescript"]
-                },
-                ai_explain: %{
-                  type: "boolean",
-                  description: "Enable AI explanations (default: from config)",
-                  default: true
-                },
-                surrounding_lines: %{
-                  type: "integer",
-                  description: "Lines of context around errors",
-                  default: 3
-                }
-              },
-              required: ["content"]
-            }
-          },
-          %{
-            name: "scan_security",
-            description:
-              "Scan source files for common vulnerability patterns: injection, unsafe deserialization, hardcoded secrets, weak crypto. Returns findings with file:line, severity, and CWE reference. Use for a quick pass on new or changed files. Use security_audit for a project-wide report with recommendations, or analyze_security_issues for the full 13-analyzer CWE-mapped pass.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File or directory path to scan"
-                },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively scan directories",
-                  default: true
-                },
-                min_severity: %{
-                  type: "string",
-                  description: "Minimum severity level to report",
-                  enum: ["low", "medium", "high", "critical"],
-                  default: "low"
-                },
-                categories: %{
-                  type: "array",
-                  description: "Filter by vulnerability categories (empty = all)",
-                  items: %{
+                  },
+                  params: %{
+                    type: "object",
+                    description:
+                      "Operation-specific parameters. See documentation for each operation type."
+                  },
+                  validate: %{
+                    type: "boolean",
+                    description: "Validate before and after refactoring",
+                    default: true
+                  },
+                  format: %{
+                    type: "boolean",
+                    description: "Format code after refactoring",
+                    default: true
+                  },
+                  scope: %{
                     type: "string",
-                    enum: [
-                      "injection",
-                      "unsafe_deserialization",
-                      "hardcoded_secret",
-                      "weak_cryptography",
-                      "insecure_protocol"
-                    ]
+                    description: "Refactoring scope (for applicable operations)",
+                    enum: ["module", "project"],
+                    default: "project"
+                  }
+                },
+                required: ["operation", "params"]
+              }
+            },
+            %{
+              name: "betweenness_centrality",
+              description:
+                "Compute betweenness centrality to identify bridge/bottleneck functions in the call graph",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  max_nodes: %{
+                    type: "integer",
+                    description: "Limit computation to N highest-degree nodes",
+                    default: 1000
+                  },
+                  normalize: %{
+                    type: "boolean",
+                    description: "Return normalized scores (0-1)",
+                    default: true
                   }
                 }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "security_audit",
-            description:
-              "Generate a structured security audit report for an entire project: all findings from scan_security, grouped by CWE, with remediation recommendations and overall risk summary. Use for a pre-release security review or compliance report. Slower than scan_security — avoid for quick targeted checks.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Directory path to audit"
-                },
-                format: %{
-                  type: "string",
-                  description: "Report format",
-                  enum: ["json", "markdown", "text"],
-                  default: "text"
-                },
-                min_severity: %{
-                  type: "string",
-                  description: "Minimum severity to include",
-                  enum: ["low", "medium", "high", "critical"],
-                  default: "low"
+              }
+            },
+            %{
+              name: "closeness_centrality",
+              description:
+                "Compute closeness centrality to identify central functions in the call graph",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  normalize: %{
+                    type: "boolean",
+                    description: "Return normalized scores (0-1)",
+                    default: true
+                  }
                 }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "check_secrets",
-            description:
-              "Scan source files for hardcoded secrets: API keys, passwords, connection strings, tokens. Focused narrowly on secret exposure — use scan_security for broader vulnerability scanning. Returns file:line locations with the matched pattern type. Run before committing code to catch accidental credential commits.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File or directory path to scan"
-                },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively scan directories",
-                  default: true
+              }
+            },
+            %{
+              name: "detect_communities",
+              description:
+                "Detect communities/clusters in the call graph to identify architectural modules",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  algorithm: %{
+                    type: "string",
+                    description: "Community detection algorithm",
+                    enum: ["louvain", "label_propagation"],
+                    default: "louvain"
+                  },
+                  max_iterations: %{
+                    type: "integer",
+                    description: "Maximum optimization iterations",
+                    default: 10
+                  },
+                  resolution: %{
+                    type: "number",
+                    description: "Resolution parameter for multi-scale detection (Louvain only)",
+                    default: 1.0
+                  },
+                  hierarchical: %{
+                    type: "boolean",
+                    description: "Return hierarchical community structure (Louvain only)",
+                    default: false
+                  },
+                  seed: %{
+                    type: "integer",
+                    description: "Random seed for deterministic results (label propagation only)"
+                  }
                 }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "detect_smells",
-            description:
-              "Detect structural code smells: long functions, deep nesting, magic numbers, complex conditionals, large modules. Use to find readability and maintainability issues that don't rise to the level of bugs. Complements analyze_quality (which gives metrics) and find_complex_code (which filters by threshold) — detect_smells identifies named anti-patterns rather than raw numbers.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File or directory path to analyze"
+              }
+            },
+            %{
+              name: "export_graph",
+              description:
+                "Export the call graph in visualization formats (Graphviz DOT or D3.js JSON)",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  format: %{
+                    type: "string",
+                    description: "Export format",
+                    enum: ["graphviz", "d3"],
+                    default: "graphviz"
+                  },
+                  include_communities: %{
+                    type: "boolean",
+                    description: "Include community clustering",
+                    default: true
+                  },
+                  color_by: %{
+                    type: "string",
+                    description: "Centrality metric for node coloring (graphviz only)",
+                    enum: ["pagerank", "betweenness", "degree"],
+                    default: "pagerank"
+                  },
+                  max_nodes: %{
+                    type: "integer",
+                    description: "Maximum nodes to include",
+                    default: 500
+                  }
                 },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively analyze directories",
-                  default: true
+                required: ["format"]
+              }
+            },
+            %{
+              name: "edit_files",
+              description: "Atomically edit multiple files with automatic rollback on failure",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  files: %{
+                    type: "array",
+                    description: "List of files to edit",
+                    items: %{
+                      type: "object",
+                      properties: %{
+                        path: %{
+                          type: "string",
+                          description: "Path to the file to edit"
+                        },
+                        changes: %{
+                          type: "array",
+                          description: "List of changes to apply to this file",
+                          items: %{
+                            type: "object",
+                            properties: %{
+                              type: %{
+                                type: "string",
+                                enum: ["replace", "insert", "delete"],
+                                description: "Type of change"
+                              },
+                              line_start: %{
+                                type: "integer",
+                                description: "Starting line number (1-indexed)"
+                              },
+                              line_end: %{
+                                type: "integer",
+                                description: "Ending line number (for replace/delete)"
+                              },
+                              content: %{
+                                type: "string",
+                                description: "New content (for replace/insert)"
+                              }
+                            },
+                            required: ["type", "line_start"]
+                          }
+                        },
+                        validate: %{
+                          type: "boolean",
+                          description:
+                            "Validate syntax for this file (overrides transaction default)"
+                        },
+                        format: %{
+                          type: "boolean",
+                          description: "Format code after editing (overrides transaction default)"
+                        },
+                        language: %{
+                          type: "string",
+                          description:
+                            "Explicit language for validation (auto-detected from extension)",
+                          enum: ["elixir", "erlang", "python", "javascript"]
+                        }
+                      },
+                      required: ["path", "changes"]
+                    }
+                  },
+                  validate: %{
+                    type: "boolean",
+                    description: "Validate all files before applying changes (default: true)",
+                    default: true
+                  },
+                  create_backup: %{
+                    type: "boolean",
+                    description: "Create backups before editing (default: true)",
+                    default: true
+                  },
+                  format: %{
+                    type: "boolean",
+                    description: "Format code after editing (default: false)",
+                    default: false
+                  }
                 },
-                min_severity: %{
-                  type: "string",
-                  description: "Minimum severity level to report",
-                  enum: ["low", "medium", "high", "critical"],
-                  default: "low"
+                required: ["files"]
+              }
+            },
+            %{
+              name: "rag_query",
+              description:
+                "Ask a free-form question about the codebase and get an AI-generated answer grounded in retrieved code. Use this when you need synthesis — an explanation, a summary, or reasoning over multiple files. More expensive than semantic_search (requires an LLM call) but returns prose answers with citations. Use semantic_search or hybrid_search when you just need matching code snippets.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  query: %{
+                    type: "string",
+                    description: "Natural language query about the codebase"
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of code snippets to retrieve",
+                    default: 10
+                  },
+                  include_code: %{
+                    type: "boolean",
+                    description: "Include full code snippets in context",
+                    default: true
+                  },
+                  provider: %{
+                    type: "string",
+                    description: "AI provider override",
+                    enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
+                  }
                 },
-                thresholds: %{
-                  type: "object",
-                  description: "Custom thresholds for smell detection",
-                  properties: %{
-                    max_statements: %{
-                      type: "integer",
-                      description: "Maximum statements per function",
-                      default: 50
-                    },
-                    max_nesting: %{
-                      type: "integer",
-                      description: "Maximum nesting depth",
-                      default: 4
-                    },
-                    max_parameters: %{
-                      type: "integer",
-                      description: "Maximum parameters per function",
-                      default: 5
-                    },
-                    max_cognitive: %{
-                      type: "integer",
-                      description: "Maximum cognitive complexity",
-                      default: 15
+                required: ["query"]
+              }
+            },
+            %{
+              name: "rag_explain",
+              description:
+                "Generate an AI explanation of a specific module or function. Retrieves the target's source and related context automatically — you only need the identifier. Returns a structured prose explanation covering purpose, behavior, dependencies, and caveats. Prefer this over rag_query when you have a specific target in mind.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  target: %{
+                    type: "string",
+                    description: "File path or function identifier (e.g., 'MyModule.function/2')"
+                  },
+                  aspect: %{
+                    type: "string",
+                    description: "What to explain",
+                    enum: ["purpose", "complexity", "dependencies", "all"],
+                    default: "all"
+                  }
+                },
+                required: ["target"]
+              }
+            },
+            %{
+              name: "rag_suggest",
+              description:
+                "Generate targeted improvement suggestions for a specific file or function using AI. Focuses on a named improvement dimension (performance, readability, testing, security). Returns actionable recommendations with code examples. Use rag_query for open-ended questions; use this when you want a focused review of a known target.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  target: %{
+                    type: "string",
+                    description: "File path or function identifier"
+                  },
+                  focus: %{
+                    type: "string",
+                    description: "Improvement focus area",
+                    enum: ["performance", "readability", "testing", "security", "all"],
+                    default: "all"
+                  }
+                },
+                required: ["target"]
+              }
+            },
+            %{
+              name: "rag_query_stream",
+              description:
+                "Same as rag_query but uses the streaming AI provider internally for lower time-to-first-token. Returns the same complete result as rag_query — there is no difference in the final output, only in internal transport. Use this for long queries where you want to reduce latency.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  query: %{
+                    type: "string",
+                    description: "Natural language query about the codebase"
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of code snippets to retrieve",
+                    default: 10
+                  },
+                  include_code: %{
+                    type: "boolean",
+                    description: "Include full code snippets in context",
+                    default: true
+                  },
+                  provider: %{
+                    type: "string",
+                    description: "AI provider override",
+                    enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
+                  },
+                  show_chunks: %{
+                    type: "boolean",
+                    description: "Include intermediate chunks in response for debugging",
+                    default: false
+                  }
+                },
+                required: ["query"]
+              }
+            },
+            %{
+              name: "rag_explain_stream",
+              description:
+                "Same as rag_explain but uses streaming AI internally for lower latency. Identical output to rag_explain. Prefer for interactive sessions where you want faster time-to-first-response.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  target: %{
+                    type: "string",
+                    description: "File path or function identifier (e.g., 'MyModule.function/2')"
+                  },
+                  aspect: %{
+                    type: "string",
+                    description: "What to explain",
+                    enum: ["purpose", "complexity", "dependencies", "all"],
+                    default: "all"
+                  },
+                  show_chunks: %{
+                    type: "boolean",
+                    description: "Include intermediate chunks in response for debugging",
+                    default: false
+                  }
+                },
+                required: ["target"]
+              }
+            },
+            %{
+              name: "rag_suggest_stream",
+              description:
+                "Same as rag_suggest but uses streaming AI internally. Identical output to rag_suggest. Prefer for interactive sessions where you want faster time-to-first-response.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  target: %{
+                    type: "string",
+                    description: "File path or function identifier"
+                  },
+                  focus: %{
+                    type: "string",
+                    description: "Improvement focus area",
+                    enum: ["performance", "readability", "testing", "security", "all"],
+                    default: "all"
+                  },
+                  show_chunks: %{
+                    type: "boolean",
+                    description: "Include intermediate chunks in response for debugging",
+                    default: false
+                  }
+                },
+                required: ["target"]
+              }
+            },
+            %{
+              name: "preview_refactor",
+              description:
+                "Preview refactoring changes without applying them - shows diffs, conflicts, and statistics with optional AI commentary",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  operation: %{
+                    type: "string",
+                    description: "Refactoring operation type",
+                    enum: [
+                      "rename_function",
+                      "rename_module",
+                      "extract_function",
+                      "inline_function"
+                    ]
+                  },
+                  params: %{
+                    type: "object",
+                    description: "Operation-specific parameters"
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Preview output format",
+                    enum: ["unified", "side_by_side", "json"],
+                    default: "unified"
+                  },
+                  ai_commentary: %{
+                    type: "boolean",
+                    description:
+                      "Generate AI-powered summary and risk assessment (default: from config)",
+                    default: true
+                  }
+                },
+                required: ["operation", "params"]
+              }
+            },
+            %{
+              name: "refactor_conflicts",
+              description:
+                "Check for conflicts before applying a refactoring operation - detects naming, dependency, and scope conflicts",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  operation: %{
+                    type: "string",
+                    description: "Refactoring operation type",
+                    enum: ["rename_function", "rename_module", "move_function", "extract_module"]
+                  },
+                  params: %{
+                    type: "object",
+                    description: "Operation-specific parameters"
+                  }
+                },
+                required: ["operation", "params"]
+              }
+            },
+            %{
+              name: "undo_refactor",
+              description:
+                "Undo the most recent refactoring operation by restoring files to their previous state",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  project_path: %{
+                    type: "string",
+                    description: "Project root path (uses current directory if not specified)"
+                  }
+                }
+              }
+            },
+            %{
+              name: "refactor_history",
+              description: "List refactoring operation history with timestamps and file counts",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  project_path: %{
+                    type: "string",
+                    description: "Project root path (uses current directory if not specified)"
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of entries to return",
+                    default: 50
+                  },
+                  include_undone: %{
+                    type: "boolean",
+                    description: "Include undone operations",
+                    default: false
+                  }
+                }
+              }
+            },
+            %{
+              name: "visualize_impact",
+              description:
+                "Visualize the impact of refactoring changes - shows affected functions, impact radius, and risk analysis",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  files: %{
+                    type: "array",
+                    description: "List of file paths affected by refactoring",
+                    items: %{type: "string"}
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Visualization format",
+                    enum: ["graphviz", "d3_json", "ascii"],
+                    default: "ascii"
+                  },
+                  depth: %{
+                    type: "integer",
+                    description: "Impact radius depth (number of neighbor levels)",
+                    default: 1
+                  },
+                  include_risk: %{
+                    type: "boolean",
+                    description: "Include risk analysis based on centrality metrics",
+                    default: true
+                  }
+                },
+                required: ["files"]
+              }
+            },
+            %{
+              name: "analyze_quality",
+              description:
+                "Compute per-function quality metrics (cyclomatic complexity, cognitive complexity, Halstead volume, nesting depth, purity) for a file or directory. Use to establish baseline metrics or identify which functions are candidates for refactoring. Results are stored for later querying via quality_report. Use find_complex_code to filter by threshold after running this.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "File or directory path to analyze"
+                  },
+                  metrics: %{
+                    type: "array",
+                    description:
+                      "Specific metrics to compute (if not specified, computes all available metrics)",
+                    items: %{
+                      type: "string",
+                      enum: [
+                        "cyclomatic",
+                        "cognitive",
+                        "nesting",
+                        "halstead",
+                        "loc",
+                        "function_metrics",
+                        "purity"
+                      ]
+                    }
+                  },
+                  store_results: %{
+                    type: "boolean",
+                    description: "Store results in knowledge graph for later querying",
+                    default: true
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively analyze directories",
+                    default: true
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "quality_report",
+              description:
+                "Summarize or trend quality metrics previously computed by analyze_quality. Use after analyze_quality to get aggregated statistics, language breakdowns, or trend comparisons. Returns no useful data if analyze_quality has not been run first.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  report_type: %{
+                    type: "string",
+                    description: "Type of report to generate",
+                    enum: ["summary", "detailed", "by_language", "trends"],
+                    default: "summary"
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["text", "json", "markdown"],
+                    default: "text"
+                  },
+                  include_files: %{
+                    type: "boolean",
+                    description: "Include individual file details",
+                    default: false
+                  }
+                }
+              }
+            },
+            %{
+              name: "analyze_business_logic",
+              description:
+                "Analyze files for business logic issues using 33 language-agnostic analyzers - detects anti-patterns like callback hell, missing error handling, N+1 queries, plus 13 CWE-based security analyzers",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "File or directory path to analyze"
+                  },
+                  analyzers: %{
+                    type: "array",
+                    description:
+                      "Specific analyzers to run (if not specified, runs all 33 analyzers)",
+                    items: %{
+                      type: "string",
+                      enum: [
+                        # Original 20 analyzers
+                        "callback_hell",
+                        "missing_error_handling",
+                        "silent_error_case",
+                        "swallowing_exception",
+                        "hardcoded_value",
+                        "n_plus_one_query",
+                        "inefficient_filter",
+                        "unmanaged_task",
+                        "telemetry_in_recursive_function",
+                        "missing_telemetry_for_external_http",
+                        "sync_over_async",
+                        "direct_struct_update",
+                        "missing_handle_async",
+                        "blocking_in_plug",
+                        "missing_telemetry_in_auth_plug",
+                        "missing_telemetry_in_liveview_mount",
+                        "missing_telemetry_in_oban_worker",
+                        "missing_preload",
+                        "inline_javascript",
+                        "missing_throttle",
+                        # 13 new CWE-based security analyzers
+                        "sql_injection",
+                        "xss_vulnerability",
+                        "ssrf_vulnerability",
+                        "path_traversal",
+                        "insecure_direct_object_reference",
+                        "missing_authentication",
+                        "missing_authorization",
+                        "incorrect_authorization",
+                        "missing_csrf_protection",
+                        "sensitive_data_exposure",
+                        "unrestricted_file_upload",
+                        "improper_input_validation",
+                        "toctou"
+                      ]
+                    }
+                  },
+                  min_severity: %{
+                    type: "string",
+                    description: "Minimum severity level to report",
+                    enum: ["info", "low", "medium", "high", "critical"],
+                    default: "info"
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively analyze directories",
+                    default: true
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "find_complex_code",
+              description:
+                "Filter previously-computed quality results to find functions or files exceeding a complexity threshold. Requires analyze_quality to have been run first. Returns a ranked list of the worst offenders. Use to prioritize refactoring work or enforce complexity budgets.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  metric: %{
+                    type: "string",
+                    description: "Complexity metric to evaluate",
+                    enum: ["cyclomatic", "cognitive", "nesting"],
+                    default: "cyclomatic"
+                  },
+                  threshold: %{
+                    type: "number",
+                    description: "Threshold value (files exceeding this are returned)",
+                    default: 10
+                  },
+                  comparison: %{
+                    type: "string",
+                    description: "Comparison operator",
+                    enum: ["gt", "gte", "lt", "lte", "eq"],
+                    default: "gt"
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of results",
+                    default: 20
+                  },
+                  sort_order: %{
+                    type: "string",
+                    description: "Sort order for results",
+                    enum: ["asc", "desc"],
+                    default: "desc"
+                  },
+                  show_functions: %{
+                    type: "boolean",
+                    description:
+                      "Include per-function complexity breakdown with file:line locations",
+                    default: false
+                  }
+                }
+              }
+            },
+            %{
+              name: "analyze_dependencies",
+              description:
+                "Build a dependency graph for a file or directory and compute coupling metrics. Returns afferent/efferent coupling per module and flags circular dependencies. Use before refactoring to understand what a module depends on and what depends on it. Use coupling_report for a pre-formatted summary, or find_circular_dependencies to focus only on cycles.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  module: %{
+                    type: "string",
+                    description:
+                      "Module name to analyze (optional - if not provided, analyzes all modules)"
+                  },
+                  include_transitive: %{
+                    type: "boolean",
+                    description: "Include transitive dependencies (dependencies of dependencies)",
+                    default: false
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
+                }
+              }
+            },
+            %{
+              name: "find_circular_dependencies",
+              description:
+                "Find circular dependencies in the codebase - helps identify architectural issues",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  scope: %{
+                    type: "string",
+                    description: "Analysis scope",
+                    enum: ["module", "function"],
+                    default: "module"
+                  },
+                  min_cycle_length: %{
+                    type: "integer",
+                    description: "Minimum cycle length to report",
+                    default: 2
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of cycles to return",
+                    default: 100
+                  }
+                }
+              }
+            },
+            %{
+              name: "find_dead_code",
+              description:
+                "Find functions with no callers in the knowledge graph. Assigns a confidence score that distinguishes truly unreachable code from framework callbacks (GenServer, Phoenix handlers) that appear unused but are called by the runtime. Use before deleting code to avoid removing live callbacks. Requires the codebase to be indexed first.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  scope: %{
+                    type: "string",
+                    description: "Analysis scope",
+                    enum: ["exports", "private", "all", "modules"],
+                    default: "all"
+                  },
+                  min_confidence: %{
+                    type: "number",
+                    description: "Minimum confidence threshold (0.0-1.0)",
+                    default: 0.5
+                  },
+                  exclude_tests: %{
+                    type: "boolean",
+                    description: "Exclude test modules from analysis",
+                    default: true
+                  },
+                  include_callbacks: %{
+                    type: "boolean",
+                    description: "Include potential callbacks (GenServer, Phoenix, etc.)",
+                    default: false
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "suggestions"],
+                    default: "summary"
+                  }
+                }
+              }
+            },
+            %{
+              name: "analyze_dead_code_patterns",
+              description:
+                "Detect unreachable code and constant conditionals inside function bodies using AST analysis. Complements find_dead_code (which finds whole unused functions) by looking at unreachable branches within live functions — e.g., code after early returns, or branches that always evaluate to the same result.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "File path or directory to analyze"
+                  },
+                  min_confidence: %{
+                    type: "string",
+                    description: "Minimum confidence level for reporting",
+                    enum: ["low", "medium", "high"],
+                    default: "low"
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "coupling_report",
+              description:
+                "Pre-formatted summary of afferent coupling (Ca: how many modules depend on this), efferent coupling (Ce: how many modules this depends on), and Martin's instability metric (Ce / Ca+Ce) for every module. Use to identify unstable modules (high instability + high Ce) or god modules (high Ca). Requires analyze_dependencies to have been run first.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["text", "json", "markdown"],
+                    default: "text"
+                  },
+                  sort_by: %{
+                    type: "string",
+                    description: "Sort modules by metric",
+                    enum: ["name", "instability", "afferent", "efferent"],
+                    default: "instability"
+                  },
+                  include_transitive: %{
+                    type: "boolean",
+                    description: "Include transitive coupling metrics",
+                    default: false
+                  },
+                  threshold: %{
+                    type: "integer",
+                    description:
+                      "Only show modules with total coupling >= threshold (0 = show all)",
+                    default: 0
+                  }
+                }
+              }
+            },
+            %{
+              name: "find_duplicates",
+              description:
+                "Detect copy-paste code clones using AST structural comparison (Type I: exact, Type II: renamed identifiers, Type III: modified statements, Type IV: semantic equivalents via MetaAST). Works across languages because comparison uses the Metastatic universal AST. Returns clone groups with similarity scores. Use find_similar_code for embedding-based similarity when AST is unavailable.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description:
+                      "File path or directory to analyze (if two paths separated by comma, compares them)"
+                  },
+                  threshold: %{
+                    type: "number",
+                    description: "Similarity threshold for Type III clones (0.0-1.0)",
+                    default: 0.8
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively scan directories",
+                    default: true
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  },
+                  exclude_patterns: %{
+                    type: "array",
+                    description: "Patterns to exclude from scan",
+                    items: %{type: "string"},
+                    default: ["_build", "deps", ".git"]
+                  }
+                },
+                required: ["path"]
+              }
+            },
+            %{
+              name: "find_similar_code",
+              description:
+                "Find code that is semantically similar to a given snippet using embedding similarity, even if structurally different. Use when find_duplicates misses cases because the code was refactored or written differently in different languages. Returns results ranked by embedding cosine similarity.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  threshold: %{
+                    type: "number",
+                    description: "Similarity threshold (0.0-1.0)",
+                    default: 0.95
+                  },
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum number of similar pairs to return",
+                    default: 100
+                  },
+                  node_type: %{
+                    type: "string",
+                    description: "Type of code entity to compare",
+                    enum: ["function", "module"],
+                    default: "function"
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
+                }
+              }
+            },
+            %{
+              name: "analyze_impact",
+              description:
+                "Find all code affected by a proposed change to specific files via graph traversal. Returns direct and transitive dependents up to a configurable depth. Use before making a change to understand blast radius. Pair with risk_assessment to get a combined impact + risk score.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  target: %{
+                    type: "string",
+                    description:
+                      "Target to analyze (format: 'Module.function/arity' or 'Module' for modules)"
+                  },
+                  depth: %{
+                    type: "integer",
+                    description: "Maximum traversal depth",
+                    default: 5
+                  },
+                  include_tests: %{
+                    type: "boolean",
+                    description: "Include test files in analysis",
+                    default: true
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
+                },
+                required: ["target"]
+              }
+            },
+            %{
+              name: "estimate_refactoring_effort",
+              description:
+                "Estimate the developer-hours and risk level of a refactoring operation based on graph metrics (coupling, impact radius, complexity). Use when scoping a refactoring task to give stakeholders a realistic effort range. Returns low/medium/high effort tier with contributing factors.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  operation: %{
+                    type: "string",
+                    description: "Refactoring operation type",
+                    enum: [
+                      "rename_function",
+                      "rename_module",
+                      "extract_function",
+                      "inline_function",
+                      "move_function",
+                      "change_signature"
+                    ]
+                  },
+                  target: %{
+                    type: "string",
+                    description:
+                      "Target to refactor (format: 'Module.function/arity' or 'Module' for modules)"
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
+                },
+                required: ["operation", "target"]
+              }
+            },
+            %{
+              name: "risk_assessment",
+              description:
+                "Score the risk of modifying a specific function or module by combining its PageRank importance, coupling (Ca+Ce), and cyclomatic complexity. Returns a 0-100 risk score with component breakdown. Use before editing high-traffic functions to understand whether extra testing or review is warranted.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  target: %{
+                    type: "string",
+                    description:
+                      "Target to assess (format: 'Module.function/arity' or 'Module' for modules)"
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
+                },
+                required: ["target"]
+              }
+            },
+            %{
+              name: "suggest_refactorings",
+              description:
+                "Detect refactoring opportunities in a file or module using pattern analysis and AI, ranked by priority. Returns actionable suggestions with expected benefit. Use explain_suggestion to get a detailed breakdown of any individual suggestion returned here.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  target: %{
+                    type: "string",
+                    description:
+                      "Target to analyze: file path, directory path, or module name (format: 'Module' or 'Module.function/arity')"
+                  },
+                  patterns: %{
+                    type: "array",
+                    description: "Filter by specific patterns (empty = all patterns)",
+                    items: %{
+                      type: "string",
+                      enum: [
+                        "extract_function",
+                        "inline_function",
+                        "split_module",
+                        "merge_modules",
+                        "remove_dead_code",
+                        "reduce_coupling",
+                        "simplify_complexity",
+                        "extract_module"
+                      ]
+                    }
+                  },
+                  min_priority: %{
+                    type: "string",
+                    description: "Minimum priority level to include",
+                    enum: ["info", "low", "medium", "high", "critical"],
+                    default: "low"
+                  },
+                  include_actions: %{
+                    type: "boolean",
+                    description: "Include action plans with step-by-step instructions",
+                    default: true
+                  },
+                  use_rag: %{
+                    type: "boolean",
+                    description: "Use RAG for AI-powered advice (requires AI provider)",
+                    default: false
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
+                },
+                required: ["target"]
+              }
+            },
+            %{
+              name: "explain_suggestion",
+              description:
+                "Get a detailed before/after explanation for a specific refactoring suggestion ID returned by suggest_refactorings. Returns rationale, concrete code change, expected improvement, and estimated effort. Requires a suggestion ID from suggest_refactorings — do not call without one.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  suggestion_id: %{
+                    type: "string",
+                    description: "ID of the suggestion (from suggest_refactorings response)"
+                  },
+                  include_code_context: %{
+                    type: "boolean",
+                    description: "Include relevant code snippets",
+                    default: true
+                  },
+                  use_rag: %{
+                    type: "boolean",
+                    description: "Generate enhanced explanation using RAG",
+                    default: false
+                  }
+                },
+                required: ["suggestion_id"]
+              }
+            },
+            %{
+              name: "validate_with_ai",
+              description:
+                "Validate code syntax and semantics, then pass any errors through AI to generate human-readable explanations and fix suggestions. Use after edit_file if you want more than a pass/fail — the AI explains what the error means and how to resolve it.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  content: %{
+                    type: "string",
+                    description: "Code content to validate"
+                  },
+                  path: %{
+                    type: "string",
+                    description: "File path (for language detection)"
+                  },
+                  language: %{
+                    type: "string",
+                    description: "Explicit language override",
+                    enum: ["elixir", "erlang", "python", "javascript", "typescript"]
+                  },
+                  ai_explain: %{
+                    type: "boolean",
+                    description: "Enable AI explanations (default: from config)",
+                    default: true
+                  },
+                  surrounding_lines: %{
+                    type: "integer",
+                    description: "Lines of context around errors",
+                    default: 3
+                  }
+                },
+                required: ["content"]
+              }
+            },
+            %{
+              name: "scan_security",
+              description:
+                "Scan source files for common vulnerability patterns: injection, unsafe deserialization, hardcoded secrets, weak crypto. Returns findings with file:line, severity, and CWE reference. Use for a quick pass on new or changed files. Use security_audit for a project-wide report with recommendations, or analyze_security_issues for the full 13-analyzer CWE-mapped pass.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "File or directory path to scan"
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively scan directories",
+                    default: true
+                  },
+                  min_severity: %{
+                    type: "string",
+                    description: "Minimum severity level to report",
+                    enum: ["low", "medium", "high", "critical"],
+                    default: "low"
+                  },
+                  categories: %{
+                    type: "array",
+                    description: "Filter by vulnerability categories (empty = all)",
+                    items: %{
+                      type: "string",
+                      enum: [
+                        "injection",
+                        "unsafe_deserialization",
+                        "hardcoded_secret",
+                        "weak_cryptography",
+                        "insecure_protocol"
+                      ]
                     }
                   }
                 },
-                smell_types: %{
-                  type: "array",
-                  description: "Filter by specific smell types (empty = all)",
-                  items: %{
+                required: ["path"]
+              }
+            },
+            %{
+              name: "security_audit",
+              description:
+                "Generate a structured security audit report for an entire project: all findings from scan_security, grouped by CWE, with remediation recommendations and overall risk summary. Use for a pre-release security review or compliance report. Slower than scan_security — avoid for quick targeted checks.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
                     type: "string",
-                    enum: [
-                      "long_function",
-                      "deep_nesting",
-                      "magic_number",
-                      "complex_conditional",
-                      "long_parameter_list"
-                    ]
-                  }
-                }
-              },
-              required: ["path"]
-            }
-          },
-          # Semantic Analysis Tools - OpKind Integration
-          %{
-            name: "semantic_operations",
-            description:
-              "Extract what a module or function *does* in terms of semantic operation categories: database (Ecto), HTTP calls, cache reads/writes, queue operations, file I/O, external API calls. Uses MetaAST OpKind annotations. Use to understand side-effect profile of code without reading it line-by-line. Returns a categorized list of operations with call sites.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File or directory path to analyze"
-                },
-                domains: %{
-                  type: "array",
-                  description: "Filter by semantic domains (empty = all)",
-                  items: %{
+                    description: "Directory path to audit"
+                  },
+                  format: %{
                     type: "string",
-                    enum: ["db", "http", "auth", "cache", "queue", "file", "external_api"]
+                    description: "Report format",
+                    enum: ["json", "markdown", "text"],
+                    default: "text"
+                  },
+                  min_severity: %{
+                    type: "string",
+                    description: "Minimum severity to include",
+                    enum: ["low", "medium", "high", "critical"],
+                    default: "low"
                   }
                 },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively analyze directories",
-                  default: true
-                },
-                include_security: %{
-                  type: "boolean",
-                  description:
-                    "Include security-relevant operations (write, delete, auth operations)",
-                  default: true
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "analyze_security_issues",
-            description:
-              "Run all 13 CWE-mapped analyzers (SQL injection, XSS, SSRF, path traversal, IDOR, missing auth/authz, CSRF, data exposure, file upload, input validation, TOCTOU) on a file or directory. More comprehensive than scan_security but slower. Use for thorough security review of a specific component; use scan_security for a fast initial pass.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File or directory path to analyze"
-                },
-                min_severity: %{
-                  type: "string",
-                  description: "Minimum severity level to report",
-                  enum: ["info", "low", "medium", "high", "critical"],
-                  default: "low"
-                },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively analyze directories",
-                  default: true
-                },
-                categories: %{
-                  type: "array",
-                  description: "Filter by vulnerability categories (empty = all)",
-                  items: %{
+                required: ["path"]
+              }
+            },
+            %{
+              name: "check_secrets",
+              description:
+                "Scan source files for hardcoded secrets: API keys, passwords, connection strings, tokens. Focused narrowly on secret exposure — use scan_security for broader vulnerability scanning. Returns file:line locations with the matched pattern type. Run before committing code to catch accidental credential commits.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
                     type: "string",
-                    enum: [
-                      "injection",
-                      "authentication",
-                      "authorization",
-                      "data_exposure",
-                      "input_validation",
-                      "race_condition"
-                    ]
+                    description: "File or directory path to scan"
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively scan directories",
+                    default: true
                   }
                 },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "semantic_analysis",
-            description:
-              "Combined semantic operation extraction + security assessment in one call. Returns both the OpKind operation profile (what the code does) and security findings (what risks it carries). Use instead of calling semantic_operations and scan_security separately when you want both views at once.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "File or directory path to analyze"
+                required: ["path"]
+              }
+            },
+            %{
+              name: "detect_smells",
+              description:
+                "Detect structural code smells: long functions, deep nesting, magic numbers, complex conditionals, large modules. Use to find readability and maintainability issues that don't rise to the level of bugs. Complements analyze_quality (which gives metrics) and find_complex_code (which filters by threshold) — detect_smells identifies named anti-patterns rather than raw numbers.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "File or directory path to analyze"
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively analyze directories",
+                    default: true
+                  },
+                  min_severity: %{
+                    type: "string",
+                    description: "Minimum severity level to report",
+                    enum: ["low", "medium", "high", "critical"],
+                    default: "low"
+                  },
+                  thresholds: %{
+                    type: "object",
+                    description: "Custom thresholds for smell detection",
+                    properties: %{
+                      max_statements: %{
+                        type: "integer",
+                        description: "Maximum statements per function",
+                        default: 50
+                      },
+                      max_nesting: %{
+                        type: "integer",
+                        description: "Maximum nesting depth",
+                        default: 4
+                      },
+                      max_parameters: %{
+                        type: "integer",
+                        description: "Maximum parameters per function",
+                        default: 5
+                      },
+                      max_cognitive: %{
+                        type: "integer",
+                        description: "Maximum cognitive complexity",
+                        default: 15
+                      }
+                    }
+                  },
+                  smell_types: %{
+                    type: "array",
+                    description: "Filter by specific smell types (empty = all)",
+                    items: %{
+                      type: "string",
+                      enum: [
+                        "long_function",
+                        "deep_nesting",
+                        "magic_number",
+                        "complex_conditional",
+                        "long_parameter_list"
+                      ]
+                    }
+                  }
                 },
-                recursive: %{
-                  type: "boolean",
-                  description: "Recursively analyze directories",
-                  default: true
+                required: ["path"]
+              }
+            },
+            # Semantic Analysis Tools - OpKind Integration
+            %{
+              name: "semantic_operations",
+              description:
+                "Extract what a module or function *does* in terms of semantic operation categories: database (Ecto), HTTP calls, cache reads/writes, queue operations, file I/O, external API calls. Uses MetaAST OpKind annotations. Use to understand side-effect profile of code without reading it line-by-line. Returns a categorized list of operations with call sites.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "File or directory path to analyze"
+                  },
+                  domains: %{
+                    type: "array",
+                    description: "Filter by semantic domains (empty = all)",
+                    items: %{
+                      type: "string",
+                      enum: ["db", "http", "auth", "cache", "queue", "file", "external_api"]
+                    }
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively analyze directories",
+                    default: true
+                  },
+                  include_security: %{
+                    type: "boolean",
+                    description:
+                      "Include security-relevant operations (write, delete, auth operations)",
+                    default: true
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
                 },
-                include_operations: %{
-                  type: "boolean",
-                  description: "Include detailed operation breakdown by domain",
-                  default: true
+                required: ["path"]
+              }
+            },
+            %{
+              name: "analyze_security_issues",
+              description:
+                "Run all 13 CWE-mapped analyzers (SQL injection, XSS, SSRF, path traversal, IDOR, missing auth/authz, CSRF, data exposure, file upload, input validation, TOCTOU) on a file or directory. More comprehensive than scan_security but slower. Use for thorough security review of a specific component; use scan_security for a fast initial pass.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "File or directory path to analyze"
+                  },
+                  min_severity: %{
+                    type: "string",
+                    description: "Minimum severity level to report",
+                    enum: ["info", "low", "medium", "high", "critical"],
+                    default: "low"
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively analyze directories",
+                    default: true
+                  },
+                  categories: %{
+                    type: "array",
+                    description: "Filter by vulnerability categories (empty = all)",
+                    items: %{
+                      type: "string",
+                      enum: [
+                        "injection",
+                        "authentication",
+                        "authorization",
+                        "data_exposure",
+                        "input_validation",
+                        "race_condition"
+                      ]
+                    }
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
                 },
-                include_security: %{
-                  type: "boolean",
-                  description: "Include security analysis results",
-                  default: true
+                required: ["path"]
+              }
+            },
+            %{
+              name: "semantic_analysis",
+              description:
+                "Combined semantic operation extraction + security assessment in one call. Returns both the OpKind operation profile (what the code does) and security findings (what risks it carries). Use instead of calling semantic_operations and scan_security separately when you want both views at once.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "File or directory path to analyze"
+                  },
+                  recursive: %{
+                    type: "boolean",
+                    description: "Recursively analyze directories",
+                    default: true
+                  },
+                  include_operations: %{
+                    type: "boolean",
+                    description: "Include detailed operation breakdown by domain",
+                    default: true
+                  },
+                  include_security: %{
+                    type: "boolean",
+                    description: "Include security analysis results",
+                    default: true
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format",
+                    enum: ["summary", "detailed", "json"],
+                    default: "summary"
+                  }
                 },
-                format: %{
-                  type: "string",
-                  description: "Output format",
-                  enum: ["summary", "detailed", "json"],
-                  default: "summary"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          # Agent tools - Phase Agent
-          %{
-            name: "agent_analyze",
-            description:
-              "Run a full multi-pass analysis of a project (quality, dead code, security, duplicates, coupling) and generate an AI-polished narrative report. Creates a persistent session ID you can use with agent_chat for follow-up questions. Expensive — runs all analyzers plus LLM generation. Use analyze_quality, scan_security, or find_dead_code for targeted single-pass analysis.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Project root path to analyze"
+                required: ["path"]
+              }
+            },
+            # Agent tools - Phase Agent
+            %{
+              name: "agent_analyze",
+              description:
+                "Run a full multi-pass analysis of a project (quality, dead code, security, duplicates, coupling) and generate an AI-polished narrative report. Creates a persistent session ID you can use with agent_chat for follow-up questions. Expensive — runs all analyzers plus LLM generation. Use analyze_quality, scan_security, or find_dead_code for targeted single-pass analysis.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Project root path to analyze"
+                  },
+                  provider: %{
+                    type: "string",
+                    description: "AI provider to use (default: deepseek_r1)",
+                    enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
+                  },
+                  include_suggestions: %{
+                    type: "boolean",
+                    description: "Include refactoring suggestions",
+                    default: true
+                  },
+                  skip_embeddings: %{
+                    type: "boolean",
+                    description: "Skip embedding generation for faster analysis",
+                    default: false
+                  }
                 },
-                provider: %{
-                  type: "string",
-                  description: "AI provider to use (default: deepseek_r1)",
-                  enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
+                required: ["path"]
+              }
+            },
+            %{
+              name: "agent_chat",
+              description:
+                "Send a follow-up message in an existing agent session created by agent_analyze. The agent retains full context from the prior analysis and conversation history. Use for questions like 'explain the worst issue you found' or 'show me the fix for that coupling problem'. Requires a session_id from a previous agent_analyze call.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  session_id: %{
+                    type: "string",
+                    description: "Session ID from agent_analyze"
+                  },
+                  message: %{
+                    type: "string",
+                    description: "User message or question"
+                  },
+                  provider: %{
+                    type: "string",
+                    description: "AI provider override",
+                    enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
+                  }
                 },
-                include_suggestions: %{
-                  type: "boolean",
-                  description: "Include refactoring suggestions",
-                  default: true
+                required: ["session_id", "message"]
+              }
+            },
+            %{
+              name: "read_file",
+              description:
+                "Read the contents of a source file. Returns content with line numbers. Use this to inspect actual source code when answering questions about specific modules or functions.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Absolute path to the file to read"
+                  },
+                  start_line: %{
+                    type: "integer",
+                    description: "Start line (1-indexed, optional)"
+                  },
+                  end_line: %{
+                    type: "integer",
+                    description: "End line (1-indexed, optional)"
+                  }
                 },
-                skip_embeddings: %{
-                  type: "boolean",
-                  description: "Skip embedding generation for faster analysis",
-                  default: false
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "agent_chat",
-            description:
-              "Send a follow-up message in an existing agent session created by agent_analyze. The agent retains full context from the prior analysis and conversation history. Use for questions like 'explain the worst issue you found' or 'show me the fix for that coupling problem'. Requires a session_id from a previous agent_analyze call.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                session_id: %{
-                  type: "string",
-                  description: "Session ID from agent_analyze"
+                required: ["path"]
+              }
+            },
+            %{
+              name: "agent_session_info",
+              description:
+                "Get information about an agent session including message count and issues summary",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  session_id: %{
+                    type: "string",
+                    description: "Session ID to query"
+                  }
                 },
-                message: %{
-                  type: "string",
-                  description: "User message or question"
-                },
-                provider: %{
-                  type: "string",
-                  description: "AI provider override",
-                  enum: ["deepseek_r1", "openai", "anthropic", "ollama"]
-                }
-              },
-              required: ["session_id", "message"]
-            }
-          },
-          %{
-            name: "read_file",
-            description:
-              "Read the contents of a source file. Returns content with line numbers. Use this to inspect actual source code when answering questions about specific modules or functions.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Absolute path to the file to read"
-                },
-                start_line: %{
-                  type: "integer",
-                  description: "Start line (1-indexed, optional)"
-                },
-                end_line: %{
-                  type: "integer",
-                  description: "End line (1-indexed, optional)"
-                }
-              },
-              required: ["path"]
-            }
-          },
-          %{
-            name: "agent_session_info",
-            description:
-              "Get information about an agent session including message count and issues summary",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                session_id: %{
-                  type: "string",
-                  description: "Session ID to query"
-                }
-              },
-              required: ["session_id"]
-            }
-          },
-          %{
-            name: "agent_list_sessions",
-            description: "List all active agent sessions",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                limit: %{
-                  type: "integer",
-                  description: "Maximum sessions to return",
-                  default: 20
+                required: ["session_id"]
+              }
+            },
+            %{
+              name: "agent_list_sessions",
+              description: "List all active agent sessions",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  limit: %{
+                    type: "integer",
+                    description: "Maximum sessions to return",
+                    default: 20
+                  }
                 }
               }
+            },
+            %{
+              name: "agent_clear_session",
+              description: "End and clear an agent session",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  session_id: %{
+                    type: "string",
+                    description: "Session ID to clear"
+                  }
+                },
+                required: ["session_id"]
+              }
+            },
+            %{
+              name: "comprehensive_analyze",
+              description:
+                "Run all analysis passes on a directory and return unified results. Used by mix ragex.analyze to delegate to the running server.",
+              inputSchema: %{
+                type: "object",
+                properties: %{
+                  path: %{
+                    type: "string",
+                    description: "Directory to analyze"
+                  },
+                  analyses: %{
+                    type: "object",
+                    description:
+                      "Which analyses to enable (keys: security, business_logic, complexity, smells, duplicates, dead_code, dependencies, quality, circulars, god_modules, unstable_modules, unused_modules, coupling). All default to true."
+                  },
+                  severity: %{
+                    type: "string",
+                    description: "Minimum severity level",
+                    default: "medium"
+                  },
+                  threshold: %{
+                    type: "number",
+                    description: "Duplication threshold 0.0-1.0",
+                    default: 0.85
+                  },
+                  min_complexity: %{
+                    type: "integer",
+                    description: "Minimum complexity to report",
+                    default: 10
+                  },
+                  god_threshold: %{
+                    type: "integer",
+                    description: "Min total coupling for god module detection",
+                    default: 15
+                  },
+                  instability_threshold: %{
+                    type: "number",
+                    description: "Min instability to report",
+                    default: 0.8
+                  },
+                  format: %{
+                    type: "string",
+                    description: "Output format: text, json, markdown",
+                    default: "json"
+                  }
+                },
+                required: ["path"]
+              }
             }
-          },
-          %{
-            name: "agent_clear_session",
-            description: "End and clear an agent session",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                session_id: %{
-                  type: "string",
-                  description: "Session ID to clear"
-                }
-              },
-              required: ["session_id"]
-            }
-          },
-          %{
-            name: "comprehensive_analyze",
-            description:
-              "Run all analysis passes on a directory and return unified results. Used by mix ragex.analyze to delegate to the running server.",
-            inputSchema: %{
-              type: "object",
-              properties: %{
-                path: %{
-                  type: "string",
-                  description: "Directory to analyze"
-                },
-                analyses: %{
-                  type: "object",
-                  description:
-                    "Which analyses to enable (keys: security, business_logic, complexity, smells, duplicates, dead_code, dependencies, quality, circulars, god_modules, unstable_modules, unused_modules, coupling). All default to true."
-                },
-                severity: %{
-                  type: "string",
-                  description: "Minimum severity level",
-                  default: "medium"
-                },
-                threshold: %{
-                  type: "number",
-                  description: "Duplication threshold 0.0-1.0",
-                  default: 0.85
-                },
-                min_complexity: %{
-                  type: "integer",
-                  description: "Minimum complexity to report",
-                  default: 10
-                },
-                god_threshold: %{
-                  type: "integer",
-                  description: "Min total coupling for god module detection",
-                  default: 15
-                },
-                instability_threshold: %{
-                  type: "number",
-                  description: "Min instability to report",
-                  default: 0.8
-                },
-                format: %{
-                  type: "string",
-                  description: "Output format: text, json, markdown",
-                  default: "json"
-                }
-              },
-              required: ["path"]
-            }
-          }
-        ] ++
+          ] ++
           GitTools.tool_definitions() ++
           SCIPTools.tool_definitions() ++
           ImageTools.tool_definitions() ++

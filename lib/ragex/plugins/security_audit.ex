@@ -12,7 +12,8 @@ defmodule Ragex.Plugins.SecurityAudit do
       id: :security_audit,
       name: "Security Vulnerability & Compliance Audit",
       version: "1.0.0",
-      description: "Scans project code for security vulnerabilities, exposed secrets, injection risks, and CWE patterns.",
+      description:
+        "Scans project code for security vulnerabilities, exposed secrets, injection risks, and CWE patterns.",
       category: :security,
       dependencies: [],
       priority: 30,

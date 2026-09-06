@@ -12,7 +12,8 @@ defmodule Ragex.Plugins.GraphAnalytics do
       id: :graph_analytics,
       name: "Knowledge Graph Analytics & Centrality",
       version: "1.0.0",
-      description: "Provides structured graph queries, node listing, caller tracing, centrality algorithms, and community detection.",
+      description:
+        "Provides structured graph queries, node listing, caller tracing, centrality algorithms, and community detection.",
       category: :analyzer,
       dependencies: [],
       priority: 10,
@@ -25,7 +26,8 @@ defmodule Ragex.Plugins.GraphAnalytics do
     [
       %{
         name: "query_graph",
-        description: "Lookup code entities and relationships in the Knowledge Graph by exact identifier or module name.",
+        description:
+          "Lookup code entities and relationships in the Knowledge Graph by exact identifier or module name.",
         inputSchema: %{
           type: "object",
           properties: %{
@@ -41,7 +43,8 @@ defmodule Ragex.Plugins.GraphAnalytics do
       },
       %{
         name: "betweenness_centrality",
-        description: "Compute betweenness centrality score for graph nodes to find bottleneck modules.",
+        description:
+          "Compute betweenness centrality score for graph nodes to find bottleneck modules.",
         inputSchema: %{
           type: "object",
           properties: %{}

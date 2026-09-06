@@ -155,7 +155,19 @@ defmodule Ragex.Plugin.Registry do
 
     list =
       Enum.map(ordered_entries, fn entry ->
-        Map.take(entry, [:id, :name, :version, :description, :category, :dependencies, :priority, :capabilities, :module, :enabled, :tools_count])
+        Map.take(entry, [
+          :id,
+          :name,
+          :version,
+          :description,
+          :category,
+          :dependencies,
+          :priority,
+          :capabilities,
+          :module,
+          :enabled,
+          :tools_count
+        ])
       end)
 
     {:reply, list, state}
@@ -251,9 +263,16 @@ defmodule Ragex.Plugin.Registry do
         |> Task.yield_many(timeout)
         |> Enum.map(fn {task, res} ->
           case res do
-            {:ok, {name, tool_res}} -> {name, tool_res}
-            {:exit, reason} -> Task.shutdown(task, :bruteforce); {"unknown", {:error, {:task_exit, reason}}}
-            nil -> Task.shutdown(task, :bruteforce); {"unknown", {:error, :timeout}}
+            {:ok, {name, tool_res}} ->
+              {name, tool_res}
+
+            {:exit, reason} ->
+              Task.shutdown(task, :brutal_kill)
+              {"unknown", {:error, {:task_exit, reason}}}
+
+            nil ->
+              Task.shutdown(task, :brutal_kill)
+              {"unknown", {:error, :timeout}}
           end
         end)
       else
@@ -268,18 +287,21 @@ defmodule Ragex.Plugin.Registry do
   end
 
   defp execute_single_tool(mod, tool_name, args, destruction_level) do
-    try do
-      Logger.debug("Executing plugin tool '#{tool_name}' (destruction_level: #{destruction_level}) via #{inspect(mod)}")
-      mod.execute(tool_name, args)
-    catch
-      kind, reason ->
-        Logger.error("Plugin execution error in #{inspect(mod)} for #{tool_name}: #{inspect({kind, reason})}")
-        {:error, "Plugin execution failure: #{inspect(reason)}"}
-    end
+    Logger.debug(
+      "Executing plugin tool '#{tool_name}' (destruction_level: #{destruction_level}) via #{inspect(mod)}"
+    )
+
+    mod.execute(tool_name, args)
+  rescue
+    e ->
+      Logger.error("Plugin execution error in #{inspect(mod)} for #{tool_name}: #{inspect(e)}")
+
+      {:error, "Plugin execution failure: #{inspect(e)}"}
   end
 
   defp do_register_plugin(plugin_module, opts, state) do
-    if Code.ensure_loaded?(plugin_module) and function_exported?(plugin_module, :info, 0) and function_exported?(plugin_module, :tools, 0) do
+    if Code.ensure_loaded?(plugin_module) and function_exported?(plugin_module, :info, 0) and
+         function_exported?(plugin_module, :tools, 0) do
       info = plugin_module.info()
       raw_tools = plugin_module.tools()
       plugin_id = Map.get(info, :id) || plugin_module
@@ -312,7 +334,10 @@ defmodule Ragex.Plugin.Registry do
       new_plugins = Map.put(state.plugins, plugin_id, entry)
       new_tool_map = rebuild_tool_map(new_plugins)
 
-      Logger.info("Registered Ragex plugin: #{entry.name} (#{inspect(plugin_id)}) with #{entry.tools_count} tools")
+      Logger.info(
+        "Registered Ragex plugin: #{entry.name} (#{inspect(plugin_id)}) with #{entry.tools_count} tools"
+      )
+
       {:ok, %{state | plugins: new_plugins, tool_map: new_tool_map}}
     else
       {:error, :invalid_plugin_module}
@@ -325,7 +350,14 @@ defmodule Ragex.Plugin.Registry do
     |> Enum.flat_map(fn entry ->
       Enum.map(entry.tools, fn tool ->
         destruction_level = Map.get(tool, :destruction_level, :none)
-        {tool.name, %{module: entry.module, plugin_id: entry.id, enabled: entry.enabled, destruction_level: destruction_level}}
+
+        {tool.name,
+         %{
+           module: entry.module,
+           plugin_id: entry.id,
+           enabled: entry.enabled,
+           destruction_level: destruction_level
+         }}
       end)
     end)
     |> Enum.into(%{})
