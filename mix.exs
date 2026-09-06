@@ -151,6 +151,8 @@ defmodule Ragex.MixProject do
         docs/FEATURE_GUIDE.md
         docs/CHEATSHEET.cheatmd
         docs/WHY_RAGEX.md
+        docs/WRITING_CUSTOM_PLUGINS.md
+        stuff/docs/CUSTOM_PLUGINS.md
         bin/ragex-mcp
         examples/product_cart/README.md
         examples/product_cart/DEMO.md
@@ -226,7 +228,8 @@ defmodule Ragex.MixProject do
       "examples/product_cart/DEMO.md": [title: "Cart demo: README"],
       "docs/FEATURE_GUIDE.md": [title: "Feature Reference Manual"],
       "docs/CHEATSHEET.cheatmd": [title: "Cheatsheet"],
-      "docs/WHY_RAGEX.md": [title: "Why Ragex (Article)"]
+      "docs/WHY_RAGEX.md": [title: "Why Ragex (Article)"],
+      "stuff/docs/CUSTOM_PLUGINS.md": [title: "Writing Custom Plugins"]
     ]
   end
 

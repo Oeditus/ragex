@@ -58,6 +58,8 @@ defmodule Ragex.Application do
         Ragex.Agent.Memory,
         # MCP tool telemetry tracking
         Ragex.MCP.Telemetry,
+        # Plugin Registry for dynamic MCP tools & extensions
+        Ragex.Plugin.Registry,
         # Git Enricher (background git metadata enrichment)
         Ragex.Git.Enricher,
         # Git RepoServer (NIF isolation for egit, only when egit is available)

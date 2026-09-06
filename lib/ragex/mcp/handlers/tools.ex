@@ -87,8 +87,20 @@ defmodule Ragex.MCP.Handlers.Tools do
   Lists all available tools.
   """
   def list_tools do
+    plugin_tools =
+      try do
+        if Process.whereis(Ragex.Plugin.Registry) do
+          Ragex.Plugin.Registry.list_tools()
+        else
+          []
+        end
+      catch
+        _, _ -> []
+      end
+
     %{
       tools:
+        plugin_tools ++
         [
           %{
             name: "analyze_file",
@@ -2399,6 +2411,27 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp do_call_tool(tool_name, arguments) do
+    plugin_result =
+      try do
+        if Process.whereis(Ragex.Plugin.Registry) do
+          Ragex.Plugin.Registry.dispatch_tool(tool_name, arguments)
+        else
+          {:error, :unhandled_by_plugins}
+        end
+      catch
+        _, _ -> {:error, :unhandled_by_plugins}
+      end
+
+    case plugin_result do
+      {:error, :unhandled_by_plugins} ->
+        do_call_legacy_tool(tool_name, arguments)
+
+      other ->
+        other
+    end
+  end
+
+  defp do_call_legacy_tool(tool_name, arguments) do
     case tool_name do
       "analyze_file" ->
         analyze_file(arguments)
