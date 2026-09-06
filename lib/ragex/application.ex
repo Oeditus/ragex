@@ -60,6 +60,8 @@ defmodule Ragex.Application do
         Ragex.MCP.Telemetry,
         # Plugin Registry for dynamic MCP tools & extensions
         Ragex.Plugin.Registry,
+        # Inter-Plugin EventBus
+        Ragex.Plugin.EventBus,
         # Git Enricher (background git metadata enrichment)
         Ragex.Git.Enricher,
         # Git RepoServer (NIF isolation for egit, only when egit is available)

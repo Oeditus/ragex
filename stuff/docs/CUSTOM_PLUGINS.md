@@ -145,7 +145,50 @@ Ragex.Plugin.Registry.enable_plugin(:jira_integration)
 
 ---
 
-## 🔗 Accessing Core Ragex Capabilities inside Plugins
+## 📡 Listening for System Events (`handle_event/2`)
+
+Plugins can subscribe to system lifecycle events by implementing the optional `handle_event/2` callback:
+
+```elixir
+defmodule MyCompany.Plugins.EventNotifier do
+  @behaviour Ragex.Plugin
+
+  @impl true
+  def info do
+    %{
+      id: :event_notifier,
+      name: "Event Notifier",
+      version: "1.0.0",
+      description: "Sends slack notifications on security alerts.",
+      category: :integration,
+      dependencies: [],
+      priority: 90,
+      capabilities: [:slack_notify]
+    }
+  end
+
+  @impl true
+  def tools, do: []
+
+  @impl true
+  def execute(_tool, _args), do: {:error, :no_tools}
+
+  @impl true
+  def handle_event(:security_alert, %{file: file, issue: issue}) do
+    # React to security alert event
+    Logger.warning("Security alert on \#{file}: \#{issue}")
+    :ok
+  end
+
+  def handle_event(_event_name, _payload), do: :ok
+end
+```
+
+Broadcasting events across plugins:
+
+```elixir
+Ragex.Plugin.EventBus.broadcast(:security_alert, %{file: "lib/app.ex", issue: "Hardcoded key"})
+```
 
 Custom plugins can leverage the full range of Ragex internal services:
 
