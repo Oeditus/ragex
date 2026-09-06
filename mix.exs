@@ -211,26 +211,16 @@ defmodule Ragex.MixProject do
       "README.md",
       "CHANGELOG.md": [title: "Changelog"],
       "stuff/docs/USAGE.md": [title: "Usage Guide"],
+      "docs/FEATURE_GUIDE.md": [title: "Feature Reference Manual"],
       "stuff/docs/CONFIGURATION.md": [title: "Configuration"],
-      "stuff/docs/ALGORITHMS.md": [title: "Graph Algorithms"],
-      "stuff/docs/ANALYSIS.md": [title: "Code Analysis"],
-      "stuff/docs/SUGGESTIONS.md": [title: "Refactoring Suggestions"],
-      "stuff/docs/PERSISTENCE.md": [title: "Persistence & Caching"],
-      "stuff/docs/PROMPTS.md": [title: "MCP Prompts"],
-      "stuff/docs/RESOURCES.md": [title: "MCP Resources"],
-      "stuff/docs/STREAMING.md": [title: "Streaming Notifications"],
-      "stuff/docs/TOOLS.md": [title: "MCP Tools Reference"],
       "stuff/docs/TROUBLESHOOTING.md": [title: "Troubleshooting"],
-      "stuff/docs/ZED.md": [title: "Zed Editor Integration"],
-      "SERVER_GUIDE.md": [title: "Socket Server Guide"],
-      "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md": [title: "Using Ragex as MCP Server"],
       "stuff/docs/CI.md": [title: "CI / Diff-Based Analysis"],
+      "stuff/docs/CUSTOM_PLUGINS.md": [title: "Writing Custom Plugins"],
       "stuff/docs/RAGEX-VS-CICADA.md": [title: "Ragex vs Cicada"],
       "examples/product_cart/DEMO.md": [title: "Cart demo: README"],
-      "docs/FEATURE_GUIDE.md": [title: "Feature Reference Manual"],
-      "docs/CHEATSHEET.cheatmd": [title: "Cheatsheet"],
       "docs/WHY_RAGEX.md": [title: "Why Ragex (Article)"],
-      "stuff/docs/CUSTOM_PLUGINS.md": [title: "Writing Custom Plugins"]
+      "stuff/docs/ZED.md": [title: "Zed Editor Integration"],
+      "docs/CHEATSHEET.cheatmd": [title: "Cheatsheet"]
     ]
   end
 
@@ -242,6 +232,20 @@ defmodule Ragex.MixProject do
       "Features & Philosophy": [
         "docs/FEATURE_GUIDE.md",
         "docs/WHY_RAGEX.md"
+      ],
+      MCP: [
+        "stuff/docs/USE-LOCAL-RAGEX-AS-MCP.md": [title: "Using Ragex as MCP Server"],
+        "stuff/docs/PROMPTS.md": [title: "MCP Prompts"],
+        "stuff/docs/RESOURCES.md": [title: "MCP Resources"],
+        "stuff/docs/TOOLS.md": [title: "MCP Tools"]
+      ],
+      "Under the Hood": [
+        "stuff/docs/ANALYSIS.md": [title: "Code Analysis"],
+        "stuff/docs/ALGORITHMS.md": [title: "Graph Algorithms"],
+        "stuff/docs/SUGGESTIONS.md": [title: "Refactoring Suggestions"],
+        "stuff/docs/PERSISTENCE.md": [title: "Persistence & Caching"],
+        "stuff/docs/STREAMING.md": [title: "Streaming Notifications"],
+        "SERVER_GUIDE.md": [title: "Socket Server Guide"]
       ]
     ]
   end

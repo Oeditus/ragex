@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the escript zip, not present on a real filesystem path), which previously
   crashed the entire OTP boot chain for any downstream consumer building an
   escript against ragex.
-- `Ragex.Application` now skips starting `Ragex.Embeddings.Bumblebee` and
+- Ragex’ Application now skips starting `Ragex.Embeddings.Bumblebee` and
   `Ragex.VectorStore` automatically when `bumblebee`/`nx`/`exla` are absent
   from the build, in addition to the existing `config :ragex, skip_bumblebee:
   true` manual override.
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `scripts/verify_optional_ml_deps.sh` -- verifies, in an isolated temporary
-  copy of the repository, that ragex compiles and `Ragex.Application` boots
+  copy of the repository, that ragex compiles and Application boots
   successfully with `bumblebee`/`nx`/`exla`/`image` genuinely removed from
   `mix.exs` and `mix.lock` (not just unstarted via configuration).
 

@@ -34,6 +34,16 @@ Recursively analyze all supported files in a directory, extracting code structur
 | `max_depth` | integer | no | 10 | Maximum directory depth to traverse |
 | `exclude_patterns` | string[] | no | | Patterns to exclude (e.g., `node_modules`, `.git`) |
 
+#### `analyze_url`
+Fetches and analyzes any target URL (remote GitHub/GitLab repository, web page, API spec, or raw code file). Clones git repositories via shallow clone (`--depth 1`), extracts architecture & code structure, formats machine-understandable JSON report (`ragex.url_analysis.v1`), and indexes findings into the Knowledge Graph. *(Provided by `Ragex.Plugins.URLAnalyzer`)*
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `url` | string | yes | | Target URL to analyze (e.g. `https://github.com/owner/repo` or web page) |
+| `depth` | string | no | `shallow` | Analysis depth (`shallow` or `deep`) |
+| `index_graph` | boolean | no | `true` | Ingest findings into Knowledge Graph |
+| `auth_token` | string | no | | Optional GitHub/GitLab token for private repos |
+
 #### `watch_directory`
 Start watching a directory for file changes and auto-reindex modified files.
 

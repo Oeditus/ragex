@@ -417,7 +417,7 @@ Ragex includes standard terminal Mix tasks, rich TUI dashboards, interactive ref
 | `mix ragex.chat` | Terminal-based interactive AI chat loop. The AI agent autonomously calls Ragex MCP tools (`hybrid_search`, `read_file`, `query_graph`) to inspect code and answer questions. |
 | `mix ragex.audit` | Generates comprehensive AI code audit reports enriched with concrete code evidence backreferences. Outputs JSON or formatted Markdown. |
 | `mix ragex.refactor` | Interactive CLI refactoring wizard for executing multi-file function renames, module renames, parameter signature updates, and function inlining with live diff previews. |
-| `mix ragex.dashboard` | Live terminal user interface (TUI powered by `Owl`) displaying real-time Knowledge Graph node counts, ML model RAM, cache hit rates, and AI token costs. |
+| `mix ragex.dashboard` | Live terminal user interface (TUI powered by _Owl_) displaying real-time Knowledge Graph node counts, ML model RAM, cache hit rates, and AI token costs. |
 | `mix ragex.configure` | Interactive configuration wizard that detects project types, configures embedding models, sets up AI providers, and generates `.ragex.exs`. |
 | `mix ragex.ci` | CI pipeline integration that performs diff-based analysis on pull requests, flags high-risk changes, and generates GitHub Actions annotations. |
 | `mix ragex.embeddings.migrate` | Migrates vector stores between different ML models with automatic dimension checks. |

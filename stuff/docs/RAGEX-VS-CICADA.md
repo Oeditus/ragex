@@ -1,141 +1,114 @@
 # Ragex vs Cicada—Comparison Analysis
 
-> Last updated: 2026-05-16
+> Last updated: 2026-09-06 (Ragex v0.30.0)
 
 ## Philosophical Difference
 
-The two projects solve overlapping but fundamentally different problems. **Cicada** (v0.6.5, Python) is a *read-only context compaction layer*—it builds a pre-indexed map of your codebase so AI assistants stop wasting tokens on blind greps. It answers “what’s here and why.” **Ragex** (v0.14.1, Elixir) is a *read+write hybrid RAG system*—it builds a knowledge graph, performs deep analysis, and can also edit, refactor, and transform your code. It answers “what’s here, what’s wrong with it, and how to fix it.”
+The two projects solve overlapping but fundamentally different problems.
 
-Cicada: 8 MCP tools, laser-focused on search and attribution.
-Ragex: 83 MCP tools spanning analysis, editing, refactoring, security, RAG, git archaeology, REST API, and AI features.
+- **Cicada** (v0.6.5, Python) is a *read-only context compaction layer*—it builds a pre-indexed map of your codebase so AI assistants stop wasting tokens on blind greps. It answers *"what’s here and why."*
+- **Ragex** (v0.30.0, Elixir) is a **Plugin-Driven Orchestration Engine & Hybrid RAG System**—it builds a Knowledge Graph, performs multi-language static analysis, runs parallel non-destructive security & quality checks, ingests remote Git repos/URLs, and safely edits, refactors, and transforms code. It answers *"what’s here, what’s wrong with it, how to fix it, and executes the transformation."*
+
+**Cicada**: 8 MCP tools, laser-focused on search and context compaction.  
+**Ragex**: 85+ MCP tools organized into an extensible **Plugin Architecture** spanning static analysis, parallel query scheduling, AST refactoring, security auditing, Git archaeology, remote repo ingestion, REST API, and local ML embeddings.
 
 ---
 
 ## What They Have In Common
 
-- **MCP server over stdio**—both are MCP-compatible code intelligence servers
-- **AST-level indexing**—both parse source into structured representations (tree-sitter / SCIP vs. Elixir’s `Code.string_to_quoted` / Metastatic)
-- **Semantic/keyword search**—both support concept-based search beyond exact string matching
-- **Knowledge graph / call-site tracking**—both track what-calls-what, bidirectional dependency analysis
-- **Dead code detection**—both identify unused public functions (Cicada with confidence tiers, Ragex with interprocedural + intraprocedural analysis)
-- **Incremental indexing**—both hash files to avoid re-indexing unchanged code
-- **File watching**—both support automatic re-indexing on file changes
-- **Local-first / privacy-first**—no cloud dependencies for core functionality, no telemetry
-- **Elixir as a primary citizen**—both have first-class Elixir support (Cicada started Elixir-only; Ragex is written in Elixir)
-- **Embeddings**—both support vector similarity search (Ragex via Bumblebee; Cicada via Ollama)
-- **Hybrid retrieval**—both combine symbolic and semantic search strategies
-- **Git blame + history**—both provide line-level authorship and file history
-- **PR attribution**—both can surface PR context
-- **Co-change analysis**—both track files that change together
-- **Context compaction**—both optimize token usage with compact-by-default responses
-- **String/comment indexing**—both index string literals and inline comments with keyword boosting
-- **REST API**—both expose tools over HTTP with OpenAPI specs
-- **Editor CLI setup**—both offer one-command editor configuration
-- **Usage telemetry**—both track per-tool invocation counts and latencies
-- **SCIP language support**—both can ingest SCIP indexes for additional languages
+- **MCP Server over stdio & Unix Sockets**—both are MCP-compatible code intelligence servers.
+- **AST-level Indexing**—both parse source into structured representations (tree-sitter/SCIP vs. Elixir `Code.string_to_quoted` / Metastatic MetaAST).
+- **Semantic & Keyword Search**—both support concept-based search beyond exact string matching.
+- **Knowledge Graph & Call-Site Tracking**—both track caller-callee relationships and bidirectional dependency graphs.
+- **Dead Code Detection**—both identify unused public functions.
+- **Incremental Indexing**—both hash files to avoid re-indexing unchanged code.
+- **File Watching**—both support automatic re-indexing on file modifications.
+- **Local-First & Privacy-First**—no cloud dependencies for core functionality.
+- **Elixir First-Class Support**—both support Elixir parsing and analysis natively.
+- **Vector Embeddings**—both support vector similarity search (Ragex via local GPU Bumblebee/Nx; Cicada via Ollama).
+- **Hybrid Retrieval**—both combine symbolic graph search and semantic embeddings.
+- **Git Archaeology**—both provide line-level authorship blame, file commit history, PR context, and co-change coupling.
+- **REST API Bridge**—both expose HTTP endpoints with OpenAPI specifications.
+- **Usage Telemetry**—both track per-tool invocation counts and latencies.
 
 ---
 
-## What Ragex lacks (Cicada’s Advantages)
+## What Cicada Lacks (Ragex’s Core Advantages)
 
-### jq-like Raw Index Querying (Not Planned in Ragex)
-Cicada’s `query_jq` allows direct jq queries against the raw JSON index.
-Ragex has `query_graph` (structured/typed) and 83 specialized tools that cover
-the same use cases more ergonomically. The flat JSON index is an artifact of
-Cicada’s architecture, not a deliberate feature advantage.
+### 1. Plugin-Driven Orchestrator Engine (Architectural Leap)
+Ragex v0.30.0 introduces a full **Plugin System** (`Ragex.Plugin` & `Ragex.Plugin.Registry`):
+- **Topological Dependency Resolution**: Plugins declare dependencies (`dependencies: [:graph_analytics]`) and priority ordering (`priority: 10`), automatically ordered using graph topological sorting (`:digraph`).
+- **Domain Plugin Alienation**: Tools are decoupled into specialized plugins (`Ragex.Plugins.GraphAnalytics`, `GitArchaeology`, `CodeQuality`, `SecurityAudit`, `URLAnalyzer`).
+- **Dynamic Scaffolding CLI**: `mix ragex.plugin NAME` scaffolds new custom plugins and test files instantly.
+- **Hot Enabling & Disabling**: Enable or disable plugins on the fly without restarting OTP.
+- Cicada has a static, hardcoded tool set with no plugin extensibility.
 
----
+### 2. Parallel Scheduler & Safety Metadata (`destruction_level`)
+Ragex classifies tools by `:destruction_level` (`:none`, `:low`, `:medium`, `:high`, `:full`):
+- **Parallel Dispatching**: Non-destructive tools (`destruction_level: :none`) run concurrently in parallel via [`Ragex.Plugin.TaskSupervisor`](file:///home/am/Proyectos/Oeditus/ragex/lib/ragex/application.ex#L61).
+- **Multi-Tool Batch Execution**: `call_tools/1` and `dispatch_tools/2` execute multiple query tools simultaneously, drastically reducing overall latency.
+- Cicada executes tool calls sequentially.
 
-## What Cicada Lacks (Ragex’s Advantages)
+### 3. Remote URL & Git Repository Ingestion (`analyze_url`)
+Ragex includes [`Ragex.URLAnalyzer`](file:///home/am/Proyectos/Oeditus/ragex/lib/ragex/url_analyzer.ex):
+- Automatically classifies remote targets (`:git_repo`, `:web_page`, `:raw_code`, `:api_spec`).
+- Performs shallow cloning (`git clone --depth 1`) of remote GitHub/GitLab repositories, executes AST analysis, extracts architecture entry points, and ingests findings directly into the Knowledge Graph.
+- Fetches and cleans web pages, documentation, and OpenAPI schemas.
+- Cicada requires local filesystem access for all indexed projects.
 
-### 1. Code Editing (Massive Gap)
-Cicada is strictly read-only. Ragex has:
-- Atomic file editing with automatic backups
-- Multi-file transactions (all-or-nothing)
-- Syntax validation before/after edits
-- Format integration (mix, rebar3, black, prettier)
-- Rollback to any previous version
-- Concurrent modification detection
+### 4. Inter-Plugin Event & Hook Bus (`Ragex.Plugin.EventBus`)
+Ragex features a Pub/Sub event bus (`Ragex.Plugin.EventBus`):
+- Plugins subscribe to system lifecycle events (`:file_indexed`, `:code_edited`, `:security_alert`, `:graph_mutated`) by implementing `@callback handle_event/2`.
+- Enables real-time reactivity across custom third-party plugins.
 
-### 2. Semantic Refactoring (Massive Gap)
-Ragex has 10+ AST-aware refactoring operations:
-- rename_function, rename_module (project-wide, arity-aware)
-- extract_function, inline_function, move_function, extract_module
-- change_signature, convert_visibility, rename_parameter, modify_attributes
-- Preview with diff, conflict detection, undo/redo stack
-- AI-enhanced preview with risk assessment
+### 5. Atomic Code Editing & Multi-File Transactions
+Cicada is strictly read-only. Ragex provides:
+- Atomic file edits with automatic backups.
+- Multi-file transactional edits (all-or-nothing rollback).
+- Pre/post syntax validation and code formatters (`mix`, `prettier`, `black`, `rebar3`).
+- Rollback history stack.
 
-Cicada can find where things are called but cannot *change* them.
+### 6. AST-Aware Refactoring Suite
+Ragex provides 10+ semantic refactoring operations:
+- Project-wide, arity-aware `rename_function` and `rename_module`.
+- `extract_function`, `inline_function`, `move_function`, `extract_module`.
+- Diff previews, conflict detection, and risk assessment before committing edits.
 
-### 3. Security Analysis (Major Gap)
-Ragex has 13 CWE-based security analyzers (SQL injection, XSS, SSRF, path traversal, IDOR, CSRF, etc.), plus secret scanning and security auditing. Cicada has nothing.
+### 7. Security & Business Logic Auditing
+Ragex features 13 CWE-based security analyzers (SQL injection, XSS, SSRF, path traversal, IDOR, CSRF), secret scanners, and 33 business logic auditors. Cicada offers no security auditing.
 
-### 4. Deep Code Quality Analysis (Major Gap)
-Ragex provides: complexity analysis (cyclomatic/cognitive/nesting/Halstead), code smell detection, 33 business logic analyzers, coupling metrics, circular dependency detection, quality reports. Cicada only has basic dead code detection.
+### 8. Code Quality, Smells, and Clone Detection
+Ragex detects cyclomatic/cognitive complexity, code smells, dead code, and Type I–IV AST/semantic duplicate clones.
 
-### 5. Code Duplication Detection (Significant Gap)
-Ragex detects Type I-IV clones (exact, renamed, near-miss, semantic) using AST analysis + embedding similarity. Not present in Cicada.
-
-### 6. Impact Analysis + Refactoring Suggestions (Significant Gap)
-Risk scoring, effort estimation, test discovery, automated refactoring suggestions with priority ranking, RAG-powered advice. Cicada requires the AI to figure all this out from raw search results.
-
-### 7. Graph Algorithms (Significant Gap)
-PageRank, betweenness/closeness centrality, community detection (Louvain, label propagation), path finding with limits. Cicada has a flat JSON index; Ragex has a proper ETS-backed graph with O(1) lookups and algorithmic analysis.
-
-### 8. Graph Visualization (Moderate Gap)
-Graphviz DOT, D3 JSON, ASCII export for impact analysis and architecture visualization. Not in Cicada.
-
-### 9. AI-Enhanced Features (Moderate Gap)
-ValidationAI, AIPreview, AIRefiner (false positive reduction), AIAnalyzer (semantic clone detection), AIInsights. These are “AI-on-top-of-analysis” features that add interpretive value. Cicada delegates all interpretation to the consuming AI assistant.
-
-### 10. RAG Pipeline (Moderate Gap)
-Full retrieval-augmented generation with streaming, context-aware suggestions, query expansion, multi-provider support (DeepSeek R1, OpenAI, Anthropic, Ollama). Cicada returns structured data; Ragex can synthesize answers.
-
-### 11. Cross-Language Semantic Analysis (Moderate Gap)
-MetaAST search, cross-language alternatives (“show me the Python equivalent of this Elixir function”), OpKind-based semantic domain extraction (7 domains: db, http, auth, cache, queue, file, external_api). Unique to Ragex via Metastatic integration.
-
-### 12. Comprehensive Analysis Tool (Minor Gap)
-`comprehensive_analyze` runs all analysis passes (security, business logic, complexity, smells, duplicates, dead code, dependencies, quality) in one invocation. `mix ragex.analyze` delegates to the running server. Cicada has no equivalent batch analysis.
+### 9. Knowledge Graph & Graph Algorithms
+Ragex uses an ETS/dllb-backed Knowledge Graph with native Erlang graph algorithms:
+- Betweenness and closeness centrality to discover bottleneck modules.
+- Community detection (Louvain, label propagation).
+- Path finding and Graphviz DOT / D3 JSON visualizers.
 
 ---
 
-## Where Cicada Still Has Edge
+## Metric Comparison
 
-### Language Breadth via SCIP
-Cicada: 17+ languages with mature SCIP indexer auto-installation.
-Ragex: 6 native languages (Elixir, Erlang, Ruby, Python, JS/TS) + SCIP bridge
-(10 languages configured, but indexer auto-install not yet implemented).
-
-Cicada’s auto-download of SCIP binaries (`scip-go`, `rust-analyzer`, etc.) is
-more polished. Ragex’s SCIP bridge requires manual indexer installation.
-
-### Zero-Install Distribution
-Cicada: `uvx cicada-mcp`—runs without installation via uv tool.
-Ragex: requires Elixir/OTP runtime and GPU for embeddings.
-
-This is an inherent architectural difference. Ragex’s Bumblebee/EXLA-based
-embeddings run locally on GPU, providing better quality but requiring more setup.
-Cicada’s Ollama-based embeddings are optional and simpler.
-
-### Published Benchmarks
-Cicada: public token/time comparisons (3127 tokens -> 550 tokens).
-Ragex: no published benchmarks yet.
+| Feature / Metric | Ragex (v0.30.0) | Cicada (v0.6.5) |
+|---|---|---|
+| **Architecture** | **Plugin-Driven Orchestrator** | Read-only Context Compactor |
+| **MCP Tools** | **85+** (extensible via plugins) | 8 (fixed) |
+| **Plugin Extensibility** | ✅ `Ragex.Plugin` & `mix ragex.plugin` | ❌ None |
+| **Parallel Execution** | ✅ TaskSupervisor + `:destruction_level` | ❌ Sequential |
+| **Remote Repo & URL Analyzer** | ✅ `analyze_url` (shallow clone & HTML parse) | ❌ Local filesystem only |
+| **Inter-Plugin Event Bus** | ✅ `Ragex.Plugin.EventBus` (`handle_event/2`) | ❌ None |
+| **Code Editing & Refactoring** | ✅ Atomic edits, transactions, 10+ refactors | ❌ Read-only |
+| **Security Auditing** | ✅ 13 CWE scanners & secret check | ❌ None |
+| **Graph Centrality & Community** | ✅ PageRank, betweenness, Louvain | ❌ Flat index |
+| **Native Languages** | 6 (Elixir, Erlang, Ruby, Python, JS/TS) | 1 (Elixir; rest via SCIP) |
+| **Runtime Engine** | BEAM (Elixir/OTP 27+) | CPython 3.10+ |
+| **Embeddings** | Bumblebee (local GPU / Nx) | Ollama (optional) |
+| **License** | GPL-3.0 | MIT |
 
 ---
 
-### By the Numbers
+## Conclusion
 
-| Metric | Ragex | Cicada |
-|--------|-------|--------|
-| MCP tools | 83 | 8 |
-| Native language analyzers | 6 | 1 (Elixir; rest via SCIP) |
-| SCIP languages configured | 10 | 17 |
-| Security analyzers (CWE) | 13 | 0 |
-| Business logic analyzers | 33 | 0 |
-| Refactoring operations | 10 | 0 |
-| Graph algorithms | 7 | 0 |
-| AI feature modules | 6 | 0 |
-| Codebase | ~30k lines Elixir | ~15k lines Python |
-| Runtime | BEAM (Elixir/OTP 27+) | CPython 3.10+ |
-| Embeddings | Bumblebee (local GPU) | Ollama (optional) |
-| License | GPL-3.0 | MIT |
+**Cicada** is a light, read-only token minimizer for Python-centric workflows.  
+**Ragex** is a full-fledged **Extensible Code Intelligence & Orchestration Platform**. With v0.30.0's plugin framework, parallel non-destructive execution, and remote repository analyzer, Ragex provides an unconstrained foundation for building AI coding agents, security compliance tools, and automated refactoring pipelines.
