@@ -285,8 +285,8 @@ defmodule Ragex.Analysis.Suggestions do
 
       {:function, module, name, arity} ->
         case Store.get_function(module, name, arity) do
-          {:ok, node} -> %{node: node}
-          _ -> %{}
+          nil -> %{}
+          node -> %{node: node}
         end
 
       _ ->

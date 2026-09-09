@@ -23,10 +23,17 @@ defmodule Ragex.AI.Provider.Shared do
   plumbing lives here.
   """
 
+  @type provider_defaults :: %{
+          endpoint: String.t(),
+          model: String.t(),
+          temperature: float() | number(),
+          max_tokens: pos_integer()
+        }
+
   @type provider_config :: %{
           endpoint: String.t(),
           model: String.t(),
-          temperature: float(),
+          temperature: float() | number(),
           max_tokens: pos_integer(),
           stream: boolean()
         }
@@ -36,7 +43,7 @@ defmodule Ragex.AI.Provider.Shared do
   defaults` precedence, matching the pattern previously duplicated in each
   provider's private `get_config/1`.
   """
-  @spec resolve_config(atom(), keyword(), provider_config()) :: provider_config()
+  @spec resolve_config(atom(), keyword(), provider_defaults()) :: provider_config()
   def resolve_config(provider_key, opts, defaults) when is_atom(provider_key) do
     provider_config = Application.get_env(:ragex, :ai_providers, [])[provider_key] || []
 
@@ -145,7 +152,8 @@ defmodule Ragex.AI.Provider.Shared do
   Callers are expected to build their own `Stream.resource/3` around
   `receive`, since each provider parses a different SSE event shape.
   """
-  @spec start_streaming_task(String.t(), map(), keyword()) :: Task.t()
+  @spec start_streaming_task(String.t(), map(), [{String.t(), String.t()}] | keyword()) ::
+          Task.t()
   def start_streaming_task(url, body, headers) do
     parent = self()
 

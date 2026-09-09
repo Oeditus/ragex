@@ -58,7 +58,7 @@ defmodule Ragex.AI.Cache do
   - `{:ok, response}` - Cache hit with valid entry
   - `{:error, :not_found}` - Cache miss or expired entry
   """
-  @spec get(atom(), String.t(), map() | nil, keyword()) :: {:ok, term()} | {:error, :not_found}
+  @spec get(atom(), any(), any(), keyword()) :: {:ok, term()} | {:error, :not_found}
   def get(operation, query, context, opts \\ []) do
     if enabled?() do
       provider = Keyword.get(opts, :provider, :unknown)
@@ -93,7 +93,7 @@ defmodule Ragex.AI.Cache do
   @doc """
   Store a response in the cache.
   """
-  @spec put(atom(), String.t(), map() | nil, term(), keyword()) :: :ok
+  @spec put(atom(), any(), any(), term(), keyword()) :: :ok
   def put(operation, query, context, response, opts \\ []) do
     if enabled?() do
       provider = Keyword.get(opts, :provider, :unknown)

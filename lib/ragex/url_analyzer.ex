@@ -59,7 +59,7 @@ defmodule Ragex.URLAnalyzer do
 
     try do
       if Code.ensure_loaded?(Store) do
-        Store.add_node(node_id, :url_resource, properties)
+        Store.add_node(:url_resource, node_id, properties)
       end
     rescue
       _ -> :ok
