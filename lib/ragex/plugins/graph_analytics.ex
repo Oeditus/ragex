@@ -4,7 +4,7 @@ defmodule Ragex.Plugins.GraphAnalytics do
   """
 
   @behaviour Ragex.Plugin
-  alias Ragex.Graph.{Algorithms, Store}
+  alias Ragex.MCP.Handlers.Tools
 
   @impl true
   def info do
@@ -44,36 +44,39 @@ defmodule Ragex.Plugins.GraphAnalytics do
       %{
         name: "betweenness_centrality",
         description:
-          "Compute betweenness centrality score for graph nodes to find bottleneck modules.",
+          "Compute betweenness centrality to identify bridge/bottleneck functions in the call graph.",
         inputSchema: %{
           type: "object",
-          properties: %{}
+          properties: %{
+            max_nodes: %{
+              type: "integer",
+              description: "Limit computation to N highest-degree nodes",
+              default: 1000
+            },
+            normalize: %{
+              type: "boolean",
+              description: "Return normalized scores (0-1)",
+              default: true
+            }
+          }
         }
       }
     ]
   end
 
+  # Delegates to the full-featured implementations in Ragex.MCP.Handlers.Tools
+  # (find_module/find_function/get_calls/get_dependencies/get_callers with
+  # PageRank enrichment, and max_nodes/normalize-aware betweenness
+  # centrality) rather than reimplementing a stripped-down subset here that
+  # would silently shadow the real logic -- see the Ragex Codebase Health &
+  # Architecture Improvement Plan.
   @impl true
-  def execute("query_graph", %{"query_type" => qtype, "params" => params}) do
-    case qtype do
-      "find_module" ->
-        module = Map.get(params, "module")
-        nodes = Store.get_module(module)
-        {:ok, %{status: "success", nodes: nodes}}
-
-      "find_function" ->
-        name = Map.get(params, "name")
-        nodes = Store.find_node(:function, name)
-        {:ok, %{status: "success", nodes: nodes}}
-
-      _ ->
-        {:ok, %{status: "success", result: "Graph query completed"}}
-    end
+  def execute("query_graph", %{"query_type" => _qtype, "params" => _params} = args) do
+    Tools.query_graph(args)
   end
 
-  def execute("betweenness_centrality", _args) do
-    scores = Algorithms.betweenness_centrality()
-    {:ok, %{status: "success", scores: scores}}
+  def execute("betweenness_centrality", args) do
+    Tools.betweenness_centrality_tool(args)
   end
 
   def execute(tool_name, _args) do

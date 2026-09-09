@@ -26,6 +26,7 @@ defmodule Ragex.Watcher do
 
   # Client API
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -33,6 +34,7 @@ defmodule Ragex.Watcher do
   @doc """
   Starts watching a directory for changes.
   """
+  @spec watch_directory(String.t()) :: :ok | {:error, term()}
   def watch_directory(path) do
     GenServer.call(__MODULE__, {:watch, path}, @timeout)
   catch
@@ -43,6 +45,7 @@ defmodule Ragex.Watcher do
   @doc """
   Stops watching a directory.
   """
+  @spec unwatch_directory(String.t()) :: :ok | {:error, term()}
   def unwatch_directory(path) do
     GenServer.call(__MODULE__, {:unwatch, path}, @timeout)
   catch
@@ -53,6 +56,7 @@ defmodule Ragex.Watcher do
   @doc """
   Lists all currently watched directories.
   """
+  @spec list_watched() :: [String.t()] | {:error, term()}
   def list_watched do
     GenServer.call(__MODULE__, :list_watched, @timeout)
   catch

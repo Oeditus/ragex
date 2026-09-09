@@ -427,6 +427,7 @@ defmodule Ragex.Editor.Diff do
 
   Generates a diff and returns it in a format suitable for testing.
   """
+  @spec generate(String.t(), String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def generate(old_content, new_content, file_path, opts \\ []) do
     format = Keyword.get(opts, :format, :unified)
     context_lines = Keyword.get(opts, :context_lines, 3)
@@ -488,6 +489,7 @@ defmodule Ragex.Editor.Diff do
   @doc """
   Compares two files and returns a diff.
   """
+  @spec compare_files(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def compare_files(file1, file2, opts \\ []) do
     with {:ok, content1} <- File.read(file1),
          {:ok, content2} <- File.read(file2) do

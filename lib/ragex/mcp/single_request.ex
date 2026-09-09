@@ -15,6 +15,7 @@ defmodule Ragex.MCP.SingleRequest do
   @doc """
   Read one request from stdin, process it, write response to stdout, and exit.
   """
+  @spec handle() :: no_return()
   def handle do
     # Ensure the application is started
     {:ok, _} = Application.ensure_all_started(:ragex)

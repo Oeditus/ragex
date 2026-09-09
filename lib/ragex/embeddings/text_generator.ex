@@ -19,6 +19,7 @@ defmodule Ragex.Embeddings.TextGenerator do
 
   Includes module name, documentation, and metadata.
   """
+  @spec module_text(map()) :: String.t()
   def module_text(module_data) do
     parts = [
       "Module: #{module_name_to_string(module_data.name)}",
@@ -42,6 +43,7 @@ defmodule Ragex.Embeddings.TextGenerator do
   Includes function signature, module context, documentation, visibility, and
   any MetaAST semantic metadata (async, macro, guards, decorators, annotations).
   """
+  @spec function_text(map()) :: String.t()
   def function_text(function_data) do
     signature = function_signature(function_data)
     meta = Map.get(function_data, :metadata, %{})
@@ -161,6 +163,7 @@ defmodule Ragex.Embeddings.TextGenerator do
 
   Includes signature and code snippet for more detailed semantic search.
   """
+  @spec function_with_code_text(map(), String.t() | nil) :: String.t()
   def function_with_code_text(function_data, code_snippet) do
     base_text = function_text(function_data)
 
@@ -179,6 +182,7 @@ defmodule Ragex.Embeddings.TextGenerator do
 
   Describes which function calls which other function.
   """
+  @spec call_text(map()) :: String.t()
   def call_text(call_data) do
     from_sig =
       "#{module_name_to_string(call_data.from_module)}.#{call_data.from_function}/#{call_data.from_arity}"
@@ -194,6 +198,7 @@ defmodule Ragex.Embeddings.TextGenerator do
 
   Describes which module imports which other module.
   """
+  @spec import_text(map()) :: String.t()
   def import_text(import_data) do
     "Import: #{module_name_to_string(import_data.from_module)} imports #{module_name_to_string(import_data.to_module)}"
   end

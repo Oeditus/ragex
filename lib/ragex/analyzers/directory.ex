@@ -29,6 +29,7 @@ defmodule Ragex.Analyzers.Directory do
   - `:timeout` - Per-file analysis timeout in ms (default: 300_000 = 5 min)
   - `:max_concurrency` - Max parallel file analyses (default: 4)
   """
+  @spec analyze_directory(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def analyze_directory(path, opts \\ []) do
     max_depth = Keyword.get(opts, :max_depth, 10)
     exclude_patterns = Keyword.get(opts, :exclude_patterns, default_exclude_patterns())
@@ -80,6 +81,7 @@ defmodule Ragex.Analyzers.Directory do
   - `:timeout` - Per-file analysis timeout in ms (default: 300_000 = 5 min)
   - `:max_concurrency` - Max parallel file analyses (default: 4)
   """
+  @spec analyze_files([String.t()], keyword()) :: {:ok, map()}
   def analyze_files(file_paths, opts \\ []) when is_list(file_paths) do
     incremental = Keyword.get(opts, :incremental, true)
     force_refresh = Keyword.get(opts, :force_refresh, false)

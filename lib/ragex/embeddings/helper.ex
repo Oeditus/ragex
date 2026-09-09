@@ -40,6 +40,7 @@ defmodule Ragex.Embeddings.Helper do
     `FileTracker.stale_entities_for_file/2` to skip unchanged functions and
     avoid redundant re-embeddings on incremental re-analysis.
   """
+  @spec generate_and_store_embeddings(map(), keyword()) :: :ok | {:error, term()}
   def generate_and_store_embeddings(analysis_result, opts \\ []) do
     only = Keyword.get(opts, :only)
 
@@ -86,6 +87,7 @@ defmodule Ragex.Embeddings.Helper do
   @doc """
   Generates and stores an embedding for a single module.
   """
+  @spec generate_module_embedding(map()) :: :ok | {:error, term()}
   def generate_module_embedding(module_data) do
     text = TextGenerator.module_text(module_data)
 
@@ -106,6 +108,7 @@ defmodule Ragex.Embeddings.Helper do
   @doc """
   Generates and stores an embedding for a single function.
   """
+  @spec generate_function_embedding(map()) :: :ok | {:error, term()}
   def generate_function_embedding(function_data) do
     text = TextGenerator.function_text(function_data)
 
@@ -137,6 +140,8 @@ defmodule Ragex.Embeddings.Helper do
     entities in the batch are embedded. Pass the result of
     `FileTracker.stale_entities_for_file/2` to skip unchanged functions.
   """
+  @spec generate_batch_embeddings([map()], atom(), keyword()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def generate_batch_embeddings(entities, entity_type, opts \\ []) do
     only = Keyword.get(opts, :only)
 
@@ -202,6 +207,7 @@ defmodule Ragex.Embeddings.Helper do
   @doc """
   Checks if the embedding system is available and ready.
   """
+  @spec ready?() :: boolean()
   def ready? do
     Bumblebee.ready?()
   end

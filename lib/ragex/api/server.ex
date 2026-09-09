@@ -28,6 +28,7 @@ defmodule Ragex.API.Server do
 
   - `:port` -- TCP port (default: 4321, overridden by config or env)
   """
+  @spec start_link(keyword()) :: Supervisor.on_start()
   def start_link(opts \\ []) do
     port =
       Keyword.get(opts, :port) ||
@@ -43,6 +44,7 @@ defmodule Ragex.API.Server do
   end
 
   @doc false
+  @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
     %{
       id: __MODULE__,

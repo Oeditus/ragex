@@ -6,6 +6,7 @@ defmodule Ragex.URLAnalyzer.Report do
   @doc """
   Builds a unified machine-understandable report map from analysis results.
   """
+  @spec build_report(String.t(), atom(), map(), keyword()) :: {:ok, map()}
   def build_report(url, target_type, raw_analysis, opts \\ []) do
     timestamp = DateTime.utc_now() |> DateTime.to_iso8601()
     indexed_in_graph = Keyword.get(opts, :index_graph, true)
@@ -74,6 +75,7 @@ defmodule Ragex.URLAnalyzer.Report do
   @doc """
   Renders a clean GitHub-style Markdown report.
   """
+  @spec generate_markdown(map()) :: String.t()
   def generate_markdown(report) do
     """
     # 🌐 URL Analysis Report: #{report.url}

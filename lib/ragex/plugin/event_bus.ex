@@ -15,6 +15,7 @@ defmodule Ragex.Plugin.EventBus do
   # Client API
 
   @doc "Starts the EventBus GenServer."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -22,6 +23,7 @@ defmodule Ragex.Plugin.EventBus do
   @doc """
   Broadcasts an event asynchronously to all active plugins implementing `handle_event/2`.
   """
+  @spec broadcast(atom(), map()) :: :ok
   def broadcast(event_name, payload \\ %{}) when is_atom(event_name) and is_map(payload) do
     GenServer.cast(__MODULE__, {:broadcast, event_name, payload})
   end
@@ -29,6 +31,7 @@ defmodule Ragex.Plugin.EventBus do
   @doc """
   Broadcasts an event synchronously to active plugins.
   """
+  @spec sync_broadcast(atom(), map()) :: {:ok, list()}
   def sync_broadcast(event_name, payload \\ %{}) when is_atom(event_name) and is_map(payload) do
     GenServer.call(__MODULE__, {:sync_broadcast, event_name, payload})
   end

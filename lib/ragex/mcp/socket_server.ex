@@ -19,11 +19,13 @@ defmodule Ragex.MCP.SocketServer do
   # server behind it, before deciding it's safe to steal.
   @liveness_probe_timeout 200
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @impl true
+  @spec init(keyword()) :: {:ok, map()} | :ignore | {:stop, term()}
   def init(_opts) do
     socket_path = SocketPath.compute_string()
     socket_path_cl = to_charlist(socket_path)

@@ -53,6 +53,7 @@ defmodule Ragex.Embeddings.FileTracker do
 
   Called automatically by the application supervisor.
   """
+  @spec init() :: :ok
   def init do
     case :ets.whereis(@tracker_table) do
       :undefined ->
@@ -115,6 +116,7 @@ defmodule Ragex.Embeddings.FileTracker do
   - `:ok` on success
   - `{:error, reason}` on failure
   """
+  @spec track_file(String.t(), map()) :: :ok | {:error, term()}
   def track_file(file_path, analysis_result) do
     file_id = normalize_file_id(file_path)
     fs_path = file_id_to_path(file_path)
@@ -138,6 +140,8 @@ defmodule Ragex.Embeddings.FileTracker do
   `{:unchanged, metadata}` if it hasn't, or
   `{:new, nil}` if the file was never tracked.
   """
+  @spec has_changed?(String.t()) ::
+          {:changed, map()} | {:unchanged, map()} | {:deleted, map()} | {:new, nil}
   def has_changed?(file_path) do
     file_id = normalize_file_id(file_path)
     fs_path = file_id_to_path(file_path)
@@ -169,6 +173,7 @@ defmodule Ragex.Embeddings.FileTracker do
   @doc """
   Returns a list of all tracked files.
   """
+  @spec list_tracked_files() :: [{String.t(), map()}]
   def list_tracked_files do
     :ets.tab2list(@tracker_table)
     |> Enum.map(fn {path, metadata} -> {path, metadata} end)
@@ -180,6 +185,7 @@ defmodule Ragex.Embeddings.FileTracker do
   This is used to determine which embeddings need to be regenerated.
   Returns a list of `{entity_type, entity_id}` tuples.
   """
+  @spec get_stale_entities() :: [term()]
   def get_stale_entities do
     list_tracked_files()
     |> Enum.flat_map(fn {file_path, metadata} ->
@@ -197,6 +203,7 @@ defmodule Ragex.Embeddings.FileTracker do
 
   Used when files are deleted or need to be re-analyzed from scratch.
   """
+  @spec untrack_file(String.t()) :: :ok
   def untrack_file(file_path) do
     file_id = normalize_file_id(file_path)
     :ets.delete(@tracker_table, file_id)
@@ -275,6 +282,7 @@ defmodule Ragex.Embeddings.FileTracker do
 
   Used when performing a full refresh or clearing the cache.
   """
+  @spec clear_all() :: :ok
   def clear_all do
     :ets.delete_all_objects(@tracker_table)
     :ets.delete_all_objects(@fn_hash_table)
@@ -285,6 +293,7 @@ defmodule Ragex.Embeddings.FileTracker do
   @doc """
   Returns statistics about tracked files.
   """
+  @spec stats() :: map()
   def stats do
     tracked_files = list_tracked_files()
     total_files = length(tracked_files)
@@ -318,6 +327,7 @@ defmodule Ragex.Embeddings.FileTracker do
 
   Returns a map that can be serialized and stored alongside embeddings.
   """
+  @spec export() :: map()
   def export do
     fn_hashes =
       :ets.tab2list(@fn_hash_table)
@@ -335,6 +345,7 @@ defmodule Ragex.Embeddings.FileTracker do
 
   Restores file tracking state from a previously exported state.
   """
+  @spec import(map()) :: :ok | {:error, term()}
   def import(data) do
     case data do
       %{version: 2, tracked_files: files, fn_hashes: fn_hashes} when is_map(files) ->
@@ -370,6 +381,7 @@ defmodule Ragex.Embeddings.FileTracker do
   @doc """
   Imports basic file fingerprints into FileTracker if full metadata is unavailable.
   """
+  @spec import_fingerprints(map()) :: :ok
   def import_fingerprints(fingerprints) when is_map(fingerprints) do
     Enum.each(fingerprints, fn {path, content_hash} ->
       file_id = normalize_file_id(path)

@@ -1,0 +1,43 @@
+name: "Set up Ragex build environment"
+description: >
+  Installs Elixir/OTP, restores the deps/_build cache, and installs the
+  system packages Ragex needs to compile (libgit2 for egit). Factored out
+  because ci.yml and ragex-ci.yml previously duplicated these steps, so any
+  Elixir/OTP version bump or new system dependency had to be edited twice.
+
+inputs:
+  elixir-version:
+    description: "Elixir version to install"
+    required: true
+  otp-version:
+    description: "OTP version to install"
+    required: true
+
+outputs:
+  cache-hit:
+    description: "Whether the deps/_build cache was restored from an exact key match"
+    value: ${{ steps.cache-deps.outputs.cache-hit }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ inputs.elixir-version }}
+        otp-version: ${{ inputs.otp-version }}
+
+    - name: Restore dependencies cache
+      id: cache-deps
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-otp${{ inputs.otp-version }}-elixir${{ inputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-otp${{ inputs.otp-version }}-elixir${{ inputs.elixir-version }}-
+
+    - name: Install system dependencies
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y libgit2-dev

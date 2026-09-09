@@ -36,11 +36,18 @@ defmodule Ragex.AI.Provider.OpenAI do
   @behaviour Ragex.AI.Behaviour
 
   require Logger
+  alias Ragex.AI.Provider.Shared
 
   @default_endpoint "https://api.openai.com/v1"
   @default_model "gpt-4-turbo"
   @default_temperature 0.7
   @default_max_tokens 2048
+  @defaults %{
+    endpoint: @default_endpoint,
+    model: @default_model,
+    temperature: @default_temperature,
+    max_tokens: @default_max_tokens
+  }
 
   @impl true
   def generate(prompt, context \\ nil, opts \\ []) do
@@ -104,47 +111,11 @@ defmodule Ragex.AI.Provider.OpenAI do
   # Private functions
 
   defp get_config(opts) do
-    provider_config = Application.get_env(:ragex, :ai_providers, [])[:openai] || []
-
-    config = %{
-      endpoint:
-        Keyword.get(opts, :endpoint) ||
-          Keyword.get(provider_config, :endpoint) ||
-          @default_endpoint,
-      model:
-        Keyword.get(opts, :model) ||
-          Keyword.get(provider_config, :model) ||
-          @default_model,
-      temperature:
-        Keyword.get(opts, :temperature) ||
-          Keyword.get(provider_config, :temperature) ||
-          @default_temperature,
-      max_tokens:
-        Keyword.get(opts, :max_tokens) ||
-          Keyword.get(provider_config, :max_tokens) ||
-          @default_max_tokens,
-      stream: Keyword.get(opts, :stream, false)
-    }
-
-    {:ok, config}
+    {:ok, Shared.resolve_config(:openai, opts, @defaults)}
   end
 
   defp get_api_key do
-    # Try runtime config first
-    case Application.get_env(:ragex, :ai_keys, [])[:openai] do
-      key when is_binary(key) and byte_size(key) > 0 ->
-        {:ok, key}
-
-      _ ->
-        # Fallback to environment variable
-        case System.get_env("OPENAI_API_KEY") do
-          key when is_binary(key) and byte_size(key) > 0 ->
-            {:ok, key}
-
-          _ ->
-            {:error, :no_api_key}
-        end
-    end
+    Shared.resolve_api_key(:openai, "OPENAI_API_KEY")
   end
 
   defp get_endpoint do
@@ -193,62 +164,7 @@ defmodule Ragex.AI.Provider.OpenAI do
     {:ok, messages}
   end
 
-  defp to_api_message(msg) do
-    role = msg[:role] || msg["role"]
-    content = msg[:content] || msg["content"]
-    tool_calls = msg[:tool_calls] || msg["tool_calls"]
-    tool_call_id = msg[:tool_call_id] || msg["tool_call_id"]
-    name = msg[:name] || msg["name"]
-
-    api_msg = %{
-      role: to_string(role),
-      content: content || ""
-    }
-
-    api_msg =
-      if tool_calls do
-        Map.put(api_msg, :tool_calls, format_api_tool_calls(tool_calls))
-      else
-        api_msg
-      end
-
-    api_msg =
-      if tool_call_id do
-        Map.put(api_msg, :tool_call_id, tool_call_id)
-      else
-        api_msg
-      end
-
-    api_msg =
-      if name do
-        Map.put(api_msg, :name, name)
-      else
-        api_msg
-      end
-
-    api_msg
-  end
-
-  defp format_api_tool_calls(tool_calls) when is_list(tool_calls) do
-    Enum.map(tool_calls, fn tc ->
-      %{
-        id: tc[:id] || tc["id"],
-        type: "function",
-        function: %{
-          name: tc[:name] || tc["name"] || tc[:function][:name] || tc["function"]["name"],
-          arguments:
-            format_api_tool_args(
-              tc[:arguments] || tc["arguments"] || tc[:function][:arguments] ||
-                tc["function"]["arguments"]
-            )
-        }
-      }
-    end)
-  end
-
-  defp format_api_tool_args(args) when is_binary(args), do: args
-  defp format_api_tool_args(args) when is_map(args), do: Jason.encode!(args)
-  defp format_api_tool_args(_), do: "{}"
+  defp to_api_message(msg), do: Shared.to_api_message(msg)
 
   defp call_api(messages, config, api_key, opts) do
     url = "#{config.endpoint}/chat/completions"
@@ -363,34 +279,7 @@ defmodule Ragex.AI.Provider.OpenAI do
       {"content-type", "application/json"}
     ]
 
-    # Use Task to handle streaming in separate process
-    parent = self()
-
-    task =
-      Task.async(fn ->
-        case Req.post(url,
-               json: body,
-               headers: headers,
-               into: fn {:data, data}, {req, resp} ->
-                 # Send chunks to parent
-                 send(parent, {:stream_chunk, data})
-                 {:cont, {req, resp}}
-               end
-             ) do
-          {:ok, %{status: 200}} ->
-            # Signal completion
-            send(parent, :stream_done)
-            :ok
-
-          {:ok, response} ->
-            send(parent, {:stream_error, {:api_error, response.status, response.body}})
-            {:error, {:api_error, response.status}}
-
-          {:error, reason} ->
-            send(parent, {:stream_error, {:http_error, reason}})
-            {:error, {:http_error, reason}}
-        end
-      end)
+    task = Shared.start_streaming_task(url, body, headers)
 
     # Return a stream that receives messages from the task
     stream =

@@ -15,6 +15,7 @@ defmodule Ragex.MCP.Debug do
   @doc """
   Test the initialize handshake.
   """
+  @spec test_initialize() :: {:ok, map()} | {:error, term()}
   def test_initialize do
     message = %{
       "jsonrpc" => "2.0",
@@ -36,6 +37,7 @@ defmodule Ragex.MCP.Debug do
   @doc """
   Test listing tools.
   """
+  @spec test_tools_list() :: {:ok, map()} | {:error, term()}
   def test_tools_list do
     message = %{
       "jsonrpc" => "2.0",
@@ -51,6 +53,7 @@ defmodule Ragex.MCP.Debug do
   @doc """
   Test analyzing a directory.
   """
+  @spec test_analyze(String.t()) :: {:ok, map()} | {:error, term()}
   def test_analyze(path \\ ".") do
     message = %{
       "jsonrpc" => "2.0",
@@ -71,6 +74,7 @@ defmodule Ragex.MCP.Debug do
   @doc """
   Test a raw message and show the response.
   """
+  @spec test_message(map()) :: {:ok, map()} | {:error, term()}
   def test_message(message) when is_map(message) do
     # Encode the message
     {:ok, json_request} = Jason.encode(message)
@@ -99,6 +103,7 @@ defmodule Ragex.MCP.Debug do
   @doc """
   Process a decoded message (simulating Server.handle_message).
   """
+  @spec process_message(map()) :: map()
   def process_message(%{"method" => method} = message) do
     id = Map.get(message, "id")
     params = Map.get(message, "params", %{})
@@ -173,6 +178,7 @@ defmodule Ragex.MCP.Debug do
   @doc """
   Start IEx with helpful context.
   """
+  @spec help() :: :ok
   def help do
     IO.puts("""
 

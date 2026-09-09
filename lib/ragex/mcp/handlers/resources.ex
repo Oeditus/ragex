@@ -14,6 +14,7 @@ defmodule Ragex.MCP.Handlers.Resources do
 
   Returns resource definitions with URIs, names, descriptions, and MIME types.
   """
+  @spec list_resources() :: map()
   def list_resources do
     %{
       resources: [
@@ -68,6 +69,7 @@ defmodule Ragex.MCP.Handlers.Resources do
 
   Returns `{:ok, contents}` on success or `{:error, reason}` on failure.
   """
+  @spec read_resource(String.t()) :: {:ok, term()} | {:error, String.t()}
   def read_resource(uri) when is_binary(uri) do
     case URI.parse(uri) do
       %URI{scheme: "ragex", host: category, path: "/" <> resource} ->

@@ -41,6 +41,7 @@ defmodule Ragex.Analysis.Suggestions.Actions do
   - `{:ok, action_plan}` - Executable action plan
   - `{:error, reason}` - Error if plan generation fails
   """
+  @spec generate_action_plan(map()) :: {:ok, map()} | {:error, term()}
   def generate_action_plan(suggestion) do
     pattern = suggestion[:pattern]
 
@@ -513,6 +514,7 @@ defmodule Ragex.Analysis.Suggestions.Actions do
 
   Returns one of: :trivial, :easy, :moderate, :significant, :major
   """
+  @spec estimate_effort_level(map()) :: :trivial | :easy | :moderate | :significant | :major
   def estimate_effort_level(plan) do
     step_count = plan[:total_steps] || 0
     has_manual_steps = Enum.any?(plan[:steps] || [], fn step -> is_nil(step[:tool]) end)
@@ -531,6 +533,7 @@ defmodule Ragex.Analysis.Suggestions.Actions do
 
   Returns a human-readable string representation of the plan.
   """
+  @spec format_plan(map()) :: String.t()
   def format_plan(plan) do
     steps_text =
       Enum.map_join(plan[:steps], "\n", fn step ->

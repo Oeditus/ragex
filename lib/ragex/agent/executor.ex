@@ -366,88 +366,12 @@ defmodule Ragex.Agent.Executor do
     end
   end
 
+  # `execute_step/1` is the non-streaming entry point; it used to duplicate
+  # `execute_step_with_tool_progress/2` almost verbatim (they only differed by
+  # the presence of a tool-progress callback). Delegate with a no-op callback
+  # instead, so there is exactly one implementation of the step logic.
   defp execute_step(state) do
-    debug? = Application.get_env(:ragex, :debug_ai_responses, false)
-
-    with {:ok, messages} <- Memory.get_context(state.session_id, context_opts(state)),
-         {:ok, response} <- call_llm(state, messages) do
-      # Update usage tracking
-      updated_state = update_usage(state, response.usage)
-
-      case response.tool_calls do
-        nil ->
-          # No tool calls - we're done
-          content = response.content || ""
-          if debug?, do: print_assistant_response(content, state.iterations)
-          # Save assistant response
-          Memory.add_message(state.session_id, :assistant, content)
-          {:done, content, updated_state}
-
-        [] ->
-          # Empty tool calls - we're done
-          content = response.content || ""
-          if debug?, do: print_assistant_response(content, state.iterations)
-          Memory.add_message(state.session_id, :assistant, content)
-          {:done, content, updated_state}
-
-        tool_calls when is_list(tool_calls) ->
-          # Execute tool calls
-          Logger.debug("Agent making #{length(tool_calls)} tool call(s)")
-          if debug?, do: print_tool_calls(tool_calls, response.content, state.iterations)
-
-          # Save assistant message with tool calls
-          Memory.add_message(state.session_id, :assistant, response.content || "",
-            tool_calls: tool_calls
-          )
-
-          # Execute each tool (with dedup) and add results
-          results = execute_tool_calls(tool_calls, state)
-
-          # Check if ALL calls were repeats -> force text response
-          all_repeated =
-            Enum.all?(results, fn {_tc, result} ->
-              match?({:ok, %{repeated: true}}, result)
-            end)
-
-          if all_repeated do
-            # Add the repeat messages to conversation
-            Enum.each(results, fn {tool_call, result} ->
-              result_str = format_tool_result(tool_call.name, result)
-              if debug?, do: print_tool_result(tool_call.name, result_str)
-
-              Memory.add_message(state.session_id, :tool, result_str,
-                tool_call_id: tool_call.id,
-                name: tool_call.name
-              )
-            end)
-
-            # Force a text response without tools
-            force_text_response(updated_state)
-          else
-            # Normal: add tool results and continue
-            Enum.each(results, fn {tool_call, result} ->
-              result_str = format_tool_result(tool_call.name, result)
-              if debug?, do: print_tool_result(tool_call.name, result_str)
-
-              Memory.add_message(state.session_id, :tool, result_str,
-                tool_call_id: tool_call.id,
-                name: tool_call.name
-              )
-
-              Memory.add_tool_result(state.session_id, tool_call.id, result)
-            end)
-
-            # Update state with history
-            updated_state =
-              updated_state
-              |> update_tool_history(tool_calls)
-              |> Map.put(:iterations, updated_state.iterations + 1)
-              |> Map.put(:tool_calls_made, updated_state.tool_calls_made + length(tool_calls))
-
-            {:continue, updated_state}
-          end
-      end
-    end
+    execute_step_with_tool_progress(state, fn _info -> :ok end)
   end
 
   defp call_llm(state, messages) do

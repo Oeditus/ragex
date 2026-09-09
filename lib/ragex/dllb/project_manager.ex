@@ -30,6 +30,7 @@ defmodule Ragex.Dllb.ProjectManager do
   # ---------------------------------------------------------------------------
 
   @doc "Starts the ProjectManager GenServer."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end

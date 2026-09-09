@@ -34,6 +34,7 @@ defmodule Ragex.Analysis.Suggestions.RAGAdvisor do
   - `{:ok, advice_text}` - Generated advice string
   - `{:error, reason}` - Error if generation fails
   """
+  @spec generate_advice(map(), keyword()) :: {:ok, String.t()} | {:error, term()}
   def generate_advice(suggestion, opts \\ []) do
     pattern = suggestion[:pattern]
 
@@ -274,6 +275,7 @@ defmodule Ragex.Analysis.Suggestions.RAGAdvisor do
   - `{:ok, suggestions_with_advice}` - Suggestions with added `:rag_advice` field
   - `{:error, reason}` - Error if batch generation fails
   """
+  @spec generate_batch_advice([map()], keyword()) :: {:ok, [map()]} | {:error, term()}
   def generate_batch_advice(suggestions, opts \\ []) do
     Logger.info("Generating RAG advice for #{length(suggestions)} suggestions")
 
@@ -303,6 +305,7 @@ defmodule Ragex.Analysis.Suggestions.RAGAdvisor do
 
   Returns true if an AI provider is configured, false otherwise.
   """
+  @spec available?() :: boolean()
   def available? do
     case Config.get_default_provider() do
       nil -> false

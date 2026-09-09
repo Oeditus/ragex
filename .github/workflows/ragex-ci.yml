@@ -21,24 +21,11 @@ jobs:
         with:
           fetch-depth: 0 # Fetch all history for diff-based analysis
           
-      - name: Set up Elixir
-        uses: erlef/setup-beam@v1
+      - name: Set up Ragex build environment
+        uses: ./.github/actions/setup-ragex
         with:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
-          
-      - name: Cache dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            deps
-            _build
-          key: ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
-            
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgit2-dev
 
       - name: Install dependencies
         run: mix deps.get
@@ -49,9 +36,11 @@ jobs:
       - name: Install Node parser dependencies
         run: cd priv/js_parser && npm ci
         
-      - name: Run Ragex CI Audit
+      - name: Run Ragex CI Audit (diff-based, blocking)
         # Use GITHUB_BASE_REF when running on PRs to run differential analysis,
-        # otherwise compare with HEAD~1 on push.
+        # otherwise compare with HEAD~1 on push. This only sees issues touched
+        # by the current diff, so it can miss pre-existing debt in files the
+        # PR doesn't modify.
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
@@ -59,3 +48,13 @@ jobs:
           else
             mix ragex.ci --base HEAD~1 --format github
           fi
+
+      - name: Dogfood full-codebase self-analysis (non-blocking)
+        # Ragex analyzing itself, whole-tree (not diff-scoped), using its own
+        # duplication/dead-code/quality/complexity/god-module tools. Runs
+        # without --ci/--strict so it always exits 0 and never blocks the
+        # build; it exists to surface pre-existing debt (like god modules no
+        # single diff ever touches at once) as GitHub annotations for triage.
+        # See the Ragex Codebase Health & Architecture Improvement Plan.
+        if: always()
+        run: mix ragex.analyze --path lib --format github --verbose

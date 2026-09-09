@@ -1,4 +1,7 @@
 defmodule Ragex.MCP.Handlers.Tools do
+  # credo:disable-for-this-file Credo.Check.Refactor.ModuleDependencies
+  # credo:disable-for-this-file Ragex.Credo.Check.FileLength
+
   @moduledoc """
   Handles MCP tool-related requests (tools/list and tools/call).
 
@@ -86,6 +89,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   @doc """
   Lists all available tools.
   """
+  @spec list_tools() :: map()
   def list_tools do
     plugin_tools =
       try do
@@ -125,26 +129,6 @@ defmodule Ragex.MCP.Handlers.Tools do
                   }
                 },
                 required: ["path"]
-              }
-            },
-            %{
-              name: "query_graph",
-              description:
-                "Structured lookup of specific code entities by exact type and identifier. Use when you know the module name, function name, or want all callers/dependencies of a known entity. Better than semantic_search when the exact name is known. Returns typed graph nodes and edges.",
-              inputSchema: %{
-                type: "object",
-                properties: %{
-                  query_type: %{
-                    type: "string",
-                    description: "Type of query to perform",
-                    enum: ["find_module", "find_function", "get_calls", "get_dependencies"]
-                  },
-                  params: %{
-                    type: "object",
-                    description: "Query-specific parameters"
-                  }
-                },
-                required: ["query_type", "params"]
               }
             },
             %{
@@ -189,38 +173,6 @@ defmodule Ragex.MCP.Handlers.Tools do
                   }
                 },
                 required: ["path"]
-              }
-            },
-            %{
-              name: "analyze_url",
-              description:
-                "Fetches and analyzes a URL (GitHub/GitLab repo, web page, API specification, or raw code file). Returns a machine-understandable report and indexes findings into the knowledge graph.",
-              inputSchema: %{
-                type: "object",
-                properties: %{
-                  url: %{
-                    type: "string",
-                    description:
-                      "Target URL to analyze (e.g., https://github.com/owner/repo or web page)"
-                  },
-                  depth: %{
-                    type: "string",
-                    enum: ["shallow", "deep"],
-                    default: "shallow",
-                    description: "Depth of analysis (shallow or deep)"
-                  },
-                  index_graph: %{
-                    type: "boolean",
-                    default: true,
-                    description: "Whether to index findings into the Ragex knowledge graph"
-                  },
-                  auth_token: %{
-                    type: "string",
-                    description:
-                      "Optional authentication token for private GitHub/GitLab repositories"
-                  }
-                },
-                required: ["url"]
               }
             },
             %{
@@ -777,7 +729,7 @@ defmodule Ragex.MCP.Handlers.Tools do
             %{
               name: "advanced_refactor",
               description:
-                "Advanced refactoring operations: extract_function, inline_function, convert_visibility, rename_parameter, modify_attributes, change_signature, move_function, extract_module",
+                "Advanced refactoring operations: extract_function, inline_function, convert_visibility, rename_parameter, modify_attributes, change_signature, move_function, extract_module. NOTE: extract_function currently only supports simple, self-contained code ranges -- free-variable inference does not yet handle nested function calls, pipe chains, multiple free variables, or guards (tracked in stuff/docs/PHASE_HISTORY.md as Phase 10A follow-up work). Prefer inline_function, convert_visibility, rename_parameter, modify_attributes, and change_signature, which are fully supported.",
               inputSchema: %{
                 type: "object",
                 properties: %{
@@ -818,26 +770,6 @@ defmodule Ragex.MCP.Handlers.Tools do
                   }
                 },
                 required: ["operation", "params"]
-              }
-            },
-            %{
-              name: "betweenness_centrality",
-              description:
-                "Compute betweenness centrality to identify bridge/bottleneck functions in the call graph",
-              inputSchema: %{
-                type: "object",
-                properties: %{
-                  max_nodes: %{
-                    type: "integer",
-                    description: "Limit computation to N highest-degree nodes",
-                    default: 1000
-                  },
-                  normalize: %{
-                    type: "boolean",
-                    description: "Return normalized scores (0-1)",
-                    default: true
-                  }
-                }
               }
             },
             %{
@@ -1532,43 +1464,6 @@ defmodule Ragex.MCP.Handlers.Tools do
               }
             },
             %{
-              name: "find_dead_code",
-              description:
-                "Find functions with no callers in the knowledge graph. Assigns a confidence score that distinguishes truly unreachable code from framework callbacks (GenServer, Phoenix handlers) that appear unused but are called by the runtime. Use before deleting code to avoid removing live callbacks. Requires the codebase to be indexed first.",
-              inputSchema: %{
-                type: "object",
-                properties: %{
-                  scope: %{
-                    type: "string",
-                    description: "Analysis scope",
-                    enum: ["exports", "private", "all", "modules"],
-                    default: "all"
-                  },
-                  min_confidence: %{
-                    type: "number",
-                    description: "Minimum confidence threshold (0.0-1.0)",
-                    default: 0.5
-                  },
-                  exclude_tests: %{
-                    type: "boolean",
-                    description: "Exclude test modules from analysis",
-                    default: true
-                  },
-                  include_callbacks: %{
-                    type: "boolean",
-                    description: "Include potential callbacks (GenServer, Phoenix, etc.)",
-                    default: false
-                  },
-                  format: %{
-                    type: "string",
-                    description: "Output format",
-                    enum: ["summary", "detailed", "suggestions"],
-                    default: "summary"
-                  }
-                }
-              }
-            },
-            %{
               name: "analyze_dead_code_patterns",
               description:
                 "Detect unreachable code and constant conditionals inside function bodies using AST analysis. Complements find_dead_code (which finds whole unused functions) by looking at unreachable branches within live functions — e.g., code after early returns, or branches that always evaluate to the same result.",
@@ -1626,44 +1521,6 @@ defmodule Ragex.MCP.Handlers.Tools do
                     default: 0
                   }
                 }
-              }
-            },
-            %{
-              name: "find_duplicates",
-              description:
-                "Detect copy-paste code clones using AST structural comparison (Type I: exact, Type II: renamed identifiers, Type III: modified statements, Type IV: semantic equivalents via MetaAST). Works across languages because comparison uses the Metastatic universal AST. Returns clone groups with similarity scores. Use find_similar_code for embedding-based similarity when AST is unavailable.",
-              inputSchema: %{
-                type: "object",
-                properties: %{
-                  path: %{
-                    type: "string",
-                    description:
-                      "File path or directory to analyze (if two paths separated by comma, compares them)"
-                  },
-                  threshold: %{
-                    type: "number",
-                    description: "Similarity threshold for Type III clones (0.0-1.0)",
-                    default: 0.8
-                  },
-                  recursive: %{
-                    type: "boolean",
-                    description: "Recursively scan directories",
-                    default: true
-                  },
-                  format: %{
-                    type: "string",
-                    description: "Output format",
-                    enum: ["summary", "detailed", "json"],
-                    default: "summary"
-                  },
-                  exclude_patterns: %{
-                    type: "array",
-                    description: "Patterns to exclude from scan",
-                    items: %{type: "string"},
-                    default: ["_build", "deps", ".git"]
-                  }
-                },
-                required: ["path"]
               }
             },
             %{
@@ -1901,46 +1758,6 @@ defmodule Ragex.MCP.Handlers.Tools do
               }
             },
             %{
-              name: "scan_security",
-              description:
-                "Scan source files for common vulnerability patterns: injection, unsafe deserialization, hardcoded secrets, weak crypto. Returns findings with file:line, severity, and CWE reference. Use for a quick pass on new or changed files. Use security_audit for a project-wide report with recommendations, or analyze_security_issues for the full 13-analyzer CWE-mapped pass.",
-              inputSchema: %{
-                type: "object",
-                properties: %{
-                  path: %{
-                    type: "string",
-                    description: "File or directory path to scan"
-                  },
-                  recursive: %{
-                    type: "boolean",
-                    description: "Recursively scan directories",
-                    default: true
-                  },
-                  min_severity: %{
-                    type: "string",
-                    description: "Minimum severity level to report",
-                    enum: ["low", "medium", "high", "critical"],
-                    default: "low"
-                  },
-                  categories: %{
-                    type: "array",
-                    description: "Filter by vulnerability categories (empty = all)",
-                    items: %{
-                      type: "string",
-                      enum: [
-                        "injection",
-                        "unsafe_deserialization",
-                        "hardcoded_secret",
-                        "weak_cryptography",
-                        "insecure_protocol"
-                      ]
-                    }
-                  }
-                },
-                required: ["path"]
-              }
-            },
-            %{
               name: "security_audit",
               description:
                 "Generate a structured security audit report for an entire project: all findings from scan_security, grouped by CWE, with remediation recommendations and overall risk summary. Use for a pre-release security review or compliance report. Slower than scan_security — avoid for quick targeted checks.",
@@ -1962,92 +1779,6 @@ defmodule Ragex.MCP.Handlers.Tools do
                     description: "Minimum severity to include",
                     enum: ["low", "medium", "high", "critical"],
                     default: "low"
-                  }
-                },
-                required: ["path"]
-              }
-            },
-            %{
-              name: "check_secrets",
-              description:
-                "Scan source files for hardcoded secrets: API keys, passwords, connection strings, tokens. Focused narrowly on secret exposure — use scan_security for broader vulnerability scanning. Returns file:line locations with the matched pattern type. Run before committing code to catch accidental credential commits.",
-              inputSchema: %{
-                type: "object",
-                properties: %{
-                  path: %{
-                    type: "string",
-                    description: "File or directory path to scan"
-                  },
-                  recursive: %{
-                    type: "boolean",
-                    description: "Recursively scan directories",
-                    default: true
-                  }
-                },
-                required: ["path"]
-              }
-            },
-            %{
-              name: "detect_smells",
-              description:
-                "Detect structural code smells: long functions, deep nesting, magic numbers, complex conditionals, large modules. Use to find readability and maintainability issues that don't rise to the level of bugs. Complements analyze_quality (which gives metrics) and find_complex_code (which filters by threshold) — detect_smells identifies named anti-patterns rather than raw numbers.",
-              inputSchema: %{
-                type: "object",
-                properties: %{
-                  path: %{
-                    type: "string",
-                    description: "File or directory path to analyze"
-                  },
-                  recursive: %{
-                    type: "boolean",
-                    description: "Recursively analyze directories",
-                    default: true
-                  },
-                  min_severity: %{
-                    type: "string",
-                    description: "Minimum severity level to report",
-                    enum: ["low", "medium", "high", "critical"],
-                    default: "low"
-                  },
-                  thresholds: %{
-                    type: "object",
-                    description: "Custom thresholds for smell detection",
-                    properties: %{
-                      max_statements: %{
-                        type: "integer",
-                        description: "Maximum statements per function",
-                        default: 50
-                      },
-                      max_nesting: %{
-                        type: "integer",
-                        description: "Maximum nesting depth",
-                        default: 4
-                      },
-                      max_parameters: %{
-                        type: "integer",
-                        description: "Maximum parameters per function",
-                        default: 5
-                      },
-                      max_cognitive: %{
-                        type: "integer",
-                        description: "Maximum cognitive complexity",
-                        default: 15
-                      }
-                    }
-                  },
-                  smell_types: %{
-                    type: "array",
-                    description: "Filter by specific smell types (empty = all)",
-                    items: %{
-                      type: "string",
-                      enum: [
-                        "long_function",
-                        "deep_nesting",
-                        "magic_number",
-                        "complex_conditional",
-                        "long_parameter_list"
-                      ]
-                    }
                   }
                 },
                 required: ["path"]
@@ -2457,12 +2188,6 @@ defmodule Ragex.MCP.Handlers.Tools do
       "analyze_directory" ->
         analyze_directory(arguments)
 
-      "analyze_url" ->
-        analyze_url(arguments)
-
-      "query_graph" ->
-        query_graph(arguments)
-
       "list_nodes" ->
         list_nodes(arguments)
 
@@ -2538,9 +2263,6 @@ defmodule Ragex.MCP.Handlers.Tools do
       "advanced_refactor" ->
         advanced_refactor_tool(arguments)
 
-      "betweenness_centrality" ->
-        betweenness_centrality_tool(arguments)
-
       "closeness_centrality" ->
         closeness_centrality_tool(arguments)
 
@@ -2598,17 +2320,11 @@ defmodule Ragex.MCP.Handlers.Tools do
       "find_circular_dependencies" ->
         find_circular_dependencies_tool(arguments)
 
-      "find_dead_code" ->
-        find_dead_code_tool(arguments)
-
       "analyze_dead_code_patterns" ->
         analyze_dead_code_patterns_tool(arguments)
 
       "coupling_report" ->
         coupling_report_tool(arguments)
-
-      "find_duplicates" ->
-        find_duplicates_tool(arguments)
 
       "find_similar_code" ->
         find_similar_code_tool(arguments)
@@ -2631,17 +2347,8 @@ defmodule Ragex.MCP.Handlers.Tools do
       "validate_with_ai" ->
         validate_with_ai_tool(arguments)
 
-      "scan_security" ->
-        scan_security_tool(arguments)
-
       "security_audit" ->
         security_audit_tool(arguments)
-
-      "check_secrets" ->
-        check_secrets_tool(arguments)
-
-      "detect_smells" ->
-        detect_smells_tool(arguments)
 
       "analyze_business_logic" ->
         analyze_business_logic_tool(arguments)
@@ -2708,6 +2415,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     end
   end
 
+  @spec format_reason(term()) :: String.t()
   def format_reason(nil), do: "‹UNKNOWN›"
   def format_reason(""), do: "‹UNKNOWN›"
   def format_reason(reason) when is_binary(reason), do: reason
@@ -2803,43 +2511,6 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp analyze_directory(_), do: {:error, "Invalid parameters for analyze_directory"}
 
-  defp analyze_url(%{"url" => url} = params) do
-    opts = []
-
-    opts =
-      if Map.has_key?(params, "auth_token") do
-        Keyword.put(opts, :auth_token, params["auth_token"])
-      else
-        opts
-      end
-
-    opts =
-      if Map.has_key?(params, "depth") do
-        depth_val = if params["depth"] == "deep", do: 5, else: 1
-        Keyword.put(opts, :depth, depth_val)
-      else
-        opts
-      end
-
-    opts =
-      if Map.has_key?(params, "index_graph") do
-        Keyword.put(opts, :index_graph, params["index_graph"])
-      else
-        opts
-      end
-
-    case Ragex.URLAnalyzer.analyze(url, opts) do
-      {:ok, report} ->
-        {:ok, report}
-
-      {:error, reason} ->
-        {:error, "Failed to analyze URL: #{inspect(reason)}"}
-    end
-  end
-
-  defp analyze_url(_),
-    do: {:error, "Invalid parameters for analyze_url: 'url' parameter is required"}
-
   defp watch_directory(%{"path" => path}) do
     case Watcher.watch_directory(path) do
       :ok -> {:ok, %{status: "watching", path: path}}
@@ -2923,7 +2594,14 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp get_language_name(JavaScriptAnalyzer), do: "javascript"
   defp get_language_name(_), do: "unknown"
 
-  defp query_graph(%{"query_type" => query_type, "params" => params}) do
+  @doc """
+  Full-featured `query_graph` implementation (find_module/find_function/get_calls/
+  get_dependencies/get_callers, with PageRank enrichment). Public so
+  `Ragex.Plugins.GraphAnalytics` can delegate to it rather than shadowing it
+  with a stub -- see the Ragex Codebase Health & Architecture Improvement Plan.
+  """
+  @spec query_graph(map()) :: {:ok, map()} | {:error, String.t()}
+  def query_graph(%{"query_type" => query_type, "params" => params}) do
     case query_type do
       "find_module" ->
         find_module(params)
@@ -2945,7 +2623,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     end
   end
 
-  defp query_graph(_), do: {:error, "Invalid parameters for query_graph"}
+  def query_graph(_), do: {:error, "Invalid parameters for query_graph"}
 
   defp list_nodes(params) do
     # Convert node_type string to atom (MCP sends strings, Store expects atoms)
@@ -4580,7 +4258,14 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   # New algorithm tools
 
-  defp betweenness_centrality_tool(params) do
+  @doc """
+  Full-featured `betweenness_centrality` implementation (honors `max_nodes`/
+  `normalize`, sorts and formats results). Public so
+  `Ragex.Plugins.GraphAnalytics` can delegate to it -- see the Ragex Codebase
+  Health & Architecture Improvement Plan.
+  """
+  @spec betweenness_centrality_tool(map()) :: {:ok, map()}
+  def betweenness_centrality_tool(params) do
     max_nodes = Map.get(params, "max_nodes", 1000)
     normalize = Map.get(params, "normalize", true)
 
@@ -4801,6 +4486,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   with `done: true` after the final chunk. Non-streaming tools fall back to
   `call_tool/2`.
   """
+  @spec call_tool_streaming(String.t(), map(), function()) :: term()
   def call_tool_streaming(tool_name, arguments, progress_fn) do
     case tool_name do
       "rag_query_stream" ->
@@ -6306,7 +5992,15 @@ defmodule Ragex.MCP.Handlers.Tools do
     end
   end
 
-  defp find_dead_code_tool(params) do
+  @doc """
+  Full-featured `find_dead_code` implementation (scope, min_confidence,
+  exclude_tests, include_callbacks, multiple output formats). Public so
+  `Ragex.Plugins.CodeQuality` can delegate to it rather than shadowing it
+  with a single-file stub -- see the Ragex Codebase Health & Architecture
+  Improvement Plan.
+  """
+  @spec find_dead_code_tool(map()) :: {:ok, map()} | {:error, term()}
+  def find_dead_code_tool(params) do
     scope = Map.get(params, "scope", "all")
     min_confidence = Map.get(params, "min_confidence", 0.5)
     exclude_tests = Map.get(params, "exclude_tests", true)
@@ -6442,7 +6136,14 @@ defmodule Ragex.MCP.Handlers.Tools do
     end
   end
 
-  defp find_duplicates_tool(%{"path" => path} = params) do
+  @doc """
+  Full-featured `find_duplicates` implementation (two-file comparison mode,
+  directory scanning, threshold/exclude_patterns options, error handling).
+  Public so `Ragex.Plugins.CodeQuality` can delegate to it -- see the Ragex
+  Codebase Health & Architecture Improvement Plan.
+  """
+  @spec find_duplicates_tool(map()) :: {:ok, term()} | {:error, term()}
+  def find_duplicates_tool(%{"path" => path} = params) do
     threshold = Map.get(params, "threshold", 0.8)
     recursive = Map.get(params, "recursive", true)
     format = Map.get(params, "format", "summary")
@@ -6501,7 +6202,7 @@ defmodule Ragex.MCP.Handlers.Tools do
       {:error, "Duplicate detection failed: #{Exception.message(e)}"}
   end
 
-  defp find_duplicates_tool(_), do: {:error, "Invalid parameters for find_duplicates"}
+  def find_duplicates_tool(_), do: {:error, "Invalid parameters for find_duplicates"}
 
   defp find_similar_code_tool(params) do
     threshold = Map.get(params, "threshold", 0.95)
@@ -7753,7 +7454,14 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   # Security Analysis Tools - Phase 1
 
-  defp scan_security_tool(%{"path" => path} = params) do
+  @doc """
+  Full-featured `scan_security` implementation (file or directory, category
+  filtering, aggregated severity counts). Public so
+  `Ragex.Plugins.SecurityAudit` can delegate to it -- see the Ragex Codebase
+  Health & Architecture Improvement Plan.
+  """
+  @spec scan_security_tool(map()) :: {:ok, map()}
+  def scan_security_tool(%{"path" => path} = params) do
     recursive = Map.get(params, "recursive", true)
     min_severity = Map.get(params, "min_severity", "low") |> String.to_atom()
     categories = Map.get(params, "categories", [])
@@ -7904,7 +7612,14 @@ defmodule Ragex.MCP.Handlers.Tools do
     end
   end
 
-  defp check_secrets_tool(%{"path" => path} = params) do
+  @doc """
+  Full-featured `check_secrets` implementation (file or directory, uses the
+  Security analyzer's `:hardcoded_secret` category -- not BusinessLogic).
+  Public so `Ragex.Plugins.SecurityAudit` can delegate to it -- see the Ragex
+  Codebase Health & Architecture Improvement Plan.
+  """
+  @spec check_secrets_tool(map()) :: {:ok, map()}
+  def check_secrets_tool(%{"path" => path} = params) do
     recursive = Map.get(params, "recursive", true)
 
     opts = [
@@ -7966,7 +7681,14 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   # Code Smells Analysis Tool - Phase 3
 
-  defp detect_smells_tool(%{"path" => path} = params) do
+  @doc """
+  Full-featured `detect_smells` implementation (file or directory, thresholds,
+  smell_types filter, min_severity). Public so `Ragex.Plugins.CodeQuality`
+  can delegate to it -- see the Ragex Codebase Health & Architecture
+  Improvement Plan.
+  """
+  @spec detect_smells_tool(map()) :: {:ok, map()} | {:error, term()}
+  def detect_smells_tool(%{"path" => path} = params) do
     recursive = Map.get(params, "recursive", true)
     min_severity = Map.get(params, "min_severity", "low") |> String.to_atom()
     thresholds = Map.get(params, "thresholds", %{})

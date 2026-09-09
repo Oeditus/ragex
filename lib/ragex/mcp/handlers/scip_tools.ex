@@ -10,6 +10,7 @@ defmodule Ragex.MCP.Handlers.SCIPTools do
   alias Ragex.Analyzers.SCIP.{Adapter, Indexer, Parser, Registry}
 
   @doc "Returns the list of SCIP tool definitions for tools/list."
+  @spec tool_definitions() :: [map()]
   def tool_definitions do
     [
       %{
@@ -61,6 +62,7 @@ defmodule Ragex.MCP.Handlers.SCIPTools do
   end
 
   @doc "Dispatch a SCIP tool call."
+  @spec call_tool(String.t(), map()) :: {:ok, term()} | {:error, term()}
   def call_tool(name, arguments) do
     case name do
       "scip_status" -> handle_status(arguments)

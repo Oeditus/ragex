@@ -34,6 +34,7 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
   @doc """
   Returns list of all available pattern types.
   """
+  @spec all_patterns() :: [atom()]
   def all_patterns do
     [
       :extract_function,
@@ -60,6 +61,7 @@ defmodule Ragex.Analysis.Suggestions.Patterns do
   - `{:ok, [suggestion]}` - List of raw suggestions (not yet scored)
   - `{:error, reason}` - Error if detection fails
   """
+  @spec detect(atom(), map(), keyword()) :: {:ok, [map()]} | {:error, atom()}
   def detect(pattern, analysis_data, opts \\ [])
 
   def detect(:extract_function, data, _opts) do

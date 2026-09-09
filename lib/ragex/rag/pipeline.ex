@@ -37,6 +37,7 @@ defmodule Ragex.RAG.Pipeline do
   - `:rerank_alpha` - Blend weight for LLM rerank score (default: 0.6)
   - `:rerank_max_candidates` - Max candidates sent to the reranker (default: 20)
   """
+  @spec query(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def query(user_query, opts \\ []) do
     Logger.info("RAG Pipeline: query='#{user_query}'")
 
@@ -51,6 +52,7 @@ defmodule Ragex.RAG.Pipeline do
   @doc """
   Explain code using RAG.
   """
+  @spec explain(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def explain(target, aspect, opts \\ []) do
     query_text = build_explain_query(target, aspect)
 
@@ -66,6 +68,7 @@ defmodule Ragex.RAG.Pipeline do
   @doc """
   Suggest improvements using RAG.
   """
+  @spec suggest(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def suggest(target, focus, opts \\ []) do
     query_text = build_suggest_query(target, focus)
 
@@ -89,6 +92,7 @@ defmodule Ragex.RAG.Pipeline do
   Same as `query/2` plus:
   - `:stream_metadata` - Include sources in every chunk (default: false)
   """
+  @spec stream_query(String.t(), keyword()) :: {:ok, Enumerable.t()} | {:error, term()}
   def stream_query(user_query, opts \\ []) do
     Logger.info("RAG Pipeline (streaming): query='#{user_query}'")
 
@@ -101,6 +105,8 @@ defmodule Ragex.RAG.Pipeline do
   @doc """
   Explain code using RAG with streaming response.
   """
+  @spec stream_explain(String.t(), String.t(), keyword()) ::
+          {:ok, Enumerable.t()} | {:error, term()}
   def stream_explain(target, aspect, opts \\ []) do
     query_text = build_explain_query(target, aspect)
 
@@ -116,6 +122,8 @@ defmodule Ragex.RAG.Pipeline do
   @doc """
   Suggest improvements using RAG with streaming response.
   """
+  @spec stream_suggest(String.t(), String.t(), keyword()) ::
+          {:ok, Enumerable.t()} | {:error, term()}
   def stream_suggest(target, focus, opts \\ []) do
     query_text = build_suggest_query(target, focus)
 

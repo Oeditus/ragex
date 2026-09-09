@@ -1,4 +1,6 @@
 defmodule Ragex.Analysis.BusinessLogic do
+  # credo:disable-for-this-file Credo.Check.Refactor.ModuleDependencies
+
   @moduledoc """
   Business logic analysis using Metastatic analyzers.
 

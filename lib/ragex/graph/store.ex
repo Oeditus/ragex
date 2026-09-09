@@ -35,6 +35,7 @@ defmodule Ragex.Graph.Store do
 
   # Client API
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -44,6 +45,7 @@ defmodule Ragex.Graph.Store do
 
   Node types: :module, :function, :type, :variable, :file
   """
+  @spec add_node(atom(), term(), map()) :: :ok
   def add_node(node_type, node_id, data) do
     GenServer.cast(__MODULE__, {:add_node, node_type, node_id, data})
   end
@@ -51,6 +53,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Adds multiple nodes to the graph in bulk.
   """
+  @spec add_nodes([map()]) :: :ok
   def add_nodes(nodes) when is_list(nodes) do
     GenServer.cast(__MODULE__, {:add_nodes, nodes})
   end
@@ -74,6 +77,7 @@ defmodule Ragex.Graph.Store do
       iex> Store.get_node({:module, NonExistent})
       nil
   """
+  @spec get_node({atom(), term()}) :: map() | nil
   def get_node({node_type, node_id}) do
     find_node(node_type, node_id)
   end
@@ -81,6 +85,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Finds a node by type and id.
   """
+  @spec find_node(atom(), term()) :: map() | nil
   def find_node(node_type, node_id) do
     backend().find_node(node_type, node_id)
   end
@@ -88,6 +93,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Finds a function node by module and name (any arity).
   """
+  @spec find_function(term(), atom()) :: map() | nil
   def find_function(module, name) do
     backend().find_function(module, name)
   end
@@ -111,6 +117,7 @@ defmodule Ragex.Graph.Store do
       iex> Store.get_function(MyModule, :nonexistent, 1)
       nil
   """
+  @spec get_function(term(), atom(), non_neg_integer()) :: map() | nil
   def get_function(module, name, arity) do
     find_node(:function, {module, name, arity})
   end
@@ -129,6 +136,7 @@ defmodule Ragex.Graph.Store do
       iex> Store.get_module(NonExistentModule)
       nil
   """
+  @spec get_module(term()) :: map() | nil
   def get_module(module) do
     find_node(:module, module)
   end
@@ -148,6 +156,7 @@ defmodule Ragex.Graph.Store do
       iex> Store.list_modules()
       [%{id: ModuleA, data: %{name: ModuleA, file: "lib/a.ex"}}, ...]
   """
+  @spec list_modules() :: [%{id: term(), data: map()}]
   def list_modules do
     :module
     |> backend().list_nodes(:infinity)
@@ -176,6 +185,7 @@ defmodule Ragex.Graph.Store do
       iex> Store.list_functions(module: MyModule, limit: 50)
       [%{id: {MyModule, :test, 2}, data: ...}, ...]
   """
+  @spec list_functions(keyword()) :: [%{id: term(), data: map()}]
   def list_functions(opts \\ []) do
     module = Keyword.get(opts, :module)
     limit = Keyword.get(opts, :limit, @functions_limit)
@@ -201,6 +211,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Lists nodes with optional filtering by type.
   """
+  @spec list_nodes(atom() | nil, non_neg_integer() | :infinity) :: [map()]
   def list_nodes(node_type \\ nil, limit \\ @nodes_limit) do
     backend().list_nodes(node_type, limit)
   end
@@ -208,6 +219,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Counts nodes of a specific type.
   """
+  @spec count_nodes_by_type(atom()) :: non_neg_integer()
   def count_nodes_by_type(node_type) do
     backend().count_nodes_by_type(node_type)
   end
@@ -221,6 +233,7 @@ defmodule Ragex.Graph.Store do
   - `:weight` - Edge weight (default: 1.0) for weighted graph algorithms
   - `:metadata` - Additional metadata map
   """
+  @spec add_edge(term(), term(), atom(), keyword()) :: :ok
   def add_edge(from_node, to_node, edge_type, opts \\ []) do
     GenServer.cast(__MODULE__, {:add_edge, from_node, to_node, edge_type, opts})
   end
@@ -228,6 +241,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Adds multiple edges to the graph in bulk.
   """
+  @spec add_edges([tuple()]) :: :ok
   def add_edges(edges) when is_list(edges) do
     GenServer.cast(__MODULE__, {:add_edges, edges})
   end
@@ -235,6 +249,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Gets all outgoing edges from a node of a specific type.
   """
+  @spec get_outgoing_edges(term(), atom()) :: [map()]
   def get_outgoing_edges(from_node, edge_type) do
     backend().get_outgoing_edges(from_node, edge_type)
   end
@@ -242,6 +257,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Gets all incoming edges to a node of a specific type.
   """
+  @spec get_incoming_edges(term(), atom()) :: [map()]
   def get_incoming_edges(to_node, edge_type) do
     backend().get_incoming_edges(to_node, edge_type)
   end
@@ -251,6 +267,7 @@ defmodule Ragex.Graph.Store do
 
   Returns the weight (default: 1.0) if edge exists, nil otherwise.
   """
+  @spec get_edge_weight(term(), term(), atom()) :: float() | nil
   def get_edge_weight(from_node, to_node, edge_type) do
     backend().get_edge_weight(from_node, to_node, edge_type)
   end
@@ -278,6 +295,7 @@ defmodule Ragex.Graph.Store do
       iex> Store.list_edges(edge_type: :imports)
       [%{from: mod1, to: mod2, type: :imports, metadata: %{weight: 1.0}}, ...]
   """
+  @spec list_edges(keyword()) :: [map()]
   def list_edges(opts \\ []) do
     backend().list_edges(opts)
   end
@@ -290,6 +308,7 @@ defmodule Ragex.Graph.Store do
 
   Returns `:ok` if successful, `{:error, :timeout}` on timeout.
   """
+  @spec remove_node(atom(), term()) :: :ok
   def remove_node(node_type, node_id) do
     GenServer.cast(__MODULE__, {:remove_node, node_type, node_id})
   end
@@ -306,6 +325,7 @@ defmodule Ragex.Graph.Store do
   - `node_id` -- the node identifier
   - `new_metadata` -- map of metadata to merge
   """
+  @spec update_node_metadata(atom(), term(), map()) :: :ok
   def update_node_metadata(node_type, node_id, new_metadata) when is_map(new_metadata) do
     backend().update_node_metadata(node_type, node_id, new_metadata)
   end
@@ -313,6 +333,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Clears all data from the graph.
   """
+  @spec clear() :: :ok
   def clear do
     GenServer.cast(__MODULE__, :clear)
   end
@@ -340,6 +361,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Stores an embedding vector for a node.
   """
+  @spec store_embedding(atom(), term(), [float()], String.t()) :: :ok
   def store_embedding(node_type, node_id, embedding, text) do
     GenServer.cast(__MODULE__, {:store_embedding, node_type, node_id, embedding, text})
   end
@@ -347,6 +369,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Stores a batch of embedding vectors.
   """
+  @spec store_embeddings([tuple()]) :: :ok
   def store_embeddings(embeddings) when is_list(embeddings) do
     GenServer.cast(__MODULE__, {:store_embeddings, embeddings})
   end
@@ -356,6 +379,7 @@ defmodule Ragex.Graph.Store do
 
   Returns `{embedding, text}` tuple or `nil` if not found.
   """
+  @spec get_embedding(atom(), term()) :: {[float()], String.t()} | nil
   def get_embedding(node_type, node_id) do
     backend().get_embedding(node_type, node_id)
   end
@@ -365,6 +389,7 @@ defmodule Ragex.Graph.Store do
 
   Returns list of `{node_type, node_id, embedding, text}` tuples.
   """
+  @spec list_embeddings(atom() | nil, non_neg_integer() | :infinity) :: [tuple()]
   def list_embeddings(node_type \\ nil, limit \\ @embeddings_limit) do
     backend().list_embeddings(node_type, limit)
   end
@@ -372,6 +397,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Returns the number of stored embeddings (vectors) in the active backend.
   """
+  @spec count_embeddings() :: non_neg_integer()
   def count_embeddings do
     backend().count_embeddings()
   end
@@ -382,6 +408,7 @@ defmodule Ragex.Graph.Store do
   Useful in tests to ensure async operations (add_node, add_edge, etc.)
   have been applied to ETS before querying.
   """
+  @spec sync() :: :ok
   def sync do
     GenServer.call(__MODULE__, :sync)
   end
@@ -389,6 +416,7 @@ defmodule Ragex.Graph.Store do
   @doc """
   Returns statistics about the graph.
   """
+  @spec stats() :: map()
   def stats do
     backend().stats()
   end
@@ -398,11 +426,13 @@ defmodule Ragex.Graph.Store do
 
   Useful for direct access or persistence operations.
   """
+  @spec embeddings_table() :: atom()
   def embeddings_table, do: @embeddings_table
 
   @doc """
   Triggers database compaction on the underlying store to reclaim free space.
   """
+  @spec compact() :: :ok | {:error, term()}
   def compact do
     if Application.get_env(:ragex, :store_backend, :ets) == :dllb do
       case Dllb.compact() do

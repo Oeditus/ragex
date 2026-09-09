@@ -11,6 +11,7 @@ defmodule Ragex.MCP.Handlers.Prompts do
 
   Returns prompt definitions with names, descriptions, and argument schemas.
   """
+  @spec list_prompts() :: map()
   def list_prompts do
     %{
       prompts: [
@@ -153,6 +154,7 @@ defmodule Ragex.MCP.Handlers.Prompts do
 
   Returns prompt messages and suggested tools to use.
   """
+  @spec get_prompt(String.t(), map()) :: {:ok, map()} | {:error, String.t()}
   def get_prompt(name, arguments) when is_binary(name) and is_map(arguments) do
     case name do
       "analyze_architecture" -> get_analyze_architecture_prompt(arguments)

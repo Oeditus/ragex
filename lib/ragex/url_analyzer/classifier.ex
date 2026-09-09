@@ -44,6 +44,7 @@ defmodule Ragex.URLAnalyzer.Classifier do
 
   Returns `{:ok, target_type, metadata}` or `{:error, reason}`.
   """
+  @spec classify(String.t() | term()) :: {:ok, atom(), map()} | {:error, :invalid_url}
   def classify(url_string) when is_binary(url_string) do
     url_string = String.trim(url_string)
 

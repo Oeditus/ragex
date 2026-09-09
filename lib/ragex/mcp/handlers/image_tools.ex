@@ -18,6 +18,7 @@ defmodule Ragex.MCP.Handlers.ImageTools do
   alias Ragex.Image, as: RagexImage
 
   @doc "Returns the list of image tool definitions for tools/list."
+  @spec tool_definitions() :: [map()]
   def tool_definitions do
     [
       %{
@@ -266,6 +267,7 @@ defmodule Ragex.MCP.Handlers.ImageTools do
   end
 
   @doc "Dispatch an image tool call. Returns `{:ok, result}` or `{:error, reason}`."
+  @spec call_tool(String.t(), map()) :: {:ok, term()} | {:error, term()}
   def call_tool(name, arguments) do
     if RagexImage.available?() do
       dispatch(name, arguments)

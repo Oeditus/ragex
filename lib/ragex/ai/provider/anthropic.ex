@@ -34,12 +34,19 @@ defmodule Ragex.AI.Provider.Anthropic do
   @behaviour Ragex.AI.Behaviour
 
   require Logger
+  alias Ragex.AI.Provider.Shared
 
   @default_endpoint "https://api.anthropic.com/v1"
   @default_model "claude-3-sonnet-20240229"
   @default_temperature 0.7
   @default_max_tokens 2048
   @api_version "2023-06-01"
+  @defaults %{
+    endpoint: @default_endpoint,
+    model: @default_model,
+    temperature: @default_temperature,
+    max_tokens: @default_max_tokens
+  }
 
   @impl true
   def generate(prompt, context \\ nil, opts \\ []) do
@@ -101,47 +108,11 @@ defmodule Ragex.AI.Provider.Anthropic do
   # Private functions
 
   defp get_config(opts) do
-    provider_config = Application.get_env(:ragex, :ai_providers, [])[:anthropic] || []
-
-    config = %{
-      endpoint:
-        Keyword.get(opts, :endpoint) ||
-          Keyword.get(provider_config, :endpoint) ||
-          @default_endpoint,
-      model:
-        Keyword.get(opts, :model) ||
-          Keyword.get(provider_config, :model) ||
-          @default_model,
-      temperature:
-        Keyword.get(opts, :temperature) ||
-          Keyword.get(provider_config, :temperature) ||
-          @default_temperature,
-      max_tokens:
-        Keyword.get(opts, :max_tokens) ||
-          Keyword.get(provider_config, :max_tokens) ||
-          @default_max_tokens,
-      stream: Keyword.get(opts, :stream, false)
-    }
-
-    {:ok, config}
+    {:ok, Shared.resolve_config(:anthropic, opts, @defaults)}
   end
 
   defp get_api_key do
-    # Try runtime config first
-    case Application.get_env(:ragex, :ai_keys, [])[:anthropic] do
-      key when is_binary(key) and byte_size(key) > 0 ->
-        {:ok, key}
-
-      _ ->
-        # Fallback to environment variable
-        case System.get_env("ANTHROPIC_API_KEY") do
-          key when is_binary(key) and byte_size(key) > 0 ->
-            {:ok, key}
-
-          _ ->
-            {:error, :no_api_key}
-        end
-    end
+    Shared.resolve_api_key(:anthropic, "ANTHROPIC_API_KEY")
   end
 
   defp get_endpoint do
@@ -315,32 +286,7 @@ defmodule Ragex.AI.Provider.Anthropic do
       {"content-type", "application/json"}
     ]
 
-    # Use Task to handle streaming in separate process
-    parent = self()
-
-    task =
-      Task.async(fn ->
-        case Req.post(url,
-               json: body,
-               headers: headers,
-               into: fn {:data, data}, {req, resp} ->
-                 send(parent, {:stream_chunk, data})
-                 {:cont, {req, resp}}
-               end
-             ) do
-          {:ok, %{status: 200}} ->
-            send(parent, :stream_done)
-            :ok
-
-          {:ok, response} ->
-            send(parent, {:stream_error, {:api_error, response.status, response.body}})
-            {:error, {:api_error, response.status}}
-
-          {:error, reason} ->
-            send(parent, {:stream_error, {:http_error, reason}})
-            {:error, {:http_error, reason}}
-        end
-      end)
+    task = Shared.start_streaming_task(url, body, headers)
 
     # Return a stream that receives messages from the task
     stream =

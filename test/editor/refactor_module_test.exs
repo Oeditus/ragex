@@ -5,6 +5,8 @@ defmodule Ragex.Editor.RefactorModuleTest do
   alias Ragex.Editor.Refactor
   alias Ragex.Graph.Store
 
+  import Ragex.Test.GraphAnalysisHelper, only: [store_analysis: 1]
+
   setup do
     test_dir = Path.join(System.tmp_dir!(), "ragex_module_test_#{:rand.uniform(1_000_000)}")
     File.mkdir_p!(test_dir)
@@ -264,30 +266,5 @@ defmodule Ragex.Editor.RefactorModuleTest do
       assert new_source =~ "defmodule Source"
       refute new_source =~ "only_func"
     end
-  end
-
-  # Helper to store analysis in graph
-  defp store_analysis(%{modules: modules, functions: functions, calls: calls}) do
-    Enum.each(modules, fn module ->
-      Store.add_node(:module, module.name, module)
-    end)
-
-    Enum.each(functions, fn func ->
-      Store.add_node(:function, {func.module, func.name, func.arity}, func)
-
-      Store.add_edge(
-        {:module, func.module},
-        {:function, func.module, func.name, func.arity},
-        :defines
-      )
-    end)
-
-    Enum.each(calls, fn call ->
-      Store.add_edge(
-        {:function, call.from_module, call.from_function, call.from_arity},
-        {:function, call.to_module, call.to_function, call.to_arity},
-        :calls
-      )
-    end)
   end
 end

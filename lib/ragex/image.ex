@@ -18,6 +18,7 @@ defmodule Ragex.Image do
   @doc """
   Get detailed information and metadata for an image file.
   """
+  @spec info(String.t()) :: {:ok, map()} | {:error, term()}
   def info(path) when is_binary(path) do
     with {:ok, image} <- Image.open(path) do
       {width, height, bands} = Image.shape(image)
@@ -72,6 +73,7 @@ defmodule Ragex.Image do
   @doc """
   Resize an image by scale factor, width/height dimensions, or crop focus.
   """
+  @spec resize(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def resize(path, opts) when is_binary(path) and is_list(opts) do
     output_path = Keyword.get(opts, :output_path, path)
     scale = Keyword.get(opts, :scale)
@@ -129,6 +131,7 @@ defmodule Ragex.Image do
   @doc """
   Crop an image by bounding box or auto-trim.
   """
+  @spec crop(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def crop(path, opts) when is_binary(path) and is_list(opts) do
     output_path = Keyword.get(opts, :output_path, path)
     auto_trim = Keyword.get(opts, :auto_trim, false)
@@ -176,6 +179,7 @@ defmodule Ragex.Image do
   @doc """
   Rotate or flip an image.
   """
+  @spec rotate(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def rotate(path, opts) when is_binary(path) and is_list(opts) do
     output_path = Keyword.get(opts, :output_path, path)
     angle = Keyword.get(opts, :angle)
@@ -242,6 +246,7 @@ defmodule Ragex.Image do
   @doc """
   Convert image format (e.g. PNG, JPEG, WebP, AVIF, TIFF, GIF).
   """
+  @spec convert(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def convert(path, output_path, opts \\ []) when is_binary(path) and is_binary(output_path) do
     quality = Keyword.get(opts, :quality, 80)
     strip_metadata = Keyword.get(opts, :strip_metadata, false)
@@ -283,6 +288,8 @@ defmodule Ragex.Image do
   @doc """
   Apply visual filters / enhancements.
   """
+  @spec apply_filter(String.t(), atom() | String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
   def apply_filter(path, filter_name, opts \\ []) when is_binary(path) do
     output_path = Keyword.get(opts, :output_path, path)
     quality = Keyword.get(opts, :quality, 80)
@@ -325,6 +332,8 @@ defmodule Ragex.Image do
   @doc """
   Composite (overlay) an image on top of a base image.
   """
+  @spec composite(String.t(), String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
   def composite(base_path, overlay_path, output_path, opts \\ [])
       when is_binary(base_path) and is_binary(overlay_path) and is_binary(output_path) do
     x = Keyword.get(opts, :x, 0)
@@ -365,6 +374,7 @@ defmodule Ragex.Image do
   @doc """
   Compare two images for visual diff/similarity.
   """
+  @spec compare(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def compare(image_a_path, image_b_path, opts \\ [])
       when is_binary(image_a_path) and is_binary(image_b_path) do
     diff_output_path = Keyword.get(opts, :diff_output_path)
@@ -396,6 +406,7 @@ defmodule Ragex.Image do
   @doc """
   Generate a circular, squircle, or square avatar image.
   """
+  @spec avatar(String.t(), String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def avatar(path, output_path, opts \\ []) when is_binary(path) and is_binary(output_path) do
     size = Keyword.get(opts, :size, 180)
     shape_val = Keyword.get(opts, :shape, :circle)
@@ -429,6 +440,8 @@ defmodule Ragex.Image do
   @doc """
   Render text onto an image.
   """
+  @spec draw_text(String.t(), String.t(), String.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
   def draw_text(path, output_path, text, opts \\ [])
       when is_binary(path) and is_binary(output_path) and is_binary(text) do
     x = Keyword.get(opts, :x, 10)

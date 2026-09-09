@@ -17,6 +17,7 @@ defmodule Ragex.URLAnalyzer.GitFetcher do
   - `:depth` - Shallow clone depth (default: 1)
   - `:index_graph` - Whether to index findings into the knowledge graph (default: true)
   """
+  @spec analyze_repository(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def analyze_repository(url_string, opts \\ []) do
     auth_token =
       Keyword.get(opts, :auth_token) || System.get_env("GITHUB_TOKEN") ||

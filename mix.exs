@@ -28,7 +28,17 @@ defmodule Ragex.MixProject do
         ignore_warnings: ".dialyzer/ignore.exs"
       ],
       name: "Ragex",
-      source_url: @source_url
+      source_url: @source_url,
+      # `decimal` 2.4.1 (transitive, pulled in by the optional Nx/ML stack --
+      # not a direct dependency of Ragex) has GHSA-rhv4-8758-jx7v (moderate,
+      # unbounded-exponent DoS in Decimal.parse/new). The fix requires
+      # decimal 3.0.0, a major bump that `mix deps.update decimal` cannot
+      # apply on its own since no direct dependency here requests it -- it
+      # needs nx/polaris/axon to move first. Ragex does not itself parse
+      # untrusted decimal strings, so the practical exposure is low. Tracked
+      # as a follow-up in the Ragex Codebase Health & Architecture
+      # Improvement Plan rather than silently ignored forever.
+      hex: [ignore_advisories: ["GHSA-rhv4-8758-jx7v"]]
     ]
   end
 
@@ -98,16 +108,24 @@ defmodule Ragex.MixProject do
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
-      {:dialyxir, "~> 1.4", only: :dev, runtime: false}
+      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
+      # Scans mix.lock for known security vulnerabilities (`mix deps.audit`)
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
     ]
   end
 
+  # See the `hex: [ignore_advisories: ...]` comment above for why
+  # GHSA-rhv4-8758-jx7v is excluded here too (mix_audit and `mix hex.audit`
+  # draw from different advisory sources and are configured separately).
+  @deps_audit_args "deps.audit --ignore-advisory-ids GHSA-rhv4-8758-jx7v"
+
   defp aliases do
     [
-      quality: ["format", "credo --strict"],
+      quality: ["format", "credo --strict", @deps_audit_args],
       "quality.ci": [
         "format --check-formatted",
-        "credo --strict"
+        "credo --strict",
+        @deps_audit_args
       ]
     ]
   end
@@ -152,7 +170,6 @@ defmodule Ragex.MixProject do
         docs/FEATURE_GUIDE.md
         docs/CHEATSHEET.cheatmd
         docs/WHY_RAGEX.md
-        docs/WRITING_CUSTOM_PLUGINS.md
         stuff/docs/CUSTOM_PLUGINS.md
         bin/ragex-mcp
         examples/product_cart/README.md

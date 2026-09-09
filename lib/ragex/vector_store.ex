@@ -20,6 +20,7 @@ defmodule Ragex.VectorStore do
 
   # Client API
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -56,6 +57,7 @@ defmodule Ragex.VectorStore do
       # Include fine-grained chunk results:
       results = VectorStore.search(query_emb, limit: 10, include_chunks: true)
   """
+  @spec search([float()], keyword()) :: [map()] | {:error, term()}
   def search(query_embedding, opts \\ []) do
     GenServer.call(__MODULE__, {:search, query_embedding, opts}, @timeout)
   catch
@@ -69,6 +71,7 @@ defmodule Ragex.VectorStore do
   Similar to `search/2` but always returns exactly k results (or fewer if
   not enough embeddings exist).
   """
+  @spec nearest_neighbors([float()], non_neg_integer(), keyword()) :: [map()] | {:error, term()}
   def nearest_neighbors(query_embedding, k, opts \\ []) do
     opts = Keyword.put(opts, :limit, k)
     search(query_embedding, opts)
@@ -80,6 +83,7 @@ defmodule Ragex.VectorStore do
   Returns a float between -1.0 and 1.0, where 1.0 means identical direction.
   For normalized embeddings (like ours), this is equivalent to dot product.
   """
+  @spec cosine_similarity([float()], [float()]) :: float()
   def cosine_similarity(vec1, vec2) do
     dot_product = dot_product(vec1, vec2)
     magnitude1 = magnitude(vec1)
@@ -95,6 +99,7 @@ defmodule Ragex.VectorStore do
   @doc """
   Returns statistics about the vector store.
   """
+  @spec stats() :: map() | {:error, term()}
   def stats do
     GenServer.call(__MODULE__, :stats, @timeout)
   catch

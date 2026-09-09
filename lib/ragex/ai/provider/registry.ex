@@ -12,16 +12,19 @@ defmodule Ragex.AI.Provider.Registry do
 
   # Client API
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @doc "Register a provider module"
+  @spec register(atom(), module()) :: :ok
   def register(provider_name, provider_module) do
     GenServer.call(__MODULE__, {:register, provider_name, provider_module})
   end
 
   @doc "Get provider by name"
+  @spec get(atom()) :: {:ok, module()} | {:error, :not_found}
   def get(provider_name) do
     GenServer.call(__MODULE__, {:get, provider_name})
   end
@@ -52,11 +55,13 @@ defmodule Ragex.AI.Provider.Registry do
   end
 
   @doc "List all registered providers"
+  @spec list() :: %{atom() => module()}
   def list do
     GenServer.call(__MODULE__, :list)
   end
 
   @doc "Get current active provider from config"
+  @spec current() :: module()
   def current do
     AIConfig.provider()
   end

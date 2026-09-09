@@ -16,6 +16,7 @@ defmodule Ragex.MCP.Handlers.GitTools do
   # ── Tool definitions ─────────────────────────────────────────────────
 
   @doc "Returns the list of git tool definitions for tools/list."
+  @spec tool_definitions() :: [map()]
   def tool_definitions do
     [
       %{
@@ -139,6 +140,7 @@ defmodule Ragex.MCP.Handlers.GitTools do
   # ── Tool handlers ────────────────────────────────────────────────────
 
   @doc "Dispatch a git tool call. Returns `{:ok, result}` or `{:error, reason}`."
+  @spec call_tool(String.t(), map()) :: {:ok, term()} | {:error, term()}
   def call_tool(name, arguments) do
     case name do
       "git_blame" -> handle_blame(arguments)

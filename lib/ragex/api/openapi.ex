@@ -32,6 +32,7 @@ defmodule Ragex.API.OpenAPI do
   @doc """
   Clear the cached spec (useful after tool definitions change).
   """
+  @spec clear_cache() :: :ok
   def clear_cache do
     :persistent_term.erase({__MODULE__, :spec})
     :ok

@@ -343,12 +343,16 @@ defmodule Ragex.Store.Backend.ETS do
   # ---------------------------------------------------------------------------
 
   @doc false
+  @spec nodes_table() :: atom()
   def nodes_table, do: @nodes_table
   @doc false
+  @spec edges_table() :: atom()
   def edges_table, do: @edges_table
   @doc false
+  @spec embeddings_table() :: atom()
   def embeddings_table, do: @embeddings_table
   @doc false
+  @spec functions_limit() :: non_neg_integer()
   def functions_limit, do: @functions_limit
 
   # ---------------------------------------------------------------------------

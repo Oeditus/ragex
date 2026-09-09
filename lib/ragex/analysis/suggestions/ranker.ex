@@ -55,6 +55,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
   ## Returns
   - Suggestion with added `:priority` and `:priority_score` fields
   """
+  @spec score_suggestion(map()) :: map()
   def score_suggestion(suggestion) do
     benefit = normalize_score(suggestion[:benefit_score] || 0.5)
     confidence = normalize_score(suggestion[:confidence] || 0.5)
@@ -95,6 +96,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
       iex> Ranker.classify_priority(0.15)
       :info
   """
+  @spec classify_priority(float()) :: :critical | :high | :medium | :low | :info
   def classify_priority(score) when score > 0.8, do: :critical
   def classify_priority(score) when score > 0.6, do: :high
   def classify_priority(score) when score > 0.4, do: :medium
@@ -108,6 +110,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
 
   Higher ROI means better return for the effort invested.
   """
+  @spec calculate_roi(map()) :: float()
   def calculate_roi(suggestion) do
     benefit = normalize_score(suggestion[:benefit_score] || 0.5)
     effort = normalize_score(suggestion[:effort_score] || 0.5)
@@ -126,6 +129,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
   - `:lt` if second has higher priority
   - `:eq` if equal priority
   """
+  @spec compare_priority(map(), map()) :: :gt | :lt | :eq
   def compare_priority(sugg1, sugg2) do
     score1 = sugg1[:priority_score] || 0.0
     score2 = sugg2[:priority_score] || 0.0
@@ -173,6 +177,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
       explanation = Ranker.explain_score(suggestion)
       IO.puts(explanation)
   """
+  @spec explain_score(map()) :: String.t()
   def explain_score(suggestion) do
     benefit = normalize_score(suggestion[:benefit_score] || 0.5)
     confidence = normalize_score(suggestion[:confidence] || 0.5)
@@ -202,6 +207,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
   - Complexity reduction: High benefit
   - Coupling reduction: Medium-high effort, high benefit
   """
+  @spec adjust_for_pattern(map()) :: map()
   def adjust_for_pattern(suggestion) do
     pattern = suggestion[:pattern]
     base_score = suggestion[:priority_score] || 0.5
@@ -238,6 +244,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
       |> Ranker.filter_by_priority(:high)
       # Returns only :critical and :high priority suggestions
   """
+  @spec filter_by_priority([map()], atom()) :: [map()]
   def filter_by_priority(suggestions, min_priority) do
     priority_order = [:info, :low, :medium, :high, :critical]
     min_index = Enum.find_index(priority_order, &(&1 == min_priority)) || 0
@@ -254,6 +261,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
   ## Returns
   Map with priority levels as keys and lists of suggestions as values.
   """
+  @spec group_by_priority([map()]) :: %{atom() => [map()]}
   def group_by_priority(suggestions) do
     suggestions
     |> Enum.group_by(& &1.priority)
@@ -269,6 +277,7 @@ defmodule Ragex.Analysis.Suggestions.Ranker do
   - `:average_roi` - Average ROI
   - `:high_priority_count` - Count of high + critical
   """
+  @spec calculate_statistics([map()]) :: map()
   def calculate_statistics(suggestions) do
     by_priority =
       suggestions

@@ -26,6 +26,7 @@ defmodule Ragex.Graph.Algorithms do
   ## Returns
   Map of node_id => pagerank_score
   """
+  @spec pagerank(keyword()) :: %{term() => float()}
   def pagerank(opts \\ []) do
     if dllb_backend?() do
       case pagerank_via_dllb(opts) do
@@ -94,6 +95,7 @@ defmodule Ragex.Graph.Algorithms do
       find_paths(from, to, warn_dense: false)
 
   """
+  @spec find_paths(term(), term(), keyword()) :: [[term()]]
   def find_paths(from, to, opts \\ []) do
     max_depth = Keyword.get(opts, :max_depth, 10)
     max_paths = Keyword.get(opts, :max_paths, 100)
@@ -131,6 +133,7 @@ defmodule Ragex.Graph.Algorithms do
   - `out_degree`: Number of outgoing edges (callees)
   - `total_degree`: Sum of in and out degree
   """
+  @spec degree_centrality() :: %{term() => map()}
   def degree_centrality do
     if dllb_backend?() do
       case degree_centrality_via_dllb() do
@@ -217,6 +220,7 @@ defmodule Ragex.Graph.Algorithms do
       # Get raw (unnormalized) scores
       betweenness_centrality(normalize: false)
   """
+  @spec betweenness_centrality(keyword()) :: %{term() => float()}
   def betweenness_centrality(opts \\ []) do
     default_max =
       Application.get_env(:ragex, :graph, []) |> Keyword.get(:max_nodes_betweenness, 1_000)
@@ -291,6 +295,7 @@ defmodule Ragex.Graph.Algorithms do
       # Get raw (unnormalized) scores
       closeness_centrality(normalize: false)
   """
+  @spec closeness_centrality(keyword()) :: %{term() => float()}
   def closeness_centrality(opts \\ []) do
     normalize = Keyword.get(opts, :normalize, true)
 
@@ -371,6 +376,7 @@ defmodule Ragex.Graph.Algorithms do
       # Adjust resolution for finer/coarser communities
       detect_communities(resolution: 0.5)
   """
+  @spec detect_communities(keyword()) :: map()
   def detect_communities(opts \\ []) do
     hierarchical = Keyword.get(opts, :hierarchical, false)
 
@@ -723,6 +729,7 @@ defmodule Ragex.Graph.Algorithms do
       # With deterministic seed
       detect_communities_lp(seed: 42)
   """
+  @spec detect_communities_lp(keyword()) :: %{term() => [term()]}
   def detect_communities_lp(opts \\ []) do
     max_iterations = Keyword.get(opts, :max_iterations, 20)
     seed = Keyword.get(opts, :seed)
@@ -775,6 +782,7 @@ defmodule Ragex.Graph.Algorithms do
       # Color by betweenness centrality
       {:ok, dot} = export_graphviz(color_by: :betweenness)
   """
+  @spec export_graphviz(keyword()) :: {:ok, String.t()} | {:error, String.t()}
   def export_graphviz(opts \\ []) do
     include_communities = Keyword.get(opts, :include_communities, true)
     color_by = Keyword.get(opts, :color_by, :pagerank)
@@ -837,6 +845,7 @@ defmodule Ragex.Graph.Algorithms do
       {:ok, json} = export_d3_json()
       File.write!("graph.json", Jason.encode!(json))
   """
+  @spec export_d3_json(keyword()) :: {:ok, map()} | {:error, String.t()}
   def export_d3_json(opts \\ []) do
     include_communities = Keyword.get(opts, :include_communities, true)
     default_max = Application.get_env(:ragex, :graph, []) |> Keyword.get(:max_nodes_export, 500)
@@ -946,6 +955,7 @@ defmodule Ragex.Graph.Algorithms do
   - Connected components count
   - Top nodes by PageRank
   """
+  @spec graph_stats() :: map()
   def graph_stats do
     if dllb_backend?() do
       case graph_stats_via_dllb() do

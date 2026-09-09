@@ -148,7 +148,7 @@ defmodule Ragex.Analysis.Cache do
   @doc """
   Returns statistics about the analysis cache.
   """
-  @spec stats() :: {:ok, map()} | {:error, term()}
+  @spec stats(String.t() | nil) :: {:ok, map()} | {:error, term()}
   def stats(project_path \\ nil) do
     cache_path = get_cache_path(project_path)
 

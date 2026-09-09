@@ -21,6 +21,7 @@ defmodule Ragex.URLAnalyzer do
   - `:depth` - Shallow clone depth for Git repositories (default: 1)
   - `:index_graph` - Whether to index findings into Ragex Graph Store (default: true)
   """
+  @spec analyze(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def analyze(url, opts \\ []) when is_binary(url) do
     with {:ok, target_type, _meta} <- Classifier.classify(url),
          {:ok, raw_analysis} <- fetch_and_analyze(url, target_type, opts),

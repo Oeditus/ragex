@@ -29,6 +29,7 @@ defmodule Ragex.Store.Backend.Dllb do
   defp query_fn, do: fn stmt -> query(stmt) end
 
   @doc "Executes a query statement against the active dllb instance (per-project or global)."
+  @spec query(String.t(), keyword()) :: {:ok, term()} | {:error, term()}
   def query(statement, opts \\ []) do
     if ProjectManager.per_project_enabled?() do
       ProjectManager.query(statement, opts)
@@ -38,6 +39,7 @@ defmodule Ragex.Store.Backend.Dllb do
   end
 
   @doc "Executes a batch transaction against the active dllb instance."
+  @spec batch_transaction([String.t()], keyword()) :: {:ok, term()} | {:error, term()}
   def batch_transaction(query_strings, opts \\ []) do
     if ProjectManager.per_project_enabled?() do
       ProjectManager.batch_transaction(query_strings, opts)
@@ -66,6 +68,7 @@ defmodule Ragex.Store.Backend.Dllb do
   end
 
   @doc "Bootstraps schema statements on a specific named pool connection."
+  @spec bootstrap_instance(atom()) :: :ok | {:error, term()}
   def bootstrap_instance(pool_name) do
     schema_statements()
     |> Enum.reduce_while(:ok, fn stmt, :ok ->

@@ -44,6 +44,7 @@ defmodule Ragex do
   @doc """
   Returns statistics about the knowledge graph.
   """
+  @spec stats() :: map()
   def stats do
     Store.stats()
   end
@@ -51,6 +52,7 @@ defmodule Ragex do
   @doc """
   Compacts the underlying database store (.redb file) to reclaim free space.
   """
+  @spec compact() :: :ok | {:error, term()}
   def compact do
     Store.compact()
   end

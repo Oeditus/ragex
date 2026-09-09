@@ -298,6 +298,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Build configuration from options
   @doc false
+  @spec build_config(keyword()) :: map()
   def build_config(opts) do
     path = Keyword.get(opts, :path, File.cwd!())
     ci = Keyword.get(opts, :ci, false)
@@ -1118,6 +1119,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
   end
 
   # Print summary
+  # credo:disable-for-lines:90 Credo.Check.Refactor.CyclomaticComplexity
   defp print_summary(config, results) do
     # Skip summary in CI mode (output_ci already prints summary)
     if config.verbose and not config.ci do
@@ -1211,6 +1213,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   # Exit code logic for CI/strict mode
   @doc false
+  @spec count_ci_issues(map() | list()) :: non_neg_integer()
   def count_ci_issues(results) do
     Enum.reduce(results, 0, fn {type, data}, acc ->
       acc + count_issues_for_type(type, data)

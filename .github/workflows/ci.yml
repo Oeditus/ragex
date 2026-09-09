@@ -18,32 +18,19 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Elixir
-      uses: erlef/setup-beam@v1
+    - name: Set up Ragex build environment
+      id: setup
+      uses: ./.github/actions/setup-ragex
       with:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
 
-    - name: Restore dependencies cache
-      id: cache-deps
-      uses: actions/cache@v4
-      with:
-        path: |
-          deps
-          _build
-        key: ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
-
-    - name: Install system dependencies
-      run: sudo apt-get update && sudo apt-get install -y libgit2-dev
-
     - name: Install dependencies
-      if: steps.cache-deps.outputs.cache-hit != 'true'
+      if: steps.setup.outputs.cache-hit != 'true'
       run: mix deps.get
 
     - name: Compile dependencies
-      if: steps.cache-deps.outputs.cache-hit != 'true'
+      if: steps.setup.outputs.cache-hit != 'true'
       run: mix deps.compile
 
   compile:
@@ -53,24 +40,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Elixir
-      uses: erlef/setup-beam@v1
+    - name: Set up Ragex build environment
+      uses: ./.github/actions/setup-ragex
       with:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
-
-    - name: Restore dependencies cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          deps
-          _build
-        key: ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
-
-    - name: Install system dependencies
-      run: sudo apt-get update && sudo apt-get install -y libgit2-dev
 
     - name: Compile (warnings as errors)
       run: mix compile --warnings-as-errors
@@ -82,24 +56,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Elixir
-      uses: erlef/setup-beam@v1
+    - name: Set up Ragex build environment
+      uses: ./.github/actions/setup-ragex
       with:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
 
-    - name: Restore dependencies cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          deps
-          _build
-        key: ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
-
     - name: Run Credo (strict mode)
       run: mix credo --strict
+
+    - name: Audit dependencies for known vulnerabilities
+      run: mix deps.audit --ignore-advisory-ids GHSA-rhv4-8758-jx7v
 
   test:
     name: Test
@@ -108,24 +75,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Elixir
-      uses: erlef/setup-beam@v1
+    - name: Set up Ragex build environment
+      uses: ./.github/actions/setup-ragex
       with:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
-
-    - name: Restore dependencies cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          deps
-          _build
-        key: ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
-
-    - name: Install system dependencies
-      run: sudo apt-get update && sudo apt-get install -y libgit2-dev
 
     - name: Install Ruby parser gem
       run: gem install --user-install parser
@@ -148,24 +102,11 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Set up Elixir
-      uses: erlef/setup-beam@v1
+    - name: Set up Ragex build environment
+      uses: ./.github/actions/setup-ragex
       with:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
-
-    - name: Restore dependencies cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          deps
-          _build
-        key: ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
-
-    - name: Install system dependencies
-      run: sudo apt-get update && sudo apt-get install -y libgit2-dev
 
     - name: Install Node parser dependencies
       run: cd priv/js_parser && npm ci

@@ -26,6 +26,7 @@ defmodule Ragex.AI.Config do
   @doc """
   Get the configured default AI provider module.
   """
+  @spec provider() :: module()
   def provider do
     provider_name() |> provider_module()
   end
@@ -57,6 +58,7 @@ defmodule Ragex.AI.Config do
   @doc """
   Get the configured default provider name.
   """
+  @spec provider_name() :: atom()
   def provider_name do
     :ragex
     |> Application.get_env(:ai, [])
@@ -66,6 +68,7 @@ defmodule Ragex.AI.Config do
   @doc """
   Get list of all configured providers.
   """
+  @spec providers() :: [atom()]
   def providers do
     :ragex
     |> Application.get_env(:ai, [])
@@ -75,6 +78,7 @@ defmodule Ragex.AI.Config do
   @doc """
   Check if fallback to alternative providers is enabled.
   """
+  @spec fallback_enabled?() :: boolean()
   def fallback_enabled? do
     :ragex
     |> Application.get_env(:ai, [])
@@ -84,6 +88,7 @@ defmodule Ragex.AI.Config do
   @doc """
   Get API configuration for a specific provider.
   """
+  @spec api_config(atom() | nil) :: map()
   def api_config(provider_name \\ nil) do
     provider_name = provider_name || provider_name()
     provider_config = get_provider_config(provider_name)
@@ -105,6 +110,7 @@ defmodule Ragex.AI.Config do
   @doc """
   Get generation options, merging config with overrides.
   """
+  @spec generation_opts(keyword(), atom() | nil) :: keyword()
   def generation_opts(overrides \\ [], provider_name \\ nil) do
     config_opts = api_config(provider_name).options
     Keyword.merge(config_opts, overrides)
@@ -113,6 +119,7 @@ defmodule Ragex.AI.Config do
   @doc """
   Validate that required configuration is present for all providers.
   """
+  @spec validate!() :: :ok
   def validate! do
     providers = providers()
 

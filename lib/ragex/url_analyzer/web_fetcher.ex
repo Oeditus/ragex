@@ -9,6 +9,7 @@ defmodule Ragex.URLAnalyzer.WebFetcher do
   Fetches a web page or file, parses its content, extracts metadata, headings,
   code snippets, and converts HTML to clean markdown/text.
   """
+  @spec fetch_and_parse(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def fetch_and_parse(url_string, opts \\ []) do
     user_agent = Keyword.get(opts, :user_agent, "Ragex-URL-Analyzer/1.0")
     headers = [{"user-agent", user_agent}, {"accept", "*/*"}]

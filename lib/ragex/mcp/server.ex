@@ -24,6 +24,7 @@ defmodule Ragex.MCP.Server do
 
   # Client API
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -33,6 +34,7 @@ defmodule Ragex.MCP.Server do
 
   Notifications are one-way messages with no response expected.
   """
+  @spec send_notification(String.t(), map() | nil) :: :ok
   def send_notification(method, params \\ nil) do
     GenServer.cast(__MODULE__, {:send_notification, method, params})
   end

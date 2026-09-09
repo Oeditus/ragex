@@ -41,7 +41,7 @@
       # If you create your own checks, you must specify the source files for
       # them here, so they can be loaded by Credo before running the analysis.
       #
-      requires: [],
+      requires: [".credo/checks/*.ex"],
       #
       # If you want to enforce a style guide and need a more traditional linting
       # experience, you can change `strict` to `true` below:
@@ -121,9 +121,8 @@
           #
           {Credo.Check.Refactor.Apply, []},
           {Credo.Check.Refactor.CondStatements, []},
-          {Credo.Check.Refactor.CyclomaticComplexity, false},
+          {Credo.Check.Refactor.CyclomaticComplexity, [max_complexity: 25, exit_status: 0]},
           {Credo.Check.Refactor.FilterCount, []},
-          {Credo.Check.Refactor.FilterFilter, []},
           {Credo.Check.Refactor.FunctionArity, []},
           {Credo.Check.Refactor.LongQuoteBlocks, []},
           {Credo.Check.Refactor.MapJoin, []},
@@ -135,6 +134,20 @@
           {Credo.Check.Refactor.RejectReject, []},
           {Credo.Check.Refactor.UnlessWithElse, []},
           {Credo.Check.Refactor.WithClauses, []},
+          #
+          # Re-enabled to surface the god-module/duplication/spec debt tracked in
+          # the Ragex Codebase Health & Architecture Improvement Plan. Existing
+          # violations are numerous (see `mix credo --strict` output), so these
+          # are staged as `exit_status: 0` (visible, non-blocking) until the
+          # backlog is worked down; then flip each to its normal exit status
+          # (and eventually strict thresholds) once its violation count reaches
+          # zero, to stop backsliding for good.
+          {Credo.Check.Refactor.ABCSize, [max_size: 128, exit_status: 0]},
+          {Credo.Check.Refactor.ModuleDependencies, [max_deps: 32, exit_status: 0]},
+          {Credo.Check.Design.DuplicatedCode,
+           [mass_threshold: 60, nodes_threshold: 2, exit_status: 0]},
+          {Credo.Check.Readability.Specs, [priority: :low, exit_status: 0]},
+          {Ragex.Credo.Check.FileLength, [max_lines: 3000, exit_status: 0]},
 
           #
           ## Warnings
@@ -173,7 +186,6 @@
           #
           {Credo.Check.Consistency.MultiAliasImportRequireUse, []},
           {Credo.Check.Consistency.UnusedVariableNames, []},
-          {Credo.Check.Design.DuplicatedCode, []},
           {Credo.Check.Design.SkipTestWithoutComment, []},
           {Credo.Check.Readability.AliasAs, []},
           {Credo.Check.Readability.BlockPipe, []},
@@ -185,16 +197,13 @@
           {Credo.Check.Readability.SeparateAliasRequire, []},
           {Credo.Check.Readability.SingleFunctionToBlockPipe, []},
           {Credo.Check.Readability.SinglePipe, []},
-          {Credo.Check.Readability.Specs, []},
           {Credo.Check.Readability.StrictModuleLayout, []},
           {Credo.Check.Readability.WithCustomTaggedTuple, []},
-          {Credo.Check.Refactor.ABCSize, []},
           {Credo.Check.Refactor.AppendSingleItem, []},
           {Credo.Check.Refactor.DoubleBooleanNegation, []},
           {Credo.Check.Refactor.FilterReject, []},
           {Credo.Check.Refactor.IoPuts, []},
           {Credo.Check.Refactor.MapMap, []},
-          {Credo.Check.Refactor.ModuleDependencies, []},
           {Credo.Check.Refactor.NegatedIsNil, []},
           {Credo.Check.Refactor.PassAsyncInTestCases, []},
           {Credo.Check.Refactor.PipeChainStart, []},

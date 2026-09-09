@@ -45,6 +45,7 @@ defmodule Ragex.AI.Cache do
   @doc """
   Start the cache GenServer.
   """
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -57,6 +58,7 @@ defmodule Ragex.AI.Cache do
   - `{:ok, response}` - Cache hit with valid entry
   - `{:error, :not_found}` - Cache miss or expired entry
   """
+  @spec get(atom(), String.t(), map() | nil, keyword()) :: {:ok, term()} | {:error, :not_found}
   def get(operation, query, context, opts \\ []) do
     if enabled?() do
       provider = Keyword.get(opts, :provider, :unknown)
@@ -91,6 +93,7 @@ defmodule Ragex.AI.Cache do
   @doc """
   Store a response in the cache.
   """
+  @spec put(atom(), String.t(), map() | nil, term(), keyword()) :: :ok
   def put(operation, query, context, response, opts \\ []) do
     if enabled?() do
       provider = Keyword.get(opts, :provider, :unknown)
@@ -113,6 +116,7 @@ defmodule Ragex.AI.Cache do
   @doc """
   Clear the entire cache.
   """
+  @spec clear() :: :ok
   def clear do
     :ets.delete_all_objects(@table_name)
     reset_stats()
@@ -123,6 +127,7 @@ defmodule Ragex.AI.Cache do
   Clear cache for a specific operation.
   Note: Currently clears entire cache regardless of operation.
   """
+  @spec clear(atom()) :: :ok
   def clear(_operation) do
     clear()
   end
@@ -130,6 +135,7 @@ defmodule Ragex.AI.Cache do
   @doc """
   Get cache statistics.
   """
+  @spec stats() :: map()
   def stats do
     case :ets.lookup(@stats_table, :stats) do
       [{:stats, hits, misses, puts, evictions}] ->

@@ -125,15 +125,21 @@ defmodule Ragex.MCP.Protocol do
   @doc """
   Standard error codes and helpers.
   """
+  @spec parse_error(id()) :: error_response()
   def parse_error(id), do: error_response(@parse_error, "Parse error", nil, id)
+
+  @spec invalid_request(id()) :: error_response()
   def invalid_request(id), do: error_response(@invalid_request, "Invalid request", nil, id)
 
+  @spec method_not_found(method(), id()) :: error_response()
   def method_not_found(method, id),
     do: error_response(@method_not_found, "Method not found: #{method}", nil, id)
 
+  @spec invalid_params(String.t(), id()) :: error_response()
   def invalid_params(message, id),
     do: error_response(@invalid_params, "Invalid params: #{message}", nil, id)
 
+  @spec internal_error(String.t(), id()) :: error_response()
   def internal_error(message, id),
     do: error_response(@internal_error, "Internal error: #{message}", nil, id)
 

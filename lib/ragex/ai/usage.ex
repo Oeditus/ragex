@@ -56,6 +56,7 @@ defmodule Ragex.AI.Usage do
 
   # Client API
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -63,6 +64,7 @@ defmodule Ragex.AI.Usage do
   @doc """
   Record a request with token usage.
   """
+  @spec record_request(atom(), String.t(), non_neg_integer(), non_neg_integer()) :: :ok
   def record_request(provider, model, prompt_tokens, completion_tokens) do
     GenServer.cast(
       __MODULE__,
@@ -75,6 +77,7 @@ defmodule Ragex.AI.Usage do
 
   Returns `:ok` if within limits, `{:error, reason}` if limit would be exceeded.
   """
+  @spec check_rate_limit(atom()) :: :ok | {:error, atom()}
   def check_rate_limit(provider) do
     GenServer.call(__MODULE__, {:check_rate_limit, provider})
   end
@@ -82,6 +85,7 @@ defmodule Ragex.AI.Usage do
   @doc """
   Get usage statistics for a provider or all providers.
   """
+  @spec get_stats(atom()) :: map()
   def get_stats(provider \\ :all) do
     GenServer.call(__MODULE__, {:get_stats, provider})
   end
@@ -89,6 +93,7 @@ defmodule Ragex.AI.Usage do
   @doc """
   Reset all usage statistics.
   """
+  @spec reset_stats() :: :ok
   def reset_stats do
     GenServer.call(__MODULE__, :reset_stats)
   end

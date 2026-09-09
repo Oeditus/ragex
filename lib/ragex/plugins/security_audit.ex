@@ -4,7 +4,7 @@ defmodule Ragex.Plugins.SecurityAudit do
   """
 
   @behaviour Ragex.Plugin
-  alias Ragex.Analysis.{BusinessLogic, Security}
+  alias Ragex.MCP.Handlers.Tools
 
   @impl true
   def info do
@@ -26,22 +26,40 @@ defmodule Ragex.Plugins.SecurityAudit do
     [
       %{
         name: "scan_security",
-        description: "Perform comprehensive security scanning on a file or project directory.",
+        description:
+          "Scan source files for common vulnerability patterns: injection, unsafe deserialization, hardcoded secrets, weak crypto. Returns findings with file:line, severity, and CWE reference.",
         inputSchema: %{
           type: "object",
           properties: %{
-            path: %{type: "string", description: "Path to file or directory"}
+            path: %{type: "string", description: "File or directory path to scan"},
+            recursive: %{
+              type: "boolean",
+              description: "Recursively scan directories",
+              default: true
+            },
+            min_severity: %{
+              type: "string",
+              description: "Minimum severity level to report",
+              enum: ["low", "medium", "high", "critical"],
+              default: "low"
+            }
           },
           required: ["path"]
         }
       },
       %{
         name: "check_secrets",
-        description: "Scan code files for hardcoded secrets, API keys, passwords, and tokens.",
+        description:
+          "Scan source files for hardcoded secrets: API keys, passwords, connection strings, tokens. Returns file:line locations with the matched pattern type.",
         inputSchema: %{
           type: "object",
           properties: %{
-            path: %{type: "string", description: "Path to file or directory"}
+            path: %{type: "string", description: "File or directory path to scan"},
+            recursive: %{
+              type: "boolean",
+              description: "Recursively scan directories",
+              default: true
+            }
           },
           required: ["path"]
         }
@@ -49,20 +67,15 @@ defmodule Ragex.Plugins.SecurityAudit do
     ]
   end
 
+  # Delegates to the full-featured implementations in Ragex.MCP.Handlers.Tools
+  # (proper Security-analyzer-backed directory/file handling, category and
+  # severity filtering) rather than reimplementing a stripped-down subset
+  # here -- notably, the prior version called BusinessLogic.analyze_file/2
+  # for check_secrets instead of the Security analyzer, an unrelated module.
+  # See the Ragex Codebase Health & Architecture Improvement Plan.
   @impl true
-  def execute("scan_security", %{"path" => path}) do
-    case Security.analyze_file(path, []) do
-      {:ok, result} -> {:ok, %{status: "success", security_findings: result}}
-      {:error, reason} -> {:error, "Security scan failed: #{inspect(reason)}"}
-    end
-  end
-
-  def execute("check_secrets", %{"path" => path}) do
-    case BusinessLogic.analyze_file(path, []) do
-      {:ok, result} -> {:ok, %{status: "success", secrets_findings: result}}
-      {:error, reason} -> {:error, "Secret check failed: #{inspect(reason)}"}
-    end
-  end
+  def execute("scan_security", args), do: Tools.scan_security_tool(args)
+  def execute("check_secrets", args), do: Tools.check_secrets_tool(args)
 
   def execute(tool_name, _args) do
     {:error, "Unknown tool '#{tool_name}' for SecurityAudit plugin"}

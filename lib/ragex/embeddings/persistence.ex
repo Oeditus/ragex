@@ -93,7 +93,7 @@ defmodule Ragex.Embeddings.Persistence do
 
   Returns information about cache file, size, age, and contents.
   """
-  @spec stats() :: {:ok, map()} | {:error, term()}
+  @spec stats(String.t() | nil) :: {:ok, map()} | {:error, term()}
   def stats(project_path \\ nil) do
     cache_path = get_cache_path(project_path)
 
@@ -145,11 +145,13 @@ defmodule Ragex.Embeddings.Persistence do
   @doc """
   Returns the cache path for the current project.
   """
+  @spec cache_path() :: String.t()
   def cache_path, do: get_cache_path()
 
   @doc """
   Returns the default cache root directory.
   """
+  @spec default_cache_root() :: String.t()
   def default_cache_root do
     xdg_cache = System.get_env("XDG_CACHE_HOME")
 
@@ -163,7 +165,7 @@ defmodule Ragex.Embeddings.Persistence do
   @doc """
   Checks if a valid cache exists for the current configuration.
   """
-  @spec cache_valid?() :: boolean()
+  @spec cache_valid?(String.t() | nil) :: boolean()
   def cache_valid?(project_path \\ nil) do
     cache_path = get_cache_path(project_path)
 
@@ -446,6 +448,7 @@ defmodule Ragex.Embeddings.Persistence do
 
   - `project_path` - Absolute path to the project (optional, defaults to CWD)
   """
+  @spec generate_project_hash(String.t() | nil) :: String.t()
   def generate_project_hash(project_path \\ nil) do
     path = if project_path, do: Path.expand(project_path), else: File.cwd!()
 

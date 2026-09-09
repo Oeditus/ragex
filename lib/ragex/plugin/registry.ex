@@ -18,41 +18,49 @@ defmodule Ragex.Plugin.Registry do
   # Client API
 
   @doc "Starts the plugin registry GenServer."
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
   @doc "Registers a plugin module dynamically."
+  @spec register_plugin(module(), keyword()) :: :ok | {:error, term()}
   def register_plugin(plugin_module, opts \\ []) when is_atom(plugin_module) do
     GenServer.call(__MODULE__, {:register, plugin_module, opts})
   end
 
   @doc "Unregisters a plugin by its ID."
+  @spec unregister_plugin(atom()) :: :ok | {:error, term()}
   def unregister_plugin(plugin_id) when is_atom(plugin_id) do
     GenServer.call(__MODULE__, {:unregister, plugin_id})
   end
 
   @doc "Enables a registered plugin."
+  @spec enable_plugin(atom()) :: :ok | {:error, term()}
   def enable_plugin(plugin_id) when is_atom(plugin_id) do
     GenServer.call(__MODULE__, {:enable, plugin_id})
   end
 
   @doc "Disables a registered plugin."
+  @spec disable_plugin(atom()) :: :ok | {:error, term()}
   def disable_plugin(plugin_id) when is_atom(plugin_id) do
     GenServer.call(__MODULE__, {:disable, plugin_id})
   end
 
   @doc "Lists all registered plugins ordered topologically by dependency and priority."
+  @spec list_plugins() :: [map()]
   def list_plugins do
     GenServer.call(__MODULE__, :list_plugins)
   end
 
   @doc "Returns aggregated tool schemas across all active plugins in priority order."
+  @spec list_tools() :: [map()]
   def list_tools do
     GenServer.call(__MODULE__, :list_tools)
   end
 
   @doc "Dispatches a single tool call."
+  @spec dispatch_tool(String.t(), map()) :: term()
   def dispatch_tool(tool_name, args) when is_binary(tool_name) and is_map(args) do
     GenServer.call(__MODULE__, {:dispatch_tool, tool_name, args})
   end
@@ -61,16 +69,19 @@ defmodule Ragex.Plugin.Registry do
   Dispatches multiple tool calls in parallel for non-destructive tools (:destruction_level == :none).
   Accepts a list of tool calls: `[{"tool1", %{...}}, {"tool2", %{...}}]` or `[%{name: "tool1", args: %{...}}]`.
   """
+  @spec dispatch_tools([tuple() | map()], keyword()) :: {:ok, list()}
   def dispatch_tools(tool_requests, opts \\ []) when is_list(tool_requests) do
     GenServer.call(__MODULE__, {:dispatch_tools, tool_requests, opts})
   end
 
   @doc "Lists currently running tools executing in parallel."
+  @spec list_running_tools() :: [map()]
   def list_running_tools do
     GenServer.call(__MODULE__, :list_running_tools)
   end
 
   @doc "Returns dependency mapping for all registered plugins."
+  @spec list_plugin_dependencies() :: %{atom() => [atom()]}
   def list_plugin_dependencies do
     GenServer.call(__MODULE__, :list_dependencies)
   end
@@ -201,11 +212,16 @@ defmodule Ragex.Plugin.Registry do
   end
 
   @impl true
-  def handle_call({:dispatch_tool, tool_name, args}, _from, state) do
+  def handle_call({:dispatch_tool, tool_name, args}, from, state) do
     case Map.fetch(state.tool_map, tool_name) do
       {:ok, %{module: mod, enabled: true, destruction_level: destruction_level}} ->
-        result = execute_single_tool(mod, tool_name, args, destruction_level)
-        {:reply, result, state}
+        # Execute off the GenServer process and reply asynchronously via
+        # GenServer.reply/2, so a single slow tool call cannot block every
+        # other concurrent caller waiting on this registry (previously this
+        # ran synchronously in-process, unlike the :dispatch_tools batch path
+        # which already offloaded to Task.Supervisor).
+        reply_async(mod, tool_name, args, destruction_level, from)
+        {:noreply, state}
 
       {:ok, %{enabled: false}} ->
         {:reply, {:error, "Plugin for tool '#{tool_name}' is currently disabled"}, state}
@@ -254,25 +270,32 @@ defmodule Ragex.Plugin.Registry do
     # Execute non-destructive tools in parallel using Task.async
     parallel_results =
       if Process.whereis(Ragex.Plugin.TaskSupervisor) do
-        valid_tools
-        |> Enum.map(fn {mod, name, args, level} ->
-          Task.Supervisor.async_nolink(Ragex.Plugin.TaskSupervisor, fn ->
-            {name, execute_single_tool(mod, name, args, level)}
+        tasks =
+          Enum.map(valid_tools, fn {mod, name, args, level} ->
+            Task.Supervisor.async_nolink(Ragex.Plugin.TaskSupervisor, fn ->
+              execute_single_tool(mod, name, args, level)
+            end)
           end)
-        end)
+
+        # Zip yield_many's positional results back against valid_tools (rather
+        # than relying on the task's own return value to carry its name) so a
+        # crashed or timed-out task is still reported under its real tool
+        # name instead of the literal string "unknown".
+        tasks
         |> Task.yield_many(timeout)
-        |> Enum.map(fn {task, res} ->
+        |> Enum.zip(valid_tools)
+        |> Enum.map(fn {{task, res}, {_mod, name, _args, _level}} ->
           case res do
-            {:ok, {name, tool_res}} ->
+            {:ok, tool_res} ->
               {name, tool_res}
 
             {:exit, reason} ->
               Task.shutdown(task, :brutal_kill)
-              {"unknown", {:error, {:task_exit, reason}}}
+              {name, {:error, {:task_exit, reason}}}
 
             nil ->
               Task.shutdown(task, :brutal_kill)
-              {"unknown", {:error, :timeout}}
+              {name, {:error, :timeout}}
           end
         end)
       else
@@ -284,6 +307,22 @@ defmodule Ragex.Plugin.Registry do
 
     combined_results = parallel_results ++ errors
     {:reply, {:ok, combined_results}, state}
+  end
+
+  defp reply_async(mod, tool_name, args, destruction_level, from) do
+    if sup = Process.whereis(Ragex.Plugin.TaskSupervisor) do
+      Task.Supervisor.start_child(sup, fn ->
+        result = execute_single_tool(mod, tool_name, args, destruction_level)
+        GenServer.reply(from, result)
+      end)
+    else
+      # No supervisor available (e.g. minimal test setups) -- fall back to
+      # synchronous execution rather than never replying to the caller.
+      result = execute_single_tool(mod, tool_name, args, destruction_level)
+      GenServer.reply(from, result)
+    end
+
+    :ok
   end
 
   defp execute_single_tool(mod, tool_name, args, destruction_level) do

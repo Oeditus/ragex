@@ -44,6 +44,7 @@ defmodule Ragex.Embeddings.Bumblebee do
     Code.ensure_loaded?(Bumblebee) and Code.ensure_loaded?(Nx) and Code.ensure_loaded?(EXLA)
   end
 
+  @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
@@ -75,6 +76,7 @@ defmodule Ragex.Embeddings.Bumblebee do
   @doc """
   Returns the current model information.
   """
+  @spec model_info() :: map() | {:error, term()}
   def model_info do
     GenServer.call(__MODULE__, :model_info, @timeout)
   catch
@@ -85,6 +87,7 @@ defmodule Ragex.Embeddings.Bumblebee do
   @doc """
   Returns true if the model is loaded and ready.
   """
+  @spec ready?() :: boolean()
   def ready? do
     GenServer.call(__MODULE__, :ready?, @timeout)
   catch

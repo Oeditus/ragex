@@ -22,6 +22,7 @@ defmodule Ragex.RAG.PromptTemplate do
   - `:query` - User query
   - `:response_format` - Optional, `:json` for structured output
   """
+  @spec render(atom(), map()) :: String.t()
   def render(:query, %{response_format: :json} = vars) do
     """
     #{vars.system_prompt}

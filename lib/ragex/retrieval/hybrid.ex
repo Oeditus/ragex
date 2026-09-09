@@ -76,6 +76,7 @@ defmodule Ragex.Retrieval.Hybrid do
         metaast_opts: [cross_language: true]
       )
   """
+  @spec search(String.t(), keyword()) :: {:ok, [map()]} | {:error, term()}
   def search(query, opts \\ []) when is_binary(query) do
     strategy = Keyword.get(opts, :strategy, :fusion)
 
@@ -98,6 +99,7 @@ defmodule Ragex.Retrieval.Hybrid do
 
   The constant k (default 60) prevents high rankings from dominating.
   """
+  @spec reciprocal_rank_fusion([[map()]], keyword()) :: [map()]
   def reciprocal_rank_fusion(result_sets, opts \\ []) do
     k = Keyword.get(opts, :k, 60)
     limit = Keyword.get(opts, :limit, 10)
