@@ -1,0 +1,177 @@
+{
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Ragex — Zed integration settings
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  //  Registers Ragex as an MCP context server so Zed's Agent Panel can call
+  //  any of the ~50 Ragex tools (analysis, search, RAG, refactoring, …).
+  //
+  //  Install this file at:
+  //    - project-scoped : <project>/.zed/settings.json
+  //    - user-wide      : ~/.config/zed/settings.json
+  //
+  //  Adjust `path` and the `--project` argument to match your checkout.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── MCP Context Servers ────────────────────────────────────────────────
+  "context_servers": {
+    "ragex": {
+      "command": {
+        "path": "/opt/Proyectos/Oeditus/ragex/bin/ragex-mcp",
+        "args": ["--project", "."],
+        "env": {
+          "MIX_ENV": "prod"
+        }
+      }
+    }
+  },
+
+  // ── Agent Configuration ────────────────────────────────────────────────
+  //  A dedicated "Ragex RAG" profile that exposes Ragex's read/analysis tools
+  //  to the agent while keeping destructive editing tools opt-in.
+  "agent": {
+    "default_profile": "ragex",
+    "profiles": {
+      "ragex": {
+        "name": "Ragex RAG",
+        "tools": {
+          "read_file": true,
+          "find_path": true,
+          "list_directory": true,
+          "grep": true,
+          "diagnostics": true,
+          "thinking": true,
+          "terminal": true,
+          "fetch": false
+        },
+        "enable_all_context_servers": false,
+        "context_servers": {
+          "ragex": {
+            "tools": {
+              // Indexing & graph
+              "analyze_file": true,
+              "analyze_directory": true,
+              "watch_directory": true,
+              "query_graph": true,
+              "list_nodes": true,
+              "graph_stats": true,
+              "find_paths": true,
+              "find_callers": true,
+
+              // Search
+              "semantic_search": true,
+              "hybrid_search": true,
+              "search_strings": true,
+              "expand_query": true,
+              "get_embeddings_stats": true,
+
+              // RAG / AI
+              "rag_query": true,
+              "rag_explain": true,
+              "rag_suggest": true,
+              "get_ai_usage": true,
+              "get_ai_cache_stats": true,
+
+              // Quality & analysis
+              "analyze_quality": true,
+              "quality_report": true,
+              "find_complex_code": true,
+              "detect_smells": true,
+              "find_duplicates": true,
+              "find_similar_code": true,
+              "find_dead_code": true,
+              "analyze_dead_code_patterns": true,
+              "analyze_dependencies": true,
+              "find_circular_dependencies": true,
+              "coupling_report": true,
+
+              // Security
+              "scan_security": true,
+              "analyze_security_issues": true,
+              "check_secrets": true,
+              "security_audit": true,
+              "analyze_business_logic": true,
+
+              // Semantic / impact
+              "semantic_operations": true,
+              "semantic_analysis": true,
+              "analyze_impact": true,
+              "risk_assessment": true,
+              "estimate_refactoring_effort": true,
+              "suggest_refactorings": true,
+
+              // Graph algorithms
+              "detect_communities": true,
+              "betweenness_centrality": true,
+              "closeness_centrality": true,
+              "export_graph": true,
+
+              // Git archaeology
+              "git_blame": true,
+              "git_history": true,
+              "co_change_analysis": true,
+
+              // Agent
+              "agent_analyze": true,
+              "agent_chat": true,
+              "read_file": true,
+
+              // Editing — opt-in; flip to true to let the agent edit files.
+              "edit_file": false,
+              "edit_files": false,
+              "validate_edit": true,
+              "rollback_edit": false,
+              "preview_refactor": true,
+              "refactor_code": false,
+              "advanced_refactor": false
+            }
+          }
+        }
+      }
+    }
+  },
+
+  // ── Elixir Language Support ────────────────────────────────────────────
+  "languages": {
+    "Elixir": {
+      "language_servers": ["elixir-ls", "!next-ls", "!lexical", "..."],
+      "format_on_save": "on",
+      "tab_size": 2,
+      "soft_wrap": "editor_width"
+    },
+    "EEx": {
+      "language_servers": ["elixir-ls", "!next-ls", "!lexical", "..."],
+      "format_on_save": "on"
+    },
+    "HEEx": {
+      "language_servers": ["elixir-ls", "!next-ls", "!lexical", "..."],
+      "format_on_save": "on"
+    },
+    "Erlang": {
+      "tab_size": 4
+    }
+  },
+
+  // ── LSP Settings ───────────────────────────────────────────────────────
+  "lsp": {
+    "elixir-ls": {
+      "settings": {
+        "dialyzerEnabled": true,
+        "fetchDeps": false,
+        "suggestSpecs": true
+      }
+    }
+  },
+
+  // ── File scanning ──────────────────────────────────────────────────────
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.elixir_ls",
+    "**/_build",
+    "**/deps",
+    "**/node_modules",
+    "**/.ragex",
+    "**/cover",
+    "**/.dialyzer"
+  ]
+}

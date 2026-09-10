@@ -1,0 +1,172 @@
+*ragex.nvim*            Neovim / LunarVim client for the Ragex MCP server
+
+==============================================================================
+CONTENTS                                                  *ragex-contents*
+
+  1. Introduction ................................ |ragex-introduction|
+  2. Setup ....................................... |ragex-setup|
+  3. Commands .................................... |ragex-commands|
+  4. Keymaps ..................................... |ragex-keymaps|
+  5. Lua API ..................................... |ragex-api|
+  6. Health ...................................... |ragex-health|
+  7. Troubleshooting ............................. |ragex-troubleshooting|
+
+==============================================================================
+1. INTRODUCTION                                        *ragex-introduction*
+
+ragex.nvim connects Neovim to a running Ragex server over the Model Context
+Protocol. Ragex builds a knowledge graph over your codebase and exposes ~50
+tools for search, navigation, refactoring, analysis and AI-assisted Q&A.
+
+The plugin speaks JSON-RPC 2.0 to Ragex over one of two transports:
+
+  - a per-project Unix socket (preferred; reuses the warm server), or
+  - a `bin/ragex-mcp` child process over stdio.
+
+With `mode = "auto"` (the default) it uses the socket when present and
+otherwise spawns the stdio child.
+
+==============================================================================
+2. SETUP                                                     *ragex-setup*
+
+>lua
+    require("ragex").setup({
+      ragex_bin = "/path/to/ragex/bin/ragex-mcp",
+      mode = "auto",
+      keymaps = true,
+    })
+<
+
+Options: ~
+  `ragex_bin`              Path to the ragex-mcp launcher.
+  `project`                Project root passed as --project (default: cwd).
+  `mode`                   "auto" | "socket" | "stdio".
+  `socket_path`            Override the computed socket path.
+  `enabled`                Master switch (default true).
+  `debug`                  Log transport activity (default false).
+  `auto_analyze`           Re-index the current file on save.
+  `auto_analyze_on_start`  Analyze the project on startup.
+  `auto_analyze_dirs`      Extra directories to analyze on startup.
+  `timeout`                Default request timeout in ms (default 60000).
+  `keymaps`                Install default <leader>r* maps (default true).
+  `statusline`             Show "Ragex" when connected (default true).
+  `search`                 { limit, threshold, strategy }.
+
+==============================================================================
+3. COMMANDS                                               *ragex-commands*
+
+                                                                  *:Ragex*
+:Ragex                      Open the interactive tool menu.
+:Ragex tools                List every available tool.
+:Ragex status               Show connection + graph summary.
+:Ragex search               Hybrid search (Telescope picker).
+:Ragex semantic             Semantic search (Telescope picker).
+:Ragex word                 Search the word under the cursor.
+:Ragex analyze              Analyze the current file.
+:Ragex analyze_dir          Analyze the project directory.
+:Ragex query {text}         Streaming RAG query.
+:Ragex explain              Streaming RAG explanation of the current file.
+:Ragex suggest              Streaming RAG suggestions for the current file.
+:Ragex rename_function      Rename a function project-wide.
+:Ragex rename_module        Rename a module project-wide.
+:Ragex auto                 Toggle auto-analysis on save.
+:Ragex {tool} [k=v ...]     Call any catalog tool directly.
+
+Examples: ~
+>vim
+    :Ragex graph_stats
+    :Ragex find_dead_code scope=exports min_confidence=0.7
+    :Ragex analyze_impact target=MyApp.Worker.perform/1
+<
+
+                                                             *:RagexSearch*
+:RagexSearch                Alias for `:Ragex search`.
+
+                                                              *:RagexQuery*
+:RagexQuery {text}          Streaming RAG query.
+
+                                                             *:RagexStatus*
+:RagexStatus                Show connection + graph summary.
+
+                                                              *:RagexClose*
+:RagexClose                 Close the transport.
+
+==============================================================================
+4. KEYMAPS                                                 *ragex-keymaps*
+
+When `keymaps = true`:
+
+  <leader>rs   Semantic search
+  <leader>rh   Hybrid search
+  <leader>rw   Search word under cursor
+  <leader>rf   Find callers
+  <leader>rp   Find call paths
+  <leader>ra   Analyze current file
+  <leader>rA   Analyze project
+  <leader>rg   Graph statistics
+  <leader>rq   RAG query (streaming)
+  <leader>re   RAG explain (streaming)
+  <leader>rS   RAG suggest (streaming)
+  <leader>rr   Rename function
+  <leader>rR   Rename module
+  <leader>rc   Security scan (current file)
+  <leader>rd   Find dead code
+  <leader>rm   MCP telemetry
+
+==============================================================================
+5. LUA API                                                   *ragex-api*
+
+>lua
+    local ragex = require("ragex")
+
+    ragex.search_semantic("function that parses JSON")
+    ragex.search_hybrid("database connection pooling")
+    ragex.analyze_file()
+    ragex.analyze_directory()
+    ragex.rag_query("How does authentication work?")
+    ragex.rename_function()
+    ragex.graph_stats()
+    ragex.call("find_dead_code")   -- any catalog tool
+<
+
+Lower-level access: ~
+>lua
+    local client = require("ragex.client")
+
+    -- Async tool call.
+    client.call_tool("graph_stats", {}, {
+      callback = function(result, err) ... end,
+    })
+
+    -- Synchronous (small, fast calls only).
+    local result, err = client.call_tool_sync("graph_stats", {}, 8000)
+<
+
+==============================================================================
+6. HEALTH                                                   *ragex-health*
+
+>vim
+    :checkhealth ragex
+<
+
+Verifies the Neovim version, the ragex-mcp binary, socat, socket presence,
+Telescope availability, and performs a live connectivity probe.
+
+==============================================================================
+7. TROUBLESHOOTING                                 *ragex-troubleshooting*
+
+"could not connect" / "socket bridge closed" ~
+  The server isn't running and the stdio fallback failed. Start Ragex with
+  `bin/ragex-mcp --project /path/to/project`, or inspect `:Ragex status`.
+
+Search returns no results ~
+  The project isn't indexed. Run `:Ragex analyze_dir` and wait for embeddings.
+
+RAG tools fail with `:no_results_found` ~
+  The RAG pipeline needs indexed embeddings and a configured AI provider key
+  on the server side. Run `:Ragex analyze_dir` first.
+
+No Telescope pickers ~
+  Install telescope.nvim; the plugin falls back to `vim.ui.select` otherwise.
+
+vim:tw=78:ts=8:ft=help:norl:

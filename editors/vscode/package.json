@@ -1,0 +1,247 @@
+{
+  "name": "ragex",
+  "displayName": "Ragex",
+  "description": "Hybrid RAG for multi-language codebases — semantic search, knowledge-graph navigation, refactoring and AI Q&A powered by the Ragex MCP server.",
+  "version": "0.1.0",
+  "publisher": "oeditus",
+  "license": "GPL-3.0",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "ragex",
+    "mcp",
+    "rag",
+    "semantic search",
+    "refactoring",
+    "elixir"
+  ],
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Oeditus/ragex"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "configuration": {
+      "title": "Ragex",
+      "properties": {
+        "ragex.binPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the `ragex-mcp` launcher. When empty, the extension walks up from the workspace root looking for `bin/ragex-mcp`."
+        },
+        "ragex.transport": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "socket",
+            "stdio"
+          ],
+          "default": "auto",
+          "markdownDescription": "Transport to use. `auto` reuses a running server over its Unix socket when present, otherwise spawns a stdio child."
+        },
+        "ragex.socketPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Override the computed socket path. Leave empty to use the Ragex precedence (`RAGEX_MCP_SOCK` -> `DLLB_PORT` -> sanitized project path)."
+        },
+        "ragex.projectRoot": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Project root passed to the server as `--project`. Defaults to the first workspace folder."
+        },
+        "ragex.logLevel": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warning",
+            "error"
+          ],
+          "default": "info",
+          "description": "Log level passed to the ragex-mcp process."
+        },
+        "ragex.autoAnalyzeOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Re-index the current file into the knowledge graph whenever it is saved."
+        },
+        "ragex.analyzeOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Analyze the whole project when the extension activates."
+        },
+        "ragex.search.limit": {
+          "type": "number",
+          "default": 30,
+          "description": "Maximum number of search results."
+        },
+        "ragex.search.threshold": {
+          "type": "number",
+          "default": 0.2,
+          "description": "Minimum similarity score for search results (0.0 - 1.0)."
+        },
+        "ragex.search.strategy": {
+          "type": "string",
+          "enum": [
+            "fusion",
+            "semantic_first",
+            "graph_first"
+          ],
+          "default": "fusion",
+          "description": "Hybrid search strategy."
+        },
+        "ragex.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log transport traffic to the Ragex output channel."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "ragex.toolMenu",
+        "title": "Ragex: Tool Menu",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.status",
+        "title": "Ragex: Show Status",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.restart",
+        "title": "Ragex: Restart Connection",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.hybridSearch",
+        "title": "Ragex: Hybrid Search",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.semanticSearch",
+        "title": "Ragex: Semantic Search",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.searchWord",
+        "title": "Ragex: Search Word Under Cursor",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.analyzeFile",
+        "title": "Ragex: Analyze Current File",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.analyzeDirectory",
+        "title": "Ragex: Analyze Project",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.ragQuery",
+        "title": "Ragex: Ask a Question (RAG)",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.ragExplain",
+        "title": "Ragex: Explain Current File (AI)",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.ragSuggest",
+        "title": "Ragex: Suggest Improvements (AI)",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.renameFunction",
+        "title": "Ragex: Rename Function (project-wide)",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.renameModule",
+        "title": "Ragex: Rename Module (project-wide)",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.findCallers",
+        "title": "Ragex: Find Callers",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.graphStats",
+        "title": "Ragex: Graph Statistics",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.callTool",
+        "title": "Ragex: Call Tool…",
+        "category": "Ragex"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "ragex.hybridSearch",
+        "key": "ctrl+alt+r s",
+        "mac": "cmd+alt+r s",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "ragex.ragQuery",
+        "key": "ctrl+alt+r q",
+        "mac": "cmd+alt+r q",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "ragex.analyzeFile",
+        "key": "ctrl+alt+r a",
+        "mac": "cmd+alt+r a",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "ragex.searchWord",
+          "group": "ragex@1",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "ragex.ragExplain",
+          "group": "ragex@2",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "ragex.analyzeFile",
+          "group": "ragex@3",
+          "when": "editorTextFocus"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "ragex.callTool",
+          "when": "true"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.0"
+  }
+}

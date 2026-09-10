@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+#
+# ragex-diff -- PR / diff-based analysis report, runnable directly.
+#
+# A thin, friendly wrapper around `mix ragex.analyze --diff` that:
+#   * auto-detects a sensible base ref (origin/main, main, master, ...)
+#   * defaults to a human-readable report
+#   * short-circuits cleanly when there are no changed files
+#   * forwards any extra flags straight to `mix ragex.analyze`
+#
+# Usage:
+#   bin/ragex-diff                       # diff vs auto-detected base, text report
+#   bin/ragex-diff --base origin/develop # explicit base ref
+#   bin/ragex-diff --format markdown     # markdown report
+#   bin/ragex-diff --format json --output pr.json
+#   bin/ragex-diff --security            # only security checks
+#   bin/ragex-diff --github              # GitHub Actions annotations
+#
+# Environment variables (all optional):
+#   RAGEX_BASE   -- base git ref (overrides auto-detection)
+#   RAGEX_HEAD   -- head git ref (default: HEAD)
+#   RAGEX_FORMAT -- output format (default: text)
+
+set -euo pipefail
+
+ORIGINAL_PWD="$PWD"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+cd "$PROJECT_DIR"
+
+# -- Defaults ---------------------------------------------------------------
+BASE="${RAGEX_BASE:-}"
+HEAD="${RAGEX_HEAD:-HEAD}"
+FORMAT="${RAGEX_FORMAT:-text}"
+EXTRA_ARGS=()
+EXPLICIT_BASE=0
+EXPLICIT_FORMAT=0
+
+# -- Parse arguments --------------------------------------------------------
+# Intercept --base/--head/--format so we can apply defaults and pre-flight
+# checks; everything else is forwarded verbatim to `mix ragex.analyze`.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --base)
+      BASE="$2"; EXPLICIT_BASE=1; shift 2 ;;
+    --base=*)
+      BASE="${1#*=}"; EXPLICIT_BASE=1; shift ;;
+    --head)
+      HEAD="$2"; shift 2 ;;
+    --head=*)
+      HEAD="${1#*=}"; shift ;;
+    --format)
+      FORMAT="$2"; EXPLICIT_FORMAT=1; shift 2 ;;
+    --format=*)
+      FORMAT="${1#*=}"; EXPLICIT_FORMAT=1; shift ;;
+    --github)
+      FORMAT="github"; EXPLICIT_FORMAT=1; shift ;;
+    --help|-h)
+      sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *)
+      EXTRA_ARGS+=("$1"); shift ;;
+  esac
+done
+
+# -- Auto-detect a base ref -------------------------------------------------
+if [[ -z "$BASE" ]]; then
+  for candidate in origin/main origin/master main master origin/develop develop; do
+    if git rev-parse --verify --quiet "$candidate" >/dev/null 2>&1; then
+      BASE="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$BASE" ]]; then
+  echo "ragex-diff: could not auto-detect a base ref." >&2
+  echo "            pass one explicitly: bin/ragex-diff --base <ref>" >&2
+  exit 2
+fi
+
+if ! git rev-parse --verify --quiet "$BASE" >/dev/null 2>&1; then
+  echo "ragex-diff: base ref not found: $BASE" >&2
+  exit 2
+fi
+
+# -- Pre-flight: how many files changed? ------------------------------------
+CHANGED_COUNT=$(git --no-pager diff --name-only --diff-filter=ACMR "${BASE}...${HEAD}" 2>/dev/null | wc -l | tr -d ' ')
+
+if [[ "$CHANGED_COUNT" == "0" ]]; then
+  echo "ragex-diff: no changed files between ${BASE} and ${HEAD}."
+  echo "            nothing to analyze."
+  exit 0
+fi
+
+# -- Run the analysis -------------------------------------------------------
+# `--diff` implies `--ci` inside mix ragex.analyze.
+MIX_ARGS=(ragex.analyze --diff --base "$BASE" --head "$HEAD" --format "$FORMAT")
+
+# Forward any remaining user flags (they win over our defaults).
+if [[ ${#EXTRA_ARGS[@]} -gt 0 ]]; then
+  MIX_ARGS+=("${EXTRA_ARGS[@]}")
+fi
+
+echo "ragex-diff: analyzing ${CHANGED_COUNT} changed file(s) between ${BASE} and ${HEAD}"
+echo
+
+exec mix "${MIX_ARGS[@]}"

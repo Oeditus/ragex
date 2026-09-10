@@ -1,0 +1,191 @@
+[
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Ragex — Zed task definitions
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  //  Install at <project>/.zed/tasks.json (project-scoped).
+  //  Adjust RAGEX_DIR below to your checkout path if it differs.
+  //
+  //  Zed variables used:
+  //    $ZED_FILE           absolute path of the active file
+  //    $ZED_RELATIVE_FILE  path relative to the worktree root
+  //    $ZED_WORKTREE_ROOT  absolute path of the project root
+  //    $ZED_ROW            cursor row (1-indexed)
+  //    $ZED_COLUMN         cursor column
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // ── Analysis ───────────────────────────────────────────────────────────
+  {
+    "label": "ragex: analyze current file",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.analyze \"$ZED_FILE\"",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "current"
+  },
+  {
+    "label": "ragex: analyze project",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.analyze \"$ZED_WORKTREE_ROOT\"",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "ragex: watch project",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.serve --watch \"$ZED_WORKTREE_ROOT\"",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+
+  // ── Audits ─────────────────────────────────────────────────────────────
+  {
+    "label": "ragex: audit (project)",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.audit --path \"$ZED_WORKTREE_ROOT\"",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "ragex: audit (current file)",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.audit --path \"$ZED_FILE\"",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "current"
+  },
+  {
+    "label": "ragex: audit (markdown)",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.audit --path \"$ZED_WORKTREE_ROOT\" --format markdown --output ragex-audit.md",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+
+  // ── Interactive ────────────────────────────────────────────────────────
+  {
+    "label": "ragex: chat",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.chat --path \"$ZED_WORKTREE_ROOT\"",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: refactor",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.refactor --path \"$ZED_WORKTREE_ROOT\"",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: dashboard",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.dashboard",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: configure",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.configure",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+
+  // ── Server & status ────────────────────────────────────────────────────
+  {
+    "label": "ragex: start MCP server",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && bin/ragex-mcp --project \"$ZED_WORKTREE_ROOT\"",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: status",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.status",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+
+  // ── Cache & models ─────────────────────────────────────────────────────
+  {
+    "label": "ragex: cache stats",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.cache.stats",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: cache refresh",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.cache.refresh --path \"$ZED_WORKTREE_ROOT\"",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: cache refresh (full)",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.cache.refresh --path \"$ZED_WORKTREE_ROOT\" --full",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: cache clear",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.cache.clear",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: download models",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.models.download",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: migrate embeddings",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.embeddings.migrate",
+    "reveal": "always",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+
+  // ── Setup ──────────────────────────────────────────────────────────────
+  {
+    "label": "ragex: install completions",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.completions",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "ragex: install man pages",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix ragex.install_man",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+
+  // ── Build ──────────────────────────────────────────────────────────────
+  {
+    "label": "ragex: compile",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix compile",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  },
+  {
+    "label": "ragex: test",
+    "command": "cd /opt/Proyectos/Oeditus/ragex && mix test",
+    "reveal": "always",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "save": "all"
+  }
+]

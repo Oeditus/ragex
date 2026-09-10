@@ -128,11 +128,13 @@ if [[ -S "$SOCKET_PATH" ]]; then
   # Send MCP ping, read one response line, check for "result".
   PING='{"jsonrpc":"2.0","id":0,"method":"ping","params":{}}'
   # timeout 2s: if no response, server is stale
-  PONG=$(echo "$PING" | timeout 2 socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null | head -1)
+  PONG=$( (echo "$PING" | timeout 2 socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null | head -1) || true )
 
   if echo "$PONG" | grep -q '"result"'; then
     echo "[ragex-mcp] Reusing running server via $SOCKET_PATH" >&2
     exec "$SCRIPT_DIR/ragex-bridge"
+  else
+    rm -f "$SOCKET_PATH"
   fi
 fi
 

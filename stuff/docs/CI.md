@@ -103,6 +103,32 @@ mix ragex.analyze --diff --security --format github
 mix ragex.analyze --diff --format json --output report.json
 ```
 
+### Convenience wrapper: `bin/ragex-diff`
+
+For local use, `bin/ragex-diff` wraps `mix ragex.analyze --diff` with a
+friendlier interface: it auto-detects a base ref (`origin/main`, `main`,
+`master`, `origin/develop`, `develop`), short-circuits when there are no
+changed files, and defaults to a readable text report.
+
+```bash
+# Diff against the auto-detected base branch
+bin/ragex-diff
+
+# Explicit base ref
+bin/ragex-diff --base origin/develop
+
+# Markdown / JSON reports
+bin/ragex-diff --format markdown
+bin/ragex-diff --format json --output pr.json
+
+# Only security checks, GitHub Actions annotations
+bin/ragex-diff --security
+bin/ragex-diff --github
+```
+
+Any flag not listed above is forwarded verbatim to `mix ragex.analyze`.
+Environment overrides: `RAGEX_BASE`, `RAGEX_HEAD`, `RAGEX_FORMAT`.
+
 ## mix ragex.ci
 
 A convenience task that runs both tools in sequence:

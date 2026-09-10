@@ -1,0 +1,49 @@
+[
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Ragex — Zed keybindings
+  // ═══════════════════════════════════════════════════════════════════════
+  //
+  //  Install at <project>/.zed/keymap.json (project-scoped) or merge into
+  //  ~/.config/zed/keymap.json (user-wide).
+  //
+  //  These bindings spawn the tasks defined in .zed/tasks.json. They are
+  //  intentionally namespaced under ctrl-alt-r / ctrl-shift-r to avoid
+  //  clashing with Zed defaults.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  {
+    "context": "Editor && vim_mode == normal",
+    "bindings": {
+      // Analysis (editor-scoped: operate on the active file)
+      "ctrl-alt-r a": ["task::Spawn", { "task_name": "ragex: analyze current file" }],
+      "ctrl-alt-r d": ["task::Spawn", { "task_name": "ragex: audit (current file)" }],
+      "ctrl-alt-r c": ["task::Spawn", { "task_name": "ragex: chat" }],
+      "ctrl-alt-r r": ["task::Spawn", { "task_name": "ragex: refactor" }],
+      "ctrl-alt-r s": ["task::Spawn", { "task_name": "ragex: status" }]
+    }
+  },
+  {
+    "context": "Editor",
+    "bindings": {
+      // Analysis (editor-scoped: operate on the active file)
+      "ctrl-alt-r a": ["task::Spawn", { "task_name": "ragex: analyze current file" }],
+      "ctrl-alt-r d": ["task::Spawn", { "task_name": "ragex: audit (current file)" }],
+      "ctrl-alt-r c": ["task::Spawn", { "task_name": "ragex: chat" }],
+      "ctrl-alt-r r": ["task::Spawn", { "task_name": "ragex: refactor" }],
+      "ctrl-alt-r s": ["task::Spawn", { "task_name": "ragex: status" }]
+    }
+  },
+  {
+    "context": "Workspace",
+    "bindings": {
+      // Project-wide tasks (no active editor required)
+      "ctrl-alt-r A": ["task::Spawn", { "task_name": "ragex: analyze project" }],
+      "ctrl-alt-r D": ["task::Spawn", { "task_name": "ragex: audit (project)" }],
+      "ctrl-alt-r M": ["task::Spawn", { "task_name": "ragex: audit (markdown)" }],
+      "ctrl-alt-r C": ["task::Spawn", { "task_name": "ragex: cache stats" }],
+      "ctrl-alt-r R": ["task::Spawn", { "task_name": "ragex: cache refresh" }],
+      "ctrl-alt-r S": ["task::Spawn", { "task_name": "ragex: start MCP server" }],
+      "ctrl-alt-r B": ["task::Spawn", { "task_name": "ragex: dashboard" }]
+    }
+  }
+]
