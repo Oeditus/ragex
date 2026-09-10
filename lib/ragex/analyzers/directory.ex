@@ -28,10 +28,17 @@ defmodule Ragex.Analyzers.Directory do
   - `:notify` - Send MCP progress notifications (default: true)
   - `:timeout` - Per-file analysis timeout in ms (default: 300_000 = 5 min)
   - `:max_concurrency` - Max parallel file analyses (default: 4)
+  - `:load_project` - Switch the store to `path` as the active project,
+    clearing previously loaded graph data first (default: true). Pass
+    `false` when batch-analyzing several independent directories that
+    should accumulate into the same graph instead of replacing each other
+    (e.g. `:auto_analyze_dirs`).
   """
   @spec analyze_directory(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def analyze_directory(path, opts \\ []) do
-    Ragex.Graph.Store.load_project(path)
+    if Keyword.get(opts, :load_project, true) do
+      Store.load_project(path)
+    end
 
     max_depth = Keyword.get(opts, :max_depth, 10)
     exclude_patterns = Keyword.get(opts, :exclude_patterns, default_exclude_patterns())

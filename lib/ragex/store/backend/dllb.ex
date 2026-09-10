@@ -99,11 +99,21 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def clear do
-    # Delete all ast_node records (full table scan + point deletes)
-    case MQ.exec_delete_by_project("", query_fn()) do
-      {:ok, _} -> :ok
-      {:error, _} -> :ok
-    end
+    # Unconditionally wipe every row from the active project's tables.
+    #
+    # `MQ.exec_delete_by_project/2` was used here previously, but it filters
+    # on the `project_path` column (`DELETE ast_node WHERE project_path =
+    # '...'`). `prepare_node_fields/3` never populates `:project_path` on
+    # stored nodes, so that WHERE clause never matched any row and this
+    # function was a permanent no-op -- data from every test (and every
+    # analyzed project, in :global mode) accumulated forever in the
+    # underlying `.ragex/dllb.redb` file. Isolation between projects is
+    # already provided by `Ragex.Dllb.ProjectManager` (a dedicated dllb
+    # instance/database per project in :per_project mode), so clearing the
+    # active project's tables unconditionally is the correct behavior here.
+    query(Dllb.Query.delete_where("ast_node"))
+    query(Dllb.Query.delete_where("_edge_idx"))
+    :ok
   end
 
   @impl true

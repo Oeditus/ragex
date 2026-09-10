@@ -126,7 +126,12 @@ defmodule Ragex.Application do
       Enum.each(auto_analyze_dirs, fn dir ->
         Logger.info("Analyzing directory: #{dir}")
 
-        case Directory.analyze_directory(dir) do
+        # Multiple configured directories are independent projects meant to
+        # accumulate into a single combined graph, not replace one another.
+        # `load_project: false` skips the active-project switch (and the
+        # graph-clearing that comes with it) that `analyze_directory/2`
+        # otherwise performs for every call.
+        case Directory.analyze_directory(dir, load_project: false) do
           {:ok, result} ->
             Logger.info(
               "Successfully analyzed #{dir}: #{result.success} files (#{result.skipped} skipped, #{result.errors} errors)"
