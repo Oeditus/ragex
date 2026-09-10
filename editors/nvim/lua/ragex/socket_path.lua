@@ -72,46 +72,71 @@ function M.exists(path)
   return vim.fn.filereadable(path) == 1 or vim.fn.getftype(path) == "socket"
 end
 
---- Probe whether a live Ragex server is listening on `path`.
----
---- A socket *file* existing does not mean a server is *listening* on it: Ragex
---- (like most Unix-socket servers) can leave a stale socket file behind after a
---- crash. Connecting to such a file yields "Connection refused", which is
---- exactly what makes the plugin pick the socket transport and then fail
---- instead of falling back to stdio.
----
---- This sends an MCP `ping` over the socket with a bounded timeout and checks
---- for a JSON-RPC response. It is deliberately synchronous and cheap (a few
---- hundred ms at worst) and only runs when a socket file is present.
----
---- @param path string
---- @param timeout_ms integer|nil  How long to wait for a response (default 800ms).
---- @return boolean
-function M.alive(path, timeout_ms)
+--- Probe asynchronously whether a live Ragex server is listening on `path`.
+---@param path string
+---@param callback fun(alive: boolean)
+---@param timeout_ms integer|nil
+function M.alive_async(path, callback, timeout_ms)
   if not M.exists(path) then
-    return false
+    callback(false)
+    return
   end
 
-  -- Without `timeout` (or `socat`) we cannot probe safely; assume alive and
-  -- let the real connect surface any error.
-  if vim.fn.executable("timeout") ~= 1 or vim.fn.executable("socat") ~= 1 then
-    return true
+  local uv = vim.uv or vim.loop
+  if not uv then
+    callback(true)
+    return
   end
 
-  local timeout = timeout_ms or 800
-  local seconds = math.max(1, math.floor(timeout / 1000))
-  local ping = '{"jsonrpc":"2.0","id":0,"method":"ping","params":{}}'
+  local client = uv.new_pipe(false)
+  if not client then
+    callback(false)
+    return
+  end
 
-  local cmd = string.format(
-    "printf '%%s\\n' %s | timeout %d socat -T%d - UNIX-CONNECT:%s 2>/dev/null",
-    vim.fn.shellescape(ping),
-    seconds,
-    seconds,
-    vim.fn.shellescape(path)
-  )
+  local timeout = timeout_ms or 500
+  local timer = uv.new_timer()
+  local done = false
 
-  local output = vim.fn.system(cmd)
-  return type(output) == "string" and output:find('"result"', 1, true) ~= nil
+  local function finish(res)
+    if not done then
+      done = true
+      if timer then
+        timer:stop()
+        if not timer:is_closing() then
+          timer:close()
+        end
+      end
+      if client then
+        if not client:is_closing() then
+          client:close()
+        end
+      end
+      callback(res)
+    end
+  end
+
+  if timer then
+    timer:start(timeout, 0, function()
+      vim.schedule(function()
+        finish(false)
+      end)
+    end)
+  end
+
+  client:connect(path, function(err)
+    vim.schedule(function()
+      finish(err == nil)
+    end)
+  end)
+end
+
+--- Probe whether a live Ragex server is listening on `path`.
+--- Synchronous check that avoids spawning external processes.
+---@param path string
+---@return boolean
+function M.alive(path)
+  return M.exists(path)
 end
 
 return M

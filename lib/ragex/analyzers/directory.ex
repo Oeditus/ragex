@@ -31,6 +31,8 @@ defmodule Ragex.Analyzers.Directory do
   """
   @spec analyze_directory(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def analyze_directory(path, opts \\ []) do
+    Ragex.Graph.Store.load_project(path)
+
     max_depth = Keyword.get(opts, :max_depth, 10)
     exclude_patterns = Keyword.get(opts, :exclude_patterns, default_exclude_patterns())
     incremental = Keyword.get(opts, :incremental, true)

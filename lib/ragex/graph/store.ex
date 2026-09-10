@@ -486,10 +486,7 @@ defmodule Ragex.Graph.Store do
         "Store already loaded for project: #{target_root}, preserving graph and file tracker"
       )
 
-      case backend().bootstrap() do
-        :ok -> :ok
-        _ -> :ok
-      end
+      backend().load_project(target_root)
 
       {:reply, :ok, %{state | project_path: target_root}}
     else
@@ -618,11 +615,9 @@ defmodule Ragex.Graph.Store do
       end
     end
 
-    # Bootstrap backend (no-op for ETS, schema setup for dllb)
-    case backend().bootstrap() do
-      :ok -> Logger.info("Store backend bootstrapped (#{Backend.module()})")
-      {:error, reason} -> Logger.warning("Store backend bootstrap failed: #{inspect(reason)}")
-    end
+    # Bootstrap backend (loads project for dllb, no-op for ETS)
+    backend().load_project(target_path)
+    Logger.info("Store backend loaded project #{target_path} (#{Backend.module()})")
   end
 
   defp canonical_project_root(nil), do: canonical_project_root(File.cwd!())

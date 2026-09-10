@@ -11,43 +11,10 @@ local display = require("ragex.display")
 local response = require("ragex.response")
 local ui = require("ragex.ui")
 
---- Blocking single-line prompt (used by catalog `args` builders).
----@param prompt string
----@param default string|nil
----@return string|nil
-local function blocking_input(prompt, default)
-  local result = nil
-  local done = false
-  vim.ui.input({ prompt = prompt, default = default }, function(value)
-    result = value
-    done = true
-  end)
-  vim.wait(60000, function()
-    return done
-  end, 20)
-  return result
-end
-
---- Blocking selection prompt.
----@param prompt string
----@param items string[]
----@return string|nil
-local function blocking_select(prompt, items)
-  local result = nil
-  local done = false
-  vim.ui.select(items, { prompt = prompt }, function(choice)
-    result = choice
-    done = true
-  end)
-  vim.wait(60000, function()
-    return done
-  end, 20)
-  return result
-end
-
---- Build the context table handed to catalog `args` builders.
----@return table
-function M.context()
+--- Build catalog arguments asynchronously without blocking Neovim's event loop.
+---@param spec RagexToolSpec
+---@param callback fun(args: table|nil)
+function M.build_args_async(spec, callback)
   local path = vim.api.nvim_buf_get_name(0)
   if path == "" then
     path = vim.fn.expand("%:p")
@@ -65,14 +32,40 @@ function M.context()
     word = vim.fn.expand("<cword>")
   end)
 
-  return {
-    path = path,
-    relpath = relpath,
-    cwd = cwd,
-    word = word,
-    input = blocking_input,
-    select = blocking_select,
-  }
+  local thread = coroutine.create(function()
+    local co = coroutine.running()
+    local ctx = {
+      path = path,
+      relpath = relpath,
+      cwd = cwd,
+      word = word,
+      input = function(prompt, default)
+        vim.schedule(function()
+          vim.ui.input({ prompt = prompt, default = default }, function(value)
+            coroutine.resume(co, value)
+          end)
+        end)
+        return coroutine.yield()
+      end,
+      select = function(prompt, items)
+        vim.schedule(function()
+          vim.ui.select(items, { prompt = prompt }, function(choice)
+            coroutine.resume(co, choice)
+          end)
+        end)
+        return coroutine.yield()
+      end,
+    }
+
+    local ok, args = pcall(spec.args, ctx)
+    if ok and type(args) == "table" then
+      callback(args)
+    else
+      callback(nil)
+    end
+  end)
+
+  coroutine.resume(thread)
 end
 
 --- Resolve the timeout for a tool spec.
@@ -122,7 +115,7 @@ function M.run(name, args, opts)
   })
 end
 
---- Run a catalog tool: build args from context, then execute.
+--- Run a catalog tool: build args asynchronously, then execute.
 ---@param name string
 ---@param opts table|nil
 function M.run_catalog(name, opts)
@@ -132,18 +125,15 @@ function M.run_catalog(name, opts)
     return
   end
 
-  local ctx = M.context()
-  local args = spec.args(ctx)
-
-  if args == nil then
-    -- The builder bailed (user cancelled a prompt).
-    return
-  end
-
-  M.run(name, args, opts)
+  M.build_args_async(spec, function(args)
+    if args == nil then
+      return
+    end
+    M.run(name, args, opts)
+  end)
 end
 
---- Run a catalog tool but route search results through the Telescope picker.
+--- Run a catalog tool asynchronously and route search results through Telescope picker.
 ---@param name string
 ---@param opts table|nil
 function M.run_search(name, opts)
@@ -153,16 +143,15 @@ function M.run_search(name, opts)
     return
   end
 
-  local ctx = M.context()
-  local args = spec.args(ctx)
-  if args == nil then
-    return
-  end
-
-  local picker = require("ragex.picker")
-  picker.search(name, args.query, vim.tbl_extend("force", args, { query = nil }), {
-    title = opts and opts.title or nil,
-  })
+  M.build_args_async(spec, function(args)
+    if args == nil then
+      return
+    end
+    local picker = require("ragex.picker")
+    picker.search(name, args.query, vim.tbl_extend("force", args, { query = nil }), {
+      title = opts and opts.title or nil,
+    })
+  end)
 end
 
 return M

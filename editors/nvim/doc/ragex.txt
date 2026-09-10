@@ -45,11 +45,12 @@ Options: ~
   `enabled`                Master switch (default true).
   `debug`                  Log transport activity (default false).
   `auto_analyze`           Re-index the current file on save.
-  `auto_analyze_on_start`  Analyze the project on startup.
+  `auto_analyze_on_start`  Auto-analyze the project on startup (shows
+                           indexing progress on statusline, then 'Ȝ ragex').
   `auto_analyze_dirs`      Extra directories to analyze on startup.
   `timeout`                Default request timeout in ms (default 60000).
   `keymaps`                Install default <leader>r* maps (default true).
-  `statusline`             Show "Ragex" when connected (default true).
+  `statusline`             Show 'Ȝ ragex' / live progress (default true).
   `search`                 { limit, threshold, strategy }.
 
 ==============================================================================
@@ -67,6 +68,7 @@ Options: ~
 :Ragex query {text}         Streaming RAG query.
 :Ragex explain              Streaming RAG explanation of the current file.
 :Ragex suggest              Streaming RAG suggestions for the current file.
+:Ragex cr [base]            PR Code Review against main/master (or [base]).
 :Ragex rename_function      Rename a function project-wide.
 :Ragex rename_module        Rename a module project-wide.
 :Ragex auto                 Toggle auto-analysis on save.
@@ -84,6 +86,9 @@ Examples: ~
 
                                                               *:RagexQuery*
 :RagexQuery {text}          Streaming RAG query.
+
+                                                                *:RagexCR*
+:RagexCR [base]             PR Code Review analysis against main/master.
 
                                                              *:RagexStatus*
 :RagexStatus                Show connection + graph summary.

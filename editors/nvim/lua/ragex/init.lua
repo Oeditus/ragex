@@ -34,7 +34,7 @@ local defaults = {
   debug = false,
   log_level = "info",
   auto_analyze = false,
-  auto_analyze_on_start = false,
+  auto_analyze_on_start = true,
   auto_analyze_dirs = {},
   timeout = 60000,
   statusline = true,
@@ -48,8 +48,17 @@ local defaults = {
 
 M.config = vim.deepcopy(defaults)
 
----@type integer|nil
-local auto_analyze_group = nil
+---@type string|nil
+M._status_text = nil
+
+--- Update statusline text dynamically and force statusline redraw.
+---@param text string|nil
+function M.update_statusline(text)
+  M._status_text = text
+  vim.schedule(function()
+    pcall(vim.cmd, "redrawstatus")
+  end)
+end
 
 --- Resolve the ragex-mcp binary, honouring an explicit path first, then
 --- walking up from the cwd looking for a sibling `bin/ragex-mcp`.
@@ -186,6 +195,14 @@ function M.setup(opts)
     end, 2000)
   end
 
+  -- Cleanly close connections & jobs on editor exit without blocking
+  vim.api.nvim_create_autocmd({ "VimLeavePre", "VimLeave" }, {
+    group = vim.api.nvim_create_augroup("RagexTeardown", { clear = true }),
+    callback = function()
+      M.close()
+    end,
+  })
+
   return M
 end
 
@@ -251,8 +268,168 @@ end
 
 --- Analyze a directory (defaults to the project root).
 ---@param path string|nil
-function M.analyze_directory(path)
-  require("ragex.tools.run").run("analyze_directory", { path = path or vim.fn.getcwd() })
+---@param opts table|nil
+function M.analyze_directory(path, opts)
+  path = path or vim.fn.getcwd()
+  opts = opts or {}
+  local exclude = opts.exclude_patterns or { ".ragex", "dllb*", ".git", "_build", "deps", "node_modules", "target" }
+
+  M.update_statusline("Ȝ ragex [Indexing...]")
+
+  require("ragex.tools.run").run("analyze_directory", {
+    path = path,
+    exclude_patterns = exclude,
+  }, {
+    silent = true,
+    on_chunk = function(_, _, payload)
+      if payload and type(payload) == "table" then
+        local file = payload.file or (payload.params and payload.params.file)
+        local current = payload.current or (payload.params and payload.params.current)
+        local total = payload.total or (payload.params and payload.params.total)
+        if file then
+          local short = vim.fn.fnamemodify(file, ":t")
+          local progress_str = string.format("Ȝ ragex [%s/%s: %s]", current or "?", total or "?", short)
+          M.update_statusline(progress_str)
+        end
+      end
+    end,
+    on_result = function(data, err)
+      if err then
+        M.update_statusline("Ȝ ragex [Error]")
+      else
+        M.update_statusline("Ȝ ragex")
+        local count = data and (data.success or data.analyzed or data.total) or 0
+        vim.schedule(function()
+          require("ragex.ui").notify(string.format("Indexed %d files for %s", count, vim.fn.fnamemodify(path, ":t")))
+        end)
+      end
+    end,
+  })
+end
+
+--- Auto-detect base branch (main or master) asynchronously.
+---@param user_branch string|nil
+---@param callback fun(base: string)
+local function detect_base_branch_async(user_branch, callback)
+  if user_branch and user_branch ~= "" then
+    callback(user_branch)
+    return
+  end
+
+  local branches = { "main", "master", "origin/main", "origin/master" }
+  local idx = 1
+
+  local function try_next()
+    if idx > #branches then
+      callback("main")
+      return
+    end
+    local b = branches[idx]
+    idx = idx + 1
+    vim.fn.jobstart({ "git", "rev-parse", "--verify", b }, {
+      on_exit = function(_, code)
+        if code == 0 then
+          callback(b)
+        else
+          try_next()
+        end
+      end,
+    })
+  end
+
+  try_next()
+end
+
+--- Get list of changed file paths between HEAD and base branch asynchronously.
+---@param base_branch string
+---@param callback fun(files: string[])
+local function get_changed_files_async(base_branch, callback)
+  local stdout_lines = {}
+  vim.fn.jobstart({ "git", "diff", "--name-only", base_branch .. "...HEAD" }, {
+    stdout_buffered = true,
+    on_stdout = function(_, data)
+      if data then
+        stdout_lines = data
+      end
+    end,
+    on_exit = function(_, code)
+      local files = {}
+      if code == 0 and #stdout_lines > 0 then
+        for _, line in ipairs(stdout_lines) do
+          line = vim.trim(line)
+          if line ~= "" then
+            table.insert(files, line)
+          end
+        end
+      end
+      if #files > 0 then
+        callback(files)
+      else
+        local fallback_lines = {}
+        vim.fn.jobstart({ "git", "diff", "--name-only", base_branch }, {
+          stdout_buffered = true,
+          on_stdout = function(_, data)
+            if data then
+              fallback_lines = data
+            end
+          end,
+          on_exit = function()
+            local fb_files = {}
+            for _, line in ipairs(fallback_lines) do
+              line = vim.trim(line)
+              if line ~= "" then
+                table.insert(fb_files, line)
+              end
+            end
+            callback(fb_files)
+          end,
+        })
+      end
+    end,
+  })
+end
+
+--- Perform a Ragex PR Code Review analysis against main/master (or explicit base branch).
+---@param base_branch string|nil
+function M.code_review(base_branch)
+  detect_base_branch_async(base_branch, function(base)
+    get_changed_files_async(base, function(files)
+      if #files == 0 then
+        require("ragex.ui").notify("No changed files found against branch '" .. base .. "'", vim.log.levels.WARN)
+        return
+      end
+
+      require("ragex.ui").notify(string.format("Analyzing %d changed files against %s...", #files, base))
+      M.update_statusline("Ȝ ragex [PR Review...]")
+
+      -- Analyze changed files first to ensure graph and embeddings are fresh
+      for _, file in ipairs(files) do
+        if vim.fn.filereadable(file) == 1 then
+          require("ragex.tools.run").run("analyze_file", { path = vim.fn.fnamemodify(file, ":p") }, { silent = true })
+        end
+      end
+
+      -- Stream Code Review analysis
+      local prompt = string.format(
+        "Perform a comprehensive PR Code Review for changes against base branch '%s'. Changed files (%d):\n- %s\n\nAnalyze architectural impact, security risks, code smells, edge cases, potential bugs, breaking changes, and summarize key recommendations.",
+        base,
+        #files,
+        table.concat(files, "\n- ")
+      )
+
+      require("ragex.rag").stream("rag_query", {
+        query = prompt,
+        limit = 20,
+        include_code = true,
+      }, {
+        title = string.format("Ragex: PR Code Review (vs %s)", base),
+      })
+
+      vim.defer_fn(function()
+        M.update_statusline("Ȝ ragex")
+      end, 2000)
+    end)
+  end)
 end
 
 --- Streaming RAG query.
@@ -322,15 +499,18 @@ function M.toggle_auto_analyze()
   end
 end
 
---- Statusline component (returns a short string when connected).
+--- Statusline component (returns dynamic progress log while indexing, or 'Ȝ ragex' when finished/connected).
 ---@return string
 function M.statusline()
   if not M.config.enabled or not M.config.statusline then
     return ""
   end
+  if M._status_text and M._status_text ~= "" then
+    return M._status_text
+  end
   local client = require("ragex.client")
   if client.is_connected() then
-    return "  Ragex"
+    return "Ȝ ragex"
   end
   return ""
 end

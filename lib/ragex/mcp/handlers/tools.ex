@@ -2490,6 +2490,9 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp analyze_file(_), do: {:error, "Invalid parameters for analyze_file"}
 
   defp analyze_directory(%{"path" => path} = params) do
+    # Load and initialize store and per-project .ragex db for target directory
+    Ragex.Graph.Store.load_project(path)
+
     opts = []
 
     opts =

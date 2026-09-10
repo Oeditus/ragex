@@ -70,26 +70,30 @@ function M.tool_menu()
   end)
 end
 
---- Show a summary of the connection + graph.
+--- Show a summary of the connection + graph asynchronously.
 function M.status()
-  local result, err = client.call_tool_sync("graph_stats", {}, 8000)
-  if err then
-    ui.notify("not connected: " .. response.error_message(err), vim.log.levels.WARN)
-    return
-  end
+  client.call_tool("graph_stats", {}, {
+    timeout = 8000,
+    callback = function(result, err)
+      if err then
+        ui.notify("not connected: " .. response.error_message(err), vim.log.levels.WARN)
+        return
+      end
 
-  local data = response.unwrap(result)
-  local lines = {
-    "Ragex status",
-    string.rep("=", 40),
-    "transport : " .. tostring(client.transport_kind()),
-    "socket    : " .. tostring(client.config().socket_path),
-    "binary    : " .. tostring(client.config().ragex_bin),
-    "",
-    "graph nodes : " .. tostring(data and data.node_count or "?"),
-    "graph edges : " .. tostring(data and data.edge_count or "?"),
-  }
-  ui.float(lines, { title = "Ragex status" })
+      local data = response.unwrap(result)
+      local lines = {
+        "Ragex status",
+        string.rep("=", 40),
+        "transport : " .. tostring(client.transport_kind()),
+        "socket    : " .. tostring(client.config().socket_path),
+        "binary    : " .. tostring(client.config().ragex_bin),
+        "",
+        "graph nodes : " .. tostring(data and (data.node_count or data.nodes) or "?"),
+        "graph edges : " .. tostring(data and (data.edge_count or data.edges) or "?"),
+      }
+      ui.float(lines, { title = "Ragex status" })
+    end,
+  })
 end
 
 --- List every catalog tool in a buffer.
@@ -145,6 +149,8 @@ function M.dispatch(fargs)
     require("ragex").rag_explain()
   elseif sub == "suggest" then
     require("ragex").rag_suggest()
+  elseif sub == "cr" or sub == "code_review" then
+    require("ragex").code_review(rest[1])
   elseif sub == "rename_function" then
     require("ragex").rename_function()
   elseif sub == "rename_module" then
@@ -183,6 +189,8 @@ function M.setup()
         "query",
         "explain",
         "suggest",
+        "cr",
+        "code_review",
         "rename_function",
         "rename_module",
         "auto",
@@ -209,6 +217,10 @@ function M.setup()
   vim.api.nvim_create_user_command("RagexQuery", function(cmd_opts)
     require("ragex").rag_query(cmd_opts.args)
   end, { nargs = "+", desc = "Ragex: streaming RAG query" })
+
+  vim.api.nvim_create_user_command("RagexCR", function(cmd_opts)
+    require("ragex").code_review(cmd_opts.args)
+  end, { nargs = "?", desc = "Ragex: PR code review against main/master" })
 
   vim.api.nvim_create_user_command("RagexStatus", function()
     M.status()

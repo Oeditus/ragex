@@ -156,11 +156,10 @@ config :ragex, :analysis,
 
 config :bumblebee, :progress_bar_enabled, false
 
-# Store backend: :ets (default, in-memory) or :dllb (persistent, requires dllb server)
+# Store backend: :dllb (per-project persistent) or :ets (in-memory fallback)
 config :ragex,
-  store_backend: :ets,
-  # dllb_mode: :global (default, single shared server) or :per_project (spawns/manages a dllb instance per project directory)
-  dllb_mode: :global
+  store_backend: System.get_env("RAGEX_STORE_BACKEND", "dllb") |> String.to_atom(),
+  dllb_mode: System.get_env("RAGEX_DLLB_MODE", "per_project") |> String.to_atom()
 
 # dllb multi-model database (disabled by default -- enable when dllb server is running)
 config :dllb,

@@ -99,6 +99,9 @@ export LOG_LEVEL="$LOG_LEVEL"
 
 if [[ -n "$PROJECT" ]]; then
   export RAGEX_AUTO_ANALYZE="$PROJECT"
+  export RAGEX_AUTO_ANALYZE_DIRS="${RAGEX_AUTO_ANALYZE_DIRS:-$PROJECT}"
+  export RAGEX_STORE_BACKEND="${RAGEX_STORE_BACKEND:-dllb}"
+  export RAGEX_DLLB_MODE="${RAGEX_DLLB_MODE:-per_project}"
 fi
 
 # -- Resolve the MCP socket path ---------------------------------------------

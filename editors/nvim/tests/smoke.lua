@@ -39,6 +39,7 @@ check("ragex.setup()", setup_ok, setup_err)
 check(":Ragex exists", vim.fn.exists(":Ragex") == 2)
 check(":RagexSearch exists", vim.fn.exists(":RagexSearch") == 2)
 check(":RagexQuery exists", vim.fn.exists(":RagexQuery") == 2)
+check(":RagexCR exists", vim.fn.exists(":RagexCR") == 2)
 check(":RagexStatus exists", vim.fn.exists(":RagexStatus") == 2)
 
 -- 4. Catalog is well-formed.

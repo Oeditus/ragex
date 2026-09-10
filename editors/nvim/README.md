@@ -102,8 +102,10 @@ require("ragex").setup({
   -- Re-index the current file on save.
   auto_analyze = false,
 
-  -- Analyze the project on startup.
-  auto_analyze_on_start = false,
+  -- Automatically analyze the project on startup. Shows live progress
+  -- updates (`Ȝ ragex [X/Y: file]`) on the statusline, and transitions
+  -- to `Ȝ ragex` when finished.
+  auto_analyze_on_start = true,
 
   -- Extra directories to analyze on startup.
   auto_analyze_dirs = {},
@@ -114,7 +116,7 @@ require("ragex").setup({
   -- Install default <leader>r* keymaps.
   keymaps = true,
 
-  -- Show "Ragex" in the statusline when connected.
+  -- Show "Ȝ ragex" (and live indexing progress) in the statusline when connected.
   statusline = true,
 
   search = {
@@ -127,7 +129,7 @@ require("ragex").setup({
 
 ## Commands
 
-The plugin exposes one dispatcher command plus a few convenience commands.
+The plugin exposes dispatcher commands plus convenience commands.
 
 | Command | Description |
 |---|---|
@@ -142,6 +144,7 @@ The plugin exposes one dispatcher command plus a few convenience commands.
 | `:Ragex query <text>` | Streaming RAG query |
 | `:Ragex explain` | Streaming RAG explanation of the current file |
 | `:Ragex suggest` | Streaming RAG suggestions for the current file |
+| `:RagexCR [base]` | PR Code Review analysis against `main`/`master` (or `[base]`) |
 | `:Ragex rename_function` | Rename a function project-wide |
 | `:Ragex rename_module` | Rename a module project-wide |
 | `:Ragex auto` | Toggle auto-analysis on save |

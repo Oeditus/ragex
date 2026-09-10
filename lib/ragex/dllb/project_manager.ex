@@ -171,10 +171,14 @@ defmodule Ragex.Dllb.ProjectManager do
 
       true ->
         cwd = File.cwd!()
+        local_bin = Path.expand("~/.local/bin/dllb-server")
         release_bin = Path.expand("../dllb/target/release/dllb-server", cwd)
         debug_bin = Path.expand("../dllb/target/debug/dllb-server", cwd)
 
         cond do
+          File.exists?(local_bin) ->
+            local_bin
+
           File.exists?(release_bin) ->
             release_bin
 

@@ -96,6 +96,10 @@ local function fail_all_pending(reason)
   state.pending = {}
   state.subscribers = {}
 
+  if vim.v.exiting ~= 0 or state.exiting then
+    return
+  end
+
   for id, entry in pairs(pending) do
     if entry.timer then
       vim.fn.timer_stop(entry.timer)
@@ -206,11 +210,17 @@ function M._handle_notification(msg)
     end
   end
 
-  -- Legacy ai/progress notifications (no token) go to all subscribers.
-  if method == "ai/progress" then
+  -- Legacy ai/progress or analyzer/progress notifications go to all subscribers.
+  if method == "ai/progress" or method == "analyzer/progress" then
+    local payload = params.params or params
     for _, entry in pairs(state.subscribers) do
       if entry.on_chunk then
-        entry.on_chunk(params.text or "", false, params)
+        entry.on_chunk(params.text or "", false, payload)
+      end
+    end
+    for _, entry in pairs(state.pending) do
+      if entry.on_chunk then
+        entry.on_chunk(params.text or "", false, payload)
       end
     end
   end
@@ -432,16 +442,22 @@ local function ensure_connected(cb)
     cb(ok, err)
   end
 
-  local want_socket = config.mode == "socket"
-    or (config.mode == "auto" and socket_path.alive(config.socket_path))
-
-  if want_socket then
+  if config.mode == "socket" then
     start_socket(function(ok, err)
-      if ok or config.mode == "socket" then
-        done(ok, err)
+      done(ok, err)
+    end)
+  elseif config.mode == "auto" then
+    socket_path.alive_async(config.socket_path, function(is_alive)
+      if is_alive then
+        start_socket(function(ok, err)
+          if ok then
+            done(true, nil)
+          else
+            log("socket unavailable, falling back to stdio")
+            start_stdio(done)
+          end
+        end)
       else
-        -- auto mode: fall back to stdio
-        log("socket unavailable, falling back to stdio")
         start_stdio(done)
       end
     end)
@@ -618,6 +634,7 @@ end
 
 --- Close the active connection and fail outstanding requests.
 function M.close()
+  state.exiting = true
   if state.job_id then
     pcall(vim.fn.jobstop, state.job_id)
   end
