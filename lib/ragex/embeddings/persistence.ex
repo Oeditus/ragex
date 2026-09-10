@@ -448,9 +448,14 @@ defmodule Ragex.Embeddings.Persistence do
 
   - `project_path` - Absolute path to the project (optional, defaults to CWD)
   """
-  @spec generate_project_hash(String.t() | nil) :: String.t()
+  @spec generate_project_hash(String.t() | nil | {:project, String.t()}) :: String.t()
   def generate_project_hash(project_path \\ nil) do
-    path = if project_path, do: Path.expand(project_path), else: File.cwd!()
+    path =
+      case project_path do
+        {:project, p} -> Path.expand(p)
+        p when is_binary(p) -> Path.expand(p)
+        nil -> File.cwd!()
+      end
 
     :crypto.hash(:sha256, path)
     |> Base.encode16(case: :lower)

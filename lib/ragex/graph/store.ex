@@ -359,6 +359,14 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Saves current graph, embeddings, and analysis cache to disk for the given project path.
+  """
+  @spec save_cache(String.t() | nil) :: :ok
+  def save_cache(project_path \\ nil) do
+    GenServer.call(__MODULE__, {:save_cache, project_path}, :infinity)
+  end
+
+  @doc """
   Stores an embedding vector for a node.
   """
   @spec store_embedding(atom(), term(), [float()], String.t()) :: :ok
@@ -471,6 +479,18 @@ defmodule Ragex.Graph.Store do
 
   @impl true
   def handle_call(:sync, _from, state) do
+    {:reply, :ok, state}
+  end
+
+  @impl true
+  def handle_call({:save_cache, target_path}, _from, state) do
+    with <<_::utf8, _::binary>> = path <-
+           canonical_project_root(target_path || state.project_path) do
+      Persistence.save(@embeddings_table, path)
+      GraphPersistence.save(path)
+      AnalysisCache.save(%{}, path)
+    end
+
     {:reply, :ok, state}
   end
 

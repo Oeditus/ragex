@@ -143,6 +143,8 @@ function M.dispatch(fargs)
     require("ragex").analyze_file()
   elseif sub == "analyze_dir" then
     require("ragex").analyze_directory()
+  elseif sub == "watch" then
+    require("ragex").watch_directory()
   elseif sub == "query" then
     require("ragex").rag_query(table.concat(rest, " "))
   elseif sub == "explain" then
@@ -186,6 +188,7 @@ function M.setup()
         "word",
         "analyze",
         "analyze_dir",
+        "watch",
         "query",
         "explain",
         "suggest",
@@ -217,6 +220,10 @@ function M.setup()
   vim.api.nvim_create_user_command("RagexQuery", function(cmd_opts)
     require("ragex").rag_query(cmd_opts.args)
   end, { nargs = "+", desc = "Ragex: streaming RAG query" })
+
+  vim.api.nvim_create_user_command("RagexWatch", function()
+    require("ragex").watch_directory()
+  end, { desc = "Ragex: watch directory for changes" })
 
   vim.api.nvim_create_user_command("RagexCR", function(cmd_opts)
     require("ragex").code_review(cmd_opts.args)

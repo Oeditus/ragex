@@ -78,11 +78,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("ragex.renameModule", () => runner!.renameModule()),
     vscode.commands.registerCommand("ragex.findCallers", () => runTool("find_callers")),
     vscode.commands.registerCommand("ragex.graphStats", () => runTool("graph_stats")),
+    vscode.commands.registerCommand("ragex.watchDirectory", () => runTool("watch_directory")),
     vscode.commands.registerCommand("ragex.callTool", () => callToolPicker()),
     vscode.workspace.onDidSaveTextDocument((doc) => onSave(doc))
   );
 
-  if (vscode.workspace.getConfiguration("ragex").get<boolean>("analyzeOnStartup", false)) {
+  if (vscode.workspace.getConfiguration("ragex").get<boolean>("analyzeOnStartup", true)) {
     void runTool("analyze_directory");
   }
 

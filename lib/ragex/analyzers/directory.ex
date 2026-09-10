@@ -47,35 +47,50 @@ defmodule Ragex.Analyzers.Directory do
     notify = Keyword.get(opts, :notify, true)
     timeout = Keyword.get(opts, :timeout, 300_000)
     max_concurrency = Keyword.get(opts, :max_concurrency, 4)
+    watch = Keyword.get(opts, :watch, true)
 
-    case File.stat(path) do
-      {:ok, %File.Stat{type: :directory}} ->
-        if Application.get_env(:ragex, :enable_auto_scip, true) do
-          auto_index_scip(path)
-        end
+    if watch and File.dir?(path) do
+      Ragex.Watcher.watch_directory(path)
+    end
 
-        files = find_supported_files(path, max_depth, exclude_patterns)
+    result =
+      case File.stat(path) do
+        {:ok, %File.Stat{type: :directory}} ->
+          if Application.get_env(:ragex, :enable_auto_scip, true) do
+            auto_index_scip(path)
+          end
 
-        analyze_files(files,
-          incremental: incremental,
-          force_refresh: force_refresh,
-          notify: notify,
-          timeout: timeout,
-          max_concurrency: max_concurrency
-        )
+          files = find_supported_files(path, max_depth, exclude_patterns)
 
-      {:ok, %File.Stat{type: :regular}} ->
-        # Single file provided
-        analyze_files([path],
-          incremental: incremental,
-          force_refresh: force_refresh,
-          notify: notify,
-          timeout: timeout,
-          max_concurrency: max_concurrency
-        )
+          analyze_files(files,
+            incremental: incremental,
+            force_refresh: force_refresh,
+            notify: notify,
+            timeout: timeout,
+            max_concurrency: max_concurrency
+          )
 
-      {:error, reason} ->
-        {:error, {:file_error, reason}}
+        {:ok, %File.Stat{type: :regular}} ->
+          # Single file provided
+          analyze_files([path],
+            incremental: incremental,
+            force_refresh: force_refresh,
+            notify: notify,
+            timeout: timeout,
+            max_concurrency: max_concurrency
+          )
+
+        {:error, reason} ->
+          {:error, {:file_error, reason}}
+      end
+
+    case result do
+      {:ok, _} ->
+        Store.save_cache(path)
+        result
+
+      _ ->
+        result
     end
   end
 
@@ -195,6 +210,10 @@ defmodule Ragex.Analyzers.Directory do
         success: success_count,
         errors: error_count
       })
+    end
+
+    if success_count > 0 do
+      Store.save_cache()
     end
 
     {:ok,

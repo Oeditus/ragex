@@ -183,16 +183,35 @@ function M.setup(opts)
     setup_auto_analyze()
   end
 
+  local function stop_timer(timer)
+    if type(timer) == "number" then
+      pcall(vim.fn.timer_stop, timer)
+    elseif timer and type(timer) == "userdata" or type(timer) == "table" then
+      pcall(function()
+        if timer.stop then timer:stop() end
+        if timer.close and not (timer.is_closing and timer:is_closing()) then timer:close() end
+      end)
+    end
+  end
+
+  M._startup_timers = M._startup_timers or {}
+  for _, timer in ipairs(M._startup_timers) do
+    stop_timer(timer)
+  end
+  M._startup_timers = {}
+
   if M.config.auto_analyze_on_start then
-    vim.defer_fn(function()
+    local timer = vim.defer_fn(function()
       M.analyze_directory()
     end, 1000)
+    table.insert(M._startup_timers, timer)
   end
 
   for _, dir in ipairs(M.config.auto_analyze_dirs or {}) do
-    vim.defer_fn(function()
+    local timer = vim.defer_fn(function()
       require("ragex.tools.run").run("analyze_directory", { path = dir }, { silent = true })
     end, 2000)
+    table.insert(M._startup_timers, timer)
   end
 
   -- Cleanly close connections & jobs on editor exit without blocking
@@ -303,6 +322,17 @@ function M.analyze_directory(path, opts)
           require("ragex.ui").notify(string.format("Indexed %d files for %s", count, vim.fn.fnamemodify(path, ":t")))
         end)
       end
+    end,
+  })
+end
+
+--- Watch a directory for changes (defaults to project root).
+---@param path string|nil
+function M.watch_directory(path)
+  path = path or vim.fn.getcwd()
+  require("ragex.tools.run").run("watch_directory", { path = path }, {
+    on_result = function()
+      require("ragex.ui").notify(string.format("Watching %s for file changes", vim.fn.fnamemodify(path, ":t")))
     end,
   })
 end
@@ -517,6 +547,19 @@ end
 
 --- Close the transport (call from a VimLeave autocmd if desired).
 function M.close()
+  if M._startup_timers then
+    for _, timer in ipairs(M._startup_timers) do
+      if type(timer) == "number" then
+        pcall(vim.fn.timer_stop, timer)
+      elseif timer and (type(timer) == "userdata" or type(timer) == "table") then
+        pcall(function()
+          if timer.stop then timer:stop() end
+          if timer.close and not (timer.is_closing and timer:is_closing()) then timer:close() end
+        end)
+      end
+    end
+    M._startup_timers = {}
+  end
   require("ragex.client").close()
 end
 

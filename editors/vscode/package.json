@@ -75,8 +75,8 @@
         },
         "ragex.analyzeOnStartup": {
           "type": "boolean",
-          "default": false,
-          "description": "Analyze the whole project when the extension activates."
+          "default": true,
+          "description": "Analyze the whole project (reusing cache and enabling file watcher) when the extension activates."
         },
         "ragex.search.limit": {
           "type": "number",
@@ -179,6 +179,11 @@
       {
         "command": "ragex.graphStats",
         "title": "Ragex: Graph Statistics",
+        "category": "Ragex"
+      },
+      {
+        "command": "ragex.watchDirectory",
+        "title": "Ragex: Watch Project Directory",
         "category": "Ragex"
       },
       {

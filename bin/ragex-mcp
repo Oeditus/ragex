@@ -16,6 +16,7 @@
 #   RAGEX_EMBEDDING_MODEL  -- embedding model to use
 
 set -euo pipefail
+trap 'kill 0 2>/dev/null || true' EXIT TERM INT
 
 ORIGINAL_PWD="$PWD"
 

@@ -141,8 +141,11 @@ defmodule Ragex.Graph.Persistence do
   @doc """
   Clears the graph cache for the current project.
   """
-  @spec clear(String.t() | nil) :: :ok
-  def clear(project_path \\ nil) do
+  @spec clear(String.t() | nil | {:project, String.t()}) :: :ok
+  def clear(project_path \\ nil)
+  def clear({:project, path}), do: clear(path)
+
+  def clear(project_path) when is_binary(project_path) or is_nil(project_path) do
     cache_path = get_cache_path(project_path)
 
     if File.exists?(cache_path) do

@@ -84,6 +84,10 @@ local function reset_connection()
   state.buffer = ""
   state.ready = false
   state.starting = false
+  if state.starting_timer then
+    pcall(vim.fn.timer_stop, state.starting_timer)
+    state.starting_timer = nil
+  end
   -- Bump the generation so callbacks belonging to the previous connection
   -- (on_exit/on_stdout) become no-ops once a new connection is established.
   state.generation = state.generation + 1
@@ -96,15 +100,14 @@ local function fail_all_pending(reason)
   state.pending = {}
   state.subscribers = {}
 
-  if vim.v.exiting ~= 0 or state.exiting then
-    return
-  end
+  local is_exiting = (vim.v.exiting ~= 0 or state.exiting)
 
   for id, entry in pairs(pending) do
     if entry.timer then
-      vim.fn.timer_stop(entry.timer)
+      pcall(vim.fn.timer_stop, entry.timer)
+      entry.timer = nil
     end
-    if entry.cb then
+    if entry.cb and not is_exiting then
       vim.schedule(function()
         entry.cb(nil, { kind = "transport", message = reason, id = id })
       end)
@@ -421,14 +424,22 @@ local function ensure_connected(cb)
   if state.starting then
     -- Someone else is connecting; poll briefly.
     local ticks = 0
-    local timer
-    timer = vim.fn.timer_start(50, function()
+    if state.starting_timer then
+      pcall(vim.fn.timer_stop, state.starting_timer)
+    end
+    state.starting_timer = vim.fn.timer_start(50, function()
       ticks = ticks + 1
       if state.ready then
-        vim.fn.timer_stop(timer)
+        if state.starting_timer then
+          pcall(vim.fn.timer_stop, state.starting_timer)
+          state.starting_timer = nil
+        end
         cb(true, nil)
       elseif ticks > 200 then
-        vim.fn.timer_stop(timer)
+        if state.starting_timer then
+          pcall(vim.fn.timer_stop, state.starting_timer)
+          state.starting_timer = nil
+        end
         cb(false, { kind = "timeout", message = "timed out waiting for connection" })
       end
     end)
@@ -635,7 +646,12 @@ end
 --- Close the active connection and fail outstanding requests.
 function M.close()
   state.exiting = true
+  if state.starting_timer then
+    pcall(vim.fn.timer_stop, state.starting_timer)
+    state.starting_timer = nil
+  end
   if state.job_id then
+    pcall(vim.fn.chanclose, state.job_id)
     pcall(vim.fn.jobstop, state.job_id)
   end
   fail_all_pending("client closed")
