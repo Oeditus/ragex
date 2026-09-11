@@ -62,7 +62,7 @@ M.tools = {
     name = "analyze_directory",
     category = "Analysis",
     desc = "Index the whole project directory",
-    timeout = "slow",
+    timeout = "very_slow",
     needs = "path",
     args = dir_arg,
   },

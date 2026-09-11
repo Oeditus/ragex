@@ -197,6 +197,23 @@ function M._dispatch(line)
   end)
 end
 
+--- Helper to refresh timeout timer when progress is received.
+local function reset_entry_timer(key, entry)
+  if entry and entry.timer and entry.timeout and entry.timeout > 0 then
+    pcall(vim.fn.timer_stop, entry.timer)
+    local t_val = entry.timeout
+    entry.timer = vim.fn.timer_start(t_val, function()
+      if state.pending[key] then
+        state.pending[key] = nil
+        state.subscribers[key] = nil
+        if entry.cb then
+          entry.cb(nil, { kind = "timeout", message = "request timed out after " .. t_val .. "ms" })
+        end
+      end
+    end)
+  end
+end
+
 --- Route a server-initiated message (progress / ai notifications).
 ---@param msg table
 function M._handle_notification(msg)
@@ -207,25 +224,31 @@ function M._handle_notification(msg)
   -- `progressToken` (see Ragex.MCP.Server.send_progress/3).
   local token = params.progressToken
   if token ~= nil then
-    local entry = state.subscribers[tostring(token)] or state.pending[tostring(token)]
-    if entry and entry.on_chunk then
-      local value = params.value or {}
-      entry.on_chunk(value.text or "", value.done == true, value)
+    local key = tostring(token)
+    local entry = state.subscribers[key] or state.pending[key]
+    if entry then
+      if entry.on_chunk then
+        local value = params.value or {}
+        entry.on_chunk(value.text or "", value.done == true, value)
+      end
+      reset_entry_timer(key, entry)
     end
   end
 
   -- Legacy ai/progress or analyzer/progress notifications go to all subscribers.
   if method == "ai/progress" or method == "analyzer/progress" then
     local payload = params.params or params
-    for _, entry in pairs(state.subscribers) do
+    for key, entry in pairs(state.subscribers) do
       if entry.on_chunk then
         entry.on_chunk(params.text or "", false, payload)
       end
+      reset_entry_timer(key, entry)
     end
-    for _, entry in pairs(state.pending) do
+    for key, entry in pairs(state.pending) do
       if entry.on_chunk then
         entry.on_chunk(params.text or "", false, payload)
       end
+      reset_entry_timer(key, entry)
     end
   end
 end
@@ -548,6 +571,7 @@ function M.request(method, params, opts)
       on_chunk = on_chunk,
       started_at = vim.loop.now(),
       tool = params and params.name or method,
+      timeout = timeout,
     }
 
     if timeout and timeout > 0 then

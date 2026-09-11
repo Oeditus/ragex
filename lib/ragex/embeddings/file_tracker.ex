@@ -246,6 +246,7 @@ defmodule Ragex.Embeddings.FileTracker do
   """
   @spec stale_entities_for_file(String.t(), [{term(), String.t()}]) :: MapSet.t()
   def stale_entities_for_file(file_path, entities) do
+    init()
     file_id = normalize_file_id(file_path)
 
     entities
@@ -284,6 +285,7 @@ defmodule Ragex.Embeddings.FileTracker do
   """
   @spec clear_all() :: :ok
   def clear_all do
+    init()
     :ets.delete_all_objects(@tracker_table)
     :ets.delete_all_objects(@fn_hash_table)
     Logger.info("Cleared all file tracking data")

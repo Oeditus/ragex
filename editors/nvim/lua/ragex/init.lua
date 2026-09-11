@@ -300,7 +300,7 @@ function M.analyze_directory(path, opts)
   -- mistaken for a hang if the statusline just says "Indexing..." the
   -- whole time. Say so explicitly while we're not connected yet.
   if require("ragex.client").is_connected() then
-    M.update_statusline("Ȝ ragex [Indexing...]")
+    M.update_statusline("Ȝ ragex [Scanning directory...]")
   else
     M.update_statusline("Ȝ ragex [Starting server...]")
   end
@@ -312,13 +312,40 @@ function M.analyze_directory(path, opts)
     silent = true,
     on_chunk = function(_, _, payload)
       if payload and type(payload) == "table" then
-        local file = payload.file or (payload.params and payload.params.file)
-        local current = payload.current or (payload.params and payload.params.current)
-        local total = payload.total or (payload.params and payload.params.total)
-        if file then
+        local params = payload.params or payload
+        local event = payload.event or params.event
+        local file = params.file
+        local current = params.current
+        local total = params.total
+        local to_analyze = params.to_analyze
+        local stage = params.stage or event
+
+        if event == "analysis_scanning" or stage == "scanning_directory" then
+          M.update_statusline("Ȝ ragex [Scanning directory...]")
+        elseif event == "analysis_scip" or stage == "scip_indexing" then
+          M.update_statusline("Ȝ ragex [SCIP indexing...]")
+        elseif event == "analysis_start" or (to_analyze and not current) then
+          if to_analyze and to_analyze == 0 then
+            M.update_statusline("Ȝ ragex [Up to date]")
+          elseif to_analyze then
+            M.update_statusline(string.format("Ȝ ragex [0/%d (0%%): starting...]", to_analyze))
+          else
+            M.update_statusline("Ȝ ragex [Indexing...]")
+          end
+        elseif current and total and total > 0 then
+          local pct = math.floor((current / total) * 100)
+          local short = file and vim.fn.fnamemodify(file, ":t") or ""
+          if short ~= "" then
+            M.update_statusline(string.format("Ȝ ragex [%d/%d (%d%%): %s]", current, total, pct, short))
+          else
+            M.update_statusline(string.format("Ȝ ragex [%d/%d (%d%%)]", current, total, pct))
+          end
+        elseif file then
           local short = vim.fn.fnamemodify(file, ":t")
-          local progress_str = string.format("Ȝ ragex [%s/%s: %s]", current or "?", total or "?", short)
-          M.update_statusline(progress_str)
+          M.update_statusline(string.format("Ȝ ragex [%s/%s: %s]", current or "?", total or "?", short))
+        elseif event == "analysis_complete" then
+          local count = params.analyzed or params.total or 0
+          M.update_statusline(string.format("Ȝ ragex [Indexed %d files]", count))
         end
       end
     end,

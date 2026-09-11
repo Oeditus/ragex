@@ -56,7 +56,14 @@ defmodule Ragex.Analyzers.Directory do
     result =
       case File.stat(path) do
         {:ok, %File.Stat{type: :directory}} ->
+          if notify do
+            notify_progress("analysis_scanning", %{stage: "scanning_directory", path: path})
+          end
+
           if Application.get_env(:ragex, :enable_auto_scip, true) do
+            if notify do
+              notify_progress("analysis_scip", %{stage: "scip_indexing", path: path})
+            end
             auto_index_scip(path)
           end
 

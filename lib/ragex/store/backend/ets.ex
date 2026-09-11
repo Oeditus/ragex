@@ -26,9 +26,26 @@ defmodule Ragex.Store.Backend.ETS do
 
   @impl true
   def clear do
+    ensure_tables()
     :ets.delete_all_objects(@nodes_table)
     :ets.delete_all_objects(@edges_table)
     :ets.delete_all_objects(@embeddings_table)
+    :ok
+  end
+
+  defp ensure_tables do
+    if :ets.whereis(@nodes_table) == :undefined do
+      :ets.new(@nodes_table, [:named_table, :set, :public, read_concurrency: true])
+    end
+
+    if :ets.whereis(@edges_table) == :undefined do
+      :ets.new(@edges_table, [:named_table, :bag, :public, read_concurrency: true])
+    end
+
+    if :ets.whereis(@embeddings_table) == :undefined do
+      :ets.new(@embeddings_table, [:named_table, :set, :public, read_concurrency: true])
+    end
+
     :ok
   end
 

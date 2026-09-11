@@ -1,5 +1,7 @@
-# Don't start the application during tests to avoid stdin blocking
+# Don't start the server during tests to avoid stdin blocking
 Application.put_env(:ragex, :start_server, false)
+
+{:ok, _} = Application.ensure_all_started(:ragex)
 
 ExUnit.start(capture_log: true)
 
