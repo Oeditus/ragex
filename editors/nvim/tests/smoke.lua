@@ -66,6 +66,21 @@ else
   check("graph_stats round-trip", uerr == nil and type(data) == "table", uerr)
 end
 
+-- client.close() intentionally leaves a stdio-mode daemon running in the
+-- background (see client.lua's `M.close` docs) so real editor sessions
+-- never hang on exit while indexing. The test harness isn't a real
+-- session though, so explicitly tear down anything it may have booted.
+local stopped, stop_msg = false, nil
+client.stop_daemon(function(ok, message)
+  stopped, stop_msg = ok, message
+end)
+vim.wait(5000, function()
+  return stopped ~= false or stop_msg ~= nil
+end, 20)
+if stop_msg then
+  print((stopped and "ok   - " or "warn - ") .. "stop_daemon: " .. stop_msg)
+end
+
 client.close()
 
 if failures == 0 then

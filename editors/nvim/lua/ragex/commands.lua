@@ -159,6 +159,8 @@ function M.dispatch(fargs)
     require("ragex").rename_module()
   elseif sub == "auto" then
     require("ragex").toggle_auto_analyze()
+  elseif sub == "stop_daemon" then
+    require("ragex").stop_daemon()
   elseif catalog.get(sub) then
     -- Generic: `:Ragex <tool> key=value ...`
     local args = parse_kv(rest)
@@ -197,6 +199,7 @@ function M.setup()
         "rename_function",
         "rename_module",
         "auto",
+        "stop_daemon",
       }
       for _, tool in ipairs(catalog.tools) do
         table.insert(candidates, tool.name)
@@ -235,8 +238,12 @@ function M.setup()
 
   vim.api.nvim_create_user_command("RagexClose", function()
     client.close()
-    ui.notify("connection closed")
-  end, { desc = "Ragex: close the transport" })
+    ui.notify("connection closed (background daemon, if any, keeps running)")
+  end, { desc = "Ragex: close this session's transport (leaves any background daemon running)" })
+
+  vim.api.nvim_create_user_command("RagexStopDaemon", function()
+    require("ragex").stop_daemon()
+  end, { desc = "Ragex: stop the background ragex-mcp daemon" })
 end
 
 return M

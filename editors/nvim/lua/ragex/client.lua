@@ -278,6 +278,15 @@ local function start_stdio(on_ready)
   local my_gen = state.generation
 
   local job_id = vim.fn.jobstart(cmd, {
+    -- Detach the daemon from Neovim's lifecycle: indexing a large project
+    -- can legitimately take minutes, and without `detach` Neovim's own
+    -- shutdown sequence tries to stop (and wait on) this job when the
+    -- editor exits -- which is what makes `:wq` appear to hang while
+    -- ragex-mcp is still starting up/indexing. A detached job survives
+    -- `:q`/`:wq`/a crashed editor and keeps indexing in the background;
+    -- the next session reconnects to it via its Unix socket instead of
+    -- booting another (see `start_socket` / `ensure_connected`).
+    detach = true,
     stdout_buffered = false,
     stderr_buffered = false,
     on_stdout = function(_, data)
@@ -487,11 +496,19 @@ local function ensure_connected(cb)
     state.starting = false
 
     if state.close_epoch ~= my_close_epoch then
-      -- Superseded by a close() that happened mid-connect. Tear down
-      -- whatever this attempt just spawned instead of leaking it, and
-      -- report failure to the original caller.
+      -- Superseded by a close() that happened mid-connect. For a socket
+      -- bridge (cheap `socat`) just kill it -- nothing is lost. For a
+      -- freshly booted `stdio` daemon, leave it running detached instead:
+      -- it may be in the middle of indexing a huge project, and killing it
+      -- here is exactly what used to make quitting mid-startup hang (or
+      -- silently throw away all that indexing work). It keeps going in the
+      -- background and exposes its socket for the next session to use.
       if ok and state.job_id then
-        pcall(vim.fn.jobstop, state.job_id)
+        if state.kind == "stdio" then
+          pcall(vim.fn.chanclose, state.job_id)
+        else
+          pcall(vim.fn.jobstop, state.job_id)
+        end
         reset_connection()
       end
       cb(false, err or { kind = "stale", message = "connection attempt superseded by close()" })
@@ -699,6 +716,13 @@ function M.call_tool_sync(name, args, timeout)
 end
 
 --- Close the active connection and fail outstanding requests.
+---
+--- Deliberately does NOT kill a `stdio`-mode job: that job is the Ragex
+--- daemon itself (the whole BEAM VM), started with `detach = true`
+--- precisely so it keeps indexing in the background after the editor
+--- exits. Only the disposable `socket`-mode `socat` bridge is stopped
+--- here. Use `M.stop_daemon()` to actually terminate the background
+--- server.
 function M.close()
   state.exiting = true
   state.close_epoch = (state.close_epoch or 0) + 1
@@ -708,10 +732,76 @@ function M.close()
   end
   if state.job_id then
     pcall(vim.fn.chanclose, state.job_id)
-    pcall(vim.fn.jobstop, state.job_id)
+    if state.kind ~= "stdio" then
+      pcall(vim.fn.jobstop, state.job_id)
+    end
   end
   fail_all_pending("client closed")
   reset_connection()
+end
+
+--- Deliberately terminate the background Ragex daemon.
+---
+--- Unlike `M.close()` (which only ever drops *this session's* connection
+--- and intentionally leaves a `stdio`-mode daemon running), this always
+--- signals the actual BEAM VM -- whether it was booted by this session or
+--- a previous one. When this session only holds a `socket` bridge (or no
+--- connection at all), the real server is found by asking who holds the
+--- Unix socket open (`fuser`), since the bridge's own job id is useless
+--- for that.
+---@param callback fun(ok: boolean, message: string)|nil
+function M.stop_daemon(callback)
+  callback = callback or function() end
+
+  -- Fast path: this session itself booted the daemon and still holds its
+  -- job id -- no need to shell out.
+  if state.kind == "stdio" and state.job_id then
+    pcall(vim.fn.jobstop, state.job_id)
+    reset_connection()
+    callback(true, "stopped the ragex-mcp job owned by this session")
+    return
+  end
+
+  local path = config.socket_path or socket_path.compute()
+  if not socket_path.exists(path) then
+    callback(false, "no socket found at " .. tostring(path))
+    return
+  end
+
+  local output = {}
+  local job_id = vim.fn.jobstart({ "fuser", "-k", "-TERM", path }, {
+    stdout_buffered = true,
+    stderr_buffered = true,
+    on_stdout = function(_, data)
+      if data then
+        vim.list_extend(output, data)
+      end
+    end,
+    on_stderr = function(_, data)
+      if data then
+        vim.list_extend(output, data)
+      end
+    end,
+    on_exit = function(_, code)
+      if code == 0 then
+        if state.job_id then
+          pcall(vim.fn.jobstop, state.job_id)
+        end
+        reset_connection()
+        callback(true, "sent SIGTERM to the ragex-mcp daemon behind " .. path)
+      else
+        local detail = vim.trim(table.concat(output, " "))
+        callback(
+          false,
+          "could not signal " .. path .. " via fuser" .. (detail ~= "" and (": " .. detail) or "")
+        )
+      end
+    end,
+  })
+
+  if job_id <= 0 then
+    callback(false, "fuser not available -- kill the ragex-mcp/beam.smp process manually")
+  end
 end
 
 ---@return boolean

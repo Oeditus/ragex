@@ -214,7 +214,11 @@ function M.setup(opts)
     table.insert(M._startup_timers, timer)
   end
 
-  -- Cleanly close connections & jobs on editor exit without blocking
+  -- Drop this session's connection on editor exit without blocking.
+  -- M.close() deliberately does NOT kill a stdio-mode ragex-mcp daemon --
+  -- it was started detached precisely so indexing a large project keeps
+  -- running in the background instead of being killed (and hanging `:wq`)
+  -- when the editor closes. Use `:Ragex stop_daemon` to actually stop it.
   vim.api.nvim_create_autocmd({ "VimLeavePre", "VimLeave" }, {
     group = vim.api.nvim_create_augroup("RagexTeardown", { clear = true }),
     callback = function()
@@ -599,7 +603,17 @@ function M.statusline()
   return ""
 end
 
---- Close the transport (call from a VimLeave autocmd if desired).
+--- Stop the background Ragex daemon outright (not just this connection).
+--- See `ragex.client.stop_daemon` for the fast-path/fuser fallback logic.
+function M.stop_daemon()
+  require("ragex.client").stop_daemon(function(ok, message)
+    require("ragex.ui").notify(message, ok and vim.log.levels.INFO or vim.log.levels.WARN)
+  end)
+end
+
+--- Close the transport (call from a VimLeave autocmd if desired). Leaves a
+--- stdio-mode daemon running in the background; use `M.stop_daemon()` to
+--- terminate it.
 function M.close()
   if M._startup_timers then
     for _, timer in ipairs(M._startup_timers) do

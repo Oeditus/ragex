@@ -26,6 +26,14 @@ The plugin speaks JSON-RPC 2.0 to Ragex over one of two transports:
 With `mode = "auto"` (the default) it uses the socket when present and
 otherwise spawns the stdio child.
 
+The stdio child is started *detached*: it is the Ragex daemon itself (a
+full BEAM VM), and indexing a large project can legitimately take minutes.
+Detaching means it keeps running in the background even if you quit
+Neovim mid-index, instead of Neovim's shutdown sequence trying to stop
+(and wait on) it -- which is what previously made `:wq` hang. The next
+session reconnects to it over its Unix socket. Use `:Ragex stop_daemon`
+(or `:RagexStopDaemon`) to terminate it deliberately.
+
 ==============================================================================
 2. SETUP                                                     *ragex-setup*
 
@@ -72,6 +80,7 @@ Options: ~
 :Ragex rename_function      Rename a function project-wide.
 :Ragex rename_module        Rename a module project-wide.
 :Ragex auto                 Toggle auto-analysis on save.
+:Ragex stop_daemon          Stop the background ragex-mcp daemon.
 :Ragex {tool} [k=v ...]     Call any catalog tool directly.
 
 Examples: ~
@@ -94,7 +103,11 @@ Examples: ~
 :RagexStatus                Show connection + graph summary.
 
                                                               *:RagexClose*
-:RagexClose                 Close the transport.
+:RagexClose                 Close this session's transport. Leaves a
+                             stdio-mode background daemon running.
+
+                                                         *:RagexStopDaemon*
+:RagexStopDaemon            Stop the background ragex-mcp daemon outright.
 
 ==============================================================================
 4. KEYMAPS                                                 *ragex-keymaps*
@@ -163,6 +176,15 @@ Telescope availability, and performs a live connectivity probe.
 "could not connect" / "socket bridge closed" ~
   The server isn't running and the stdio fallback failed. Start Ragex with
   `bin/ragex-mcp --project /path/to/project`, or inspect `:Ragex status`.
+
+`:wq`/`:q` seems to hang while ragex is (re)indexing ~
+  This should no longer happen: the stdio-booted daemon runs detached, so
+  quitting never waits on it. If it still does, check whether you're on an
+  old plugin version where `client.lua`'s `jobstart` lacks `detach = true`.
+  A background daemon left running after you quit is expected and by
+  design; stop it explicitly with `:Ragex stop_daemon` if you don't want
+  it to keep running (e.g. to free GPU/RAM), or find it with
+  `ps aux | grep -E 'ragex-mcp|beam.smp'`.
 
 Search returns no results ~
   The project isn't indexed. Run `:Ragex analyze_dir` and wait for embeddings.

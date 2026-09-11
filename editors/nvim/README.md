@@ -18,6 +18,11 @@ and security analysis, and streaming AI answers — all without leaving Neovim.
 - **Hybrid transport** — reuses a running Ragex server over its per-project
   Unix socket when available, and transparently falls back to spawning
   `bin/ragex-mcp` as a stdio child. Auto-reconnects on failure.
+- **Non-blocking background indexing** — the stdio child is started detached,
+  so it survives `:q`/`:wq` and keeps indexing large projects in the
+  background instead of hanging the editor on exit. The next session
+  reconnects to it over its socket; stop it explicitly with
+  `:Ragex stop_daemon`.
 - **Full tool catalog** — every Ragex MCP tool is reachable through a single
   declarative catalog (`:Ragex <tool>`), grouped into an interactive menu.
 - **Telescope pickers** for search results (graceful `vim.ui.select` fallback
@@ -148,6 +153,7 @@ The plugin exposes dispatcher commands plus convenience commands.
 | `:Ragex rename_function` | Rename a function project-wide |
 | `:Ragex rename_module` | Rename a module project-wide |
 | `:Ragex auto` | Toggle auto-analysis on save |
+| `:Ragex stop_daemon` / `:RagexStopDaemon` | Stop the background ragex-mcp daemon |
 | `:Ragex <tool> [k=v ...]` | Call **any** catalog tool directly |
 
 The generic form is the escape hatch for the long tail of tools:
@@ -235,11 +241,33 @@ instance:
 2. `DLLB_PORT` → `/tmp/ragex_mcp_<port>.sock`
 3. otherwise → `/tmp/ragex_mcp_<sanitized-project-path>.sock`
 
+### Background indexing and editor exit
+
+The first time a session boots `bin/ragex-mcp` over stdio (no live socket
+yet), it becomes the actual Ragex daemon: a full BEAM VM that may spend
+minutes indexing a large project. That job is started with Neovim's
+`detach = true`, so quitting Neovim (`:q`, `:wq`, a crash) never kills it
+and never blocks waiting for it to shut down — it keeps indexing in the
+background and exposes its socket for the next session to reuse.
+
+`:RagexClose` / `M.close()` only ever drops the *current session's*
+connection; it deliberately never kills a stdio-mode daemon. Use
+`:Ragex stop_daemon` / `:RagexStopDaemon` to terminate the background
+server outright (e.g. to free GPU/RAM). When run from a session that isn't
+the one that booted it, this shells out to `fuser -k` against the socket
+file to find and signal the real process.
+
 ## Troubleshooting
 
 **"could not connect" / "socket bridge closed"**
 The server isn't running and the stdio fallback also failed. Start Ragex
 (`bin/ragex-mcp --project /path/to/project`) or check `:Ragex status`.
+
+**`:wq`/`:q` seems to hang while ragex is (re)indexing**
+This should no longer happen — the stdio-booted daemon runs detached, so
+quitting never waits on it (see "Background indexing and editor exit"
+above). A background daemon left running after you quit is expected; stop
+it explicitly with `:Ragex stop_daemon` if you don't want it lingering.
 
 **Search returns no results**
 The project hasn't been indexed, or embeddings aren't loaded yet. Run
