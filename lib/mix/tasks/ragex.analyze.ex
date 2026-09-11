@@ -587,28 +587,81 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp github_lines_for(:security, %{issues: issues}) do
     issues
-    |> Enum.flat_map(fn result -> Map.get(result, :vulnerabilities, []) end)
-    |> Enum.map(fn vuln ->
-      level = if vuln.severity in [:critical, :high], do: "error", else: "warning"
+    |> Enum.flat_map(fn result ->
+      file_path = Map.get(result, :file) || Map.get(result, :path)
+      vulns = Map.get(result, :vulnerabilities, [])
 
-      "::#{level} file=#{vuln.file},line=#{vuln.line}::SECURITY #{vuln.category}: #{vuln.description}"
+      if Enum.empty?(vulns) and is_map(result) and Map.get(result, :severity) != nil do
+        [result]
+      else
+        Enum.map(vulns, &Map.put_new(&1, :file, file_path))
+      end
+    end)
+    |> Enum.map(fn vuln ->
+      level = if vuln[:severity] in [:critical, :high], do: "error", else: "warning"
+      file = format_file_path(vuln[:file] || get_in(vuln, [:location, :file]))
+      line = vuln[:line] || get_in(vuln, [:location, :line]) || 1
+      cat = vuln[:category] || vuln[:type] || "security"
+      desc = vuln[:description] || vuln[:message] || ""
+
+      "::#{level} file=#{file},line=#{line}::SECURITY #{cat}: #{desc}"
     end)
   end
 
   defp github_lines_for(:business_logic, data) do
     data
     |> Map.get(:results, [])
-    |> Enum.flat_map(&Map.get(&1, :issues, []))
-    |> Enum.map(fn issue ->
-      level = if issue[:severity] in [:critical, :high], do: "error", else: "warning"
+    |> Enum.flat_map(fn file_result ->
+      file_path = Map.get(file_result, :file) || Map.get(file_result, :path)
+      issues = Map.get(file_result, :issues, [])
 
-      "::#{level} file=#{issue[:file]},line=#{issue[:line]}::#{issue[:analyzer]}: #{issue[:description]}"
+      Enum.map(issues, fn issue ->
+        level = if issue[:severity] in [:critical, :high], do: "error", else: "warning"
+        file = format_file_path(issue[:file] || get_in(issue, [:location, :file]) || file_path)
+        line = issue[:line] || get_in(issue, [:location, :line]) || 1
+        analyzer = issue[:analyzer] || issue[:category] || "business_logic"
+        desc = issue[:description] || issue[:message] || ""
+
+        "::#{level} file=#{file},line=#{line}::#{analyzer}: #{desc}"
+      end)
+    end)
+  end
+
+  defp github_lines_for(:smells, %{smells: smells}) do
+    all =
+      case smells do
+        %{results: results} when is_list(results) ->
+          Enum.flat_map(results, fn file_result ->
+            file_path = Map.get(file_result, :path) || Map.get(file_result, :file)
+
+            file_result
+            |> Map.get(:smells, [])
+            |> Enum.map(fn smell ->
+              Map.put_new(smell, :file, file_path)
+            end)
+          end)
+
+        list when is_list(list) ->
+          list
+
+        _ ->
+          []
+      end
+
+    Enum.map(all, fn s ->
+      level = if s[:severity] in [:critical, :high, :error], do: "error", else: "warning"
+      file = format_file_path(s[:file] || get_in(s, [:location, :file]))
+      line = s[:line] || get_in(s, [:location, :line]) || 1
+      type = s[:type] || s[:check] || "smell"
+      desc = s[:description] || s[:message] || ""
+
+      "::#{level} file=#{file},line=#{line}::#{type}: #{desc}"
     end)
   end
 
   defp github_lines_for(:complexity, %{complex_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      file = Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]) || "unknown"
+      file = format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
       line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
       cc = Map.get(f, :cyclomatic_complexity) || Map.get(f, :complexity) || 0
       "::warning file=#{file},line=#{line}::COMPLEXITY #{format_func_name(f)} cyclomatic=#{cc}"
@@ -617,21 +670,41 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp github_lines_for(:dead_code, %{dead_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      file = Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]) || "unknown"
+      file = format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
       line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
       reason = Map.get(f, :reason, "unused function")
       "::notice file=#{file},line=#{line}::DEAD_CODE #{format_func_name(f)}: #{reason}"
     end)
   end
 
+  defp github_lines_for(:duplicates, %{duplicates: dups}) do
+    Enum.map(dups, fn d ->
+      file = format_file_path(d[:file] || get_in(d, [:location, :file]))
+      line = d[:line] || get_in(d, [:location, :line]) || 1
+      sim = Float.round((d[:similarity] || 0.0) * 100, 1)
+
+      "::warning file=#{file},line=#{line}::DUPLICATE #{sim}% similar (#{d[:lines] || 0} lines)"
+    end)
+  end
+
   defp github_lines_for(:circulars, %{cycles: cycles}) do
     Enum.map(cycles, fn cycle ->
       chain = Enum.map_join(cycle, " -> ", &format_module_name/1)
-      "::error::CIRCULAR dependency: #{chain}"
+      first = List.first(cycle)
+      file = format_file_path(first)
+      "::error file=#{file},line=1::CIRCULAR dependency: #{chain}"
     end)
   end
 
   defp github_lines_for(_, _), do: []
+
+  defp format_file_path(nil), do: "unknown"
+
+  defp format_file_path(path) when is_binary(path) do
+    Exclusions.normalize_file_path(path)
+  end
+
+  defp format_file_path(other), do: to_string(other)
 
   # CI output: one-line-per-issue, no ANSI, machine-friendly
   defp output_ci(report) do
@@ -655,7 +728,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
     |> Enum.map(fn vuln ->
       cat = Map.get(vuln, :category) || Map.get(vuln, :type) || "security"
       sev = Map.get(vuln, :severity, "unknown")
-      file = Map.get(vuln, :file) || get_in(vuln, [:location, :file]) || "unknown"
+      file = format_file_path(Map.get(vuln, :file) || get_in(vuln, [:location, :file]))
       line = Map.get(vuln, :line) || get_in(vuln, [:location, :line]) || 1
       desc = Map.get(vuln, :description, "")
 
@@ -666,16 +739,29 @@ defmodule Mix.Tasks.Ragex.Analyze do
   defp ci_lines_for(:business_logic, data) do
     data
     |> Map.get(:results, [])
-    |> Enum.flat_map(&Map.get(&1, :issues, []))
-    |> Enum.map(fn issue ->
-      "BUSINESS_LOGIC: #{issue[:analyzer] || "unknown"} (#{issue[:severity]}) #{issue[:file]}:#{issue[:line]} - #{issue[:description]}"
+    |> Enum.flat_map(fn file_result ->
+      file_path = Map.get(file_result, :file) || Map.get(file_result, :path)
+      issues = Map.get(file_result, :issues, [])
+
+      Enum.map(issues, fn issue ->
+        file = format_file_path(issue[:file] || get_in(issue, [:location, :file]) || file_path)
+        line = issue[:line] || get_in(issue, [:location, :line]) || 1
+        analyzer = issue[:analyzer] || issue[:category] || "business_logic"
+        sev = issue[:severity] || "unknown"
+        desc = issue[:description] || issue[:message] || ""
+
+        "BUSINESS_LOGIC: #{analyzer} (#{sev}) #{file}:#{line} - #{desc}"
+      end)
     end)
   end
 
   defp ci_lines_for(:complexity, %{complex_functions: funcs}) do
     Enum.map(funcs, fn f ->
+      file = format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+      line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
       cc = Map.get(f, :cyclomatic_complexity) || Map.get(f, :complexity) || 0
-      "COMPLEXITY: #{format_func_name(f)} (cyclomatic=#{cc})"
+
+      "COMPLEXITY: #{format_func_name(f)} (#{file}:#{line}) (cyclomatic=#{cc})"
     end)
   end
 
@@ -684,7 +770,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
       case smells do
         %{results: results} when is_list(results) ->
           Enum.flat_map(results, fn file_result ->
-            file_path = Map.get(file_result, :path)
+            file_path = Map.get(file_result, :path) || Map.get(file_result, :file)
 
             file_result
             |> Map.get(:smells, [])
@@ -701,39 +787,43 @@ defmodule Mix.Tasks.Ragex.Analyze do
       end
 
     Enum.map(all, fn s ->
-      file = s[:file] || get_in(s, [:location, :file])
-      line = s[:line] || get_in(s, [:location, :line])
-
-      loc =
-        cond do
-          file && line -> " #{file}:#{line}"
-          file -> " #{file}"
-          true -> ""
-        end
-
+      file = format_file_path(s[:file] || get_in(s, [:location, :file]))
+      line = s[:line] || get_in(s, [:location, :line]) || 1
+      type = s[:type] || s[:check] || "smell"
+      sev = s[:severity] || "unknown"
       desc = if s[:description], do: " - #{s[:description]}", else: ""
-      "SMELL: #{s[:type]} (#{s[:severity]})#{loc}#{desc}"
+
+      "SMELL: #{type} (#{sev}) #{file}:#{line}#{desc}"
     end)
   end
 
   defp ci_lines_for(:duplicates, %{duplicates: dups}) do
     Enum.map(dups, fn d ->
+      file = format_file_path(d[:file] || get_in(d, [:location, :file]))
+      line = d[:line] || get_in(d, [:location, :line]) || 1
       sim = Float.round((d[:similarity] || 0.0) * 100, 1)
-      "DUPLICATE: #{sim}% similar (#{d[:lines] || 0} lines)"
+
+      "DUPLICATE: #{file}:#{line} - #{sim}% similar (#{d[:lines] || 0} lines)"
     end)
   end
 
   defp ci_lines_for(:dead_code, %{dead_functions: funcs}) do
     Enum.map(funcs, fn f ->
+      file = format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+      line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
       reason = Map.get(f, :reason, "unused function")
-      "DEAD_CODE: #{format_func_name(f)} - #{reason}"
+
+      "DEAD_CODE: #{format_func_name(f)} (#{file}:#{line}) - #{reason}"
     end)
   end
 
   defp ci_lines_for(:circulars, %{cycles: cycles}) do
     Enum.map(cycles, fn cycle ->
       chain = Enum.map_join(cycle, " -> ", &format_module_name/1)
-      "CIRCULAR: #{chain} (#{length(cycle)} modules)"
+      first = List.first(cycle)
+      file = format_file_path(first)
+
+      "CIRCULAR: #{chain} (#{file}:1) (#{length(cycle)} modules)"
     end)
   end
 

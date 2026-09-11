@@ -104,14 +104,29 @@ defmodule Ragex.Analysis.Exclusions do
   Parses an individual exclusion entry into an `%Exclusion{}` struct.
   """
   @spec parse_exclusion_item(term()) :: [Exclusion.t()]
+  # 1-tuple rule syntax: {"missing_error_handling"} or {:missing_error_handling}
+  def parse_exclusion_item({rule}) when is_binary(rule) or is_atom(rule) do
+    [%Exclusion{file: nil, line: nil, rule: normalize_rule(rule), raw: {rule}}]
+  end
+
+  # 2-tuple with wildcard file: {"*", "missing_error_handling"} or {nil, "missing_error_handling"} or {:all, "missing_error_handling"}
+  def parse_exclusion_item({file, rule})
+      when (is_nil(file) or file in ["*", "_", :all, "all"]) and (is_binary(rule) or is_atom(rule)) do
+    [%Exclusion{file: nil, line: nil, rule: normalize_rule(rule), raw: {file, rule}}]
+  end
+
   def parse_exclusion_item({location_str, rule}) when is_binary(location_str) do
-    {file, line} = parse_location_string(location_str)
-    [%Exclusion{file: file, line: line, rule: normalize_rule(rule), raw: {location_str, rule}}]
+    if is_wildcard_file?(location_str) do
+      [%Exclusion{file: nil, line: nil, rule: normalize_rule(rule), raw: {location_str, rule}}]
+    else
+      {file, line} = parse_location_string(location_str)
+      [%Exclusion{file: file, line: line, rule: normalize_rule(rule), raw: {location_str, rule}}]
+    end
   end
 
   def parse_exclusion_item({location_str, line, rule})
-      when is_binary(location_str) and is_integer(line) do
-    {file, _} = parse_location_string(location_str)
+      when (is_binary(location_str) or is_nil(location_str)) and (is_integer(line) or is_nil(line)) do
+    file = if is_wildcard_file?(location_str), do: nil, else: normalize_file_path(location_str)
 
     [
       %Exclusion{
@@ -123,24 +138,33 @@ defmodule Ragex.Analysis.Exclusions do
     ]
   end
 
-  def parse_exclusion_item({file, line, rule})
-      when is_binary(file) and (is_integer(line) or is_nil(line)) do
-    [
-      %Exclusion{
-        file: normalize_file_path(file),
-        line: line,
-        rule: normalize_rule(rule),
-        raw: {file, line, rule}
-      }
-    ]
+  # Bare atom rule name: :missing_error_handling
+  def parse_exclusion_item(rule) when is_atom(rule) and rule not in [nil, true, false] do
+    [%Exclusion{file: nil, line: nil, rule: normalize_rule(rule), raw: rule}]
   end
 
+  # Location string or bare rule string
   def parse_exclusion_item(location_str) when is_binary(location_str) do
-    {file, line} = parse_location_string(location_str)
-    [%Exclusion{file: file, line: line, rule: nil, raw: location_str}]
+    if is_rule_name_only?(location_str) do
+      [%Exclusion{file: nil, line: nil, rule: normalize_rule(location_str), raw: location_str}]
+    else
+      {file, line} = parse_location_string(location_str)
+      [%Exclusion{file: file, line: line, rule: nil, raw: location_str}]
+    end
   end
 
   def parse_exclusion_item(_), do: []
+
+  defp is_wildcard_file?(nil), do: true
+  defp is_wildcard_file?("*"), do: true
+  defp is_wildcard_file?("all"), do: true
+  defp is_wildcard_file?("_"), do: true
+  defp is_wildcard_file?(_), do: false
+
+  defp is_rule_name_only?(str) when is_binary(str) do
+    not String.contains?(str, ["/", "\\", ".ex", ".exs", ".js", ".py", ".rb", ".erl", ":"]) and
+      not File.exists?(str)
+  end
 
   @doc """
   Parses location strings like `"lib/ragex/analyzers/directory.ex:248"`.
@@ -225,8 +249,8 @@ defmodule Ragex.Analysis.Exclusions do
     end)
   end
 
-  defp file_matches?("", _exc_file), do: false
   defp file_matches?(_norm_file, nil), do: true
+  defp file_matches?("", _exc_file), do: false
 
   defp file_matches?(norm_file, exc_file) do
     norm_file == exc_file or

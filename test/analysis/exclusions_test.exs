@@ -68,6 +68,52 @@ defmodule Ragex.Analysis.ExclusionsTest do
                  {"lib/ragex/analyzers/directory.ex", "long_parameter_list"}
                )
     end
+
+    test ~s(parses 1-tuple rule format {"rule"}) do
+      assert [
+               %Exclusion{
+                 file: nil,
+                 line: nil,
+                 rule: "missing_error_handling"
+               }
+             ] = Exclusions.parse_exclusion_item({"missing_error_handling"})
+
+      assert [
+               %Exclusion{
+                 file: nil,
+                 line: nil,
+                 rule: "missing_error_handling"
+               }
+             ] = Exclusions.parse_exclusion_item({:missing_error_handling})
+    end
+
+    test ~s(parses wildcard file tuple {"*", "rule"}) do
+      assert [
+               %Exclusion{
+                 file: nil,
+                 line: nil,
+                 rule: "n_plus_one_query"
+               }
+             ] = Exclusions.parse_exclusion_item({"*", "n_plus_one_query"})
+    end
+
+    test "parses bare atom or string rule name" do
+      assert [
+               %Exclusion{
+                 file: nil,
+                 line: nil,
+                 rule: "missing_error_handling"
+               }
+             ] = Exclusions.parse_exclusion_item(:missing_error_handling)
+
+      assert [
+               %Exclusion{
+                 file: nil,
+                 line: nil,
+                 rule: "n_plus_one_query"
+               }
+             ] = Exclusions.parse_exclusion_item("n_plus_one_query")
+    end
   end
 
   describe "parse_config_result/1" do
@@ -152,6 +198,16 @@ defmodule Ragex.Analysis.ExclusionsTest do
     test "matches line-agnostic exclusion on any line", %{exclusions: exclusions} do
       assert Exclusions.excluded?("lib/ragex/analyzers/other.ex", 10, :magic_number, exclusions)
       assert Exclusions.excluded?("lib/ragex/analyzers/other.ex", 999, :magic_number, exclusions)
+    end
+
+    test "matches 1-tuple project-wide rule exclusion on any file and line" do
+      exclusions = Exclusions.parse_config_result([{"missing_error_handling"}, {"n_plus_one_query"}])
+
+      assert Exclusions.excluded?("lib/any/file.ex", 123, :missing_error_handling, exclusions)
+      assert Exclusions.excluded?("test/smells_test.exs", 45, "missing_error_handling", exclusions)
+      assert Exclusions.excluded?("web/router.ex", 1, :n_plus_one_query, exclusions)
+
+      refute Exclusions.excluded?("lib/any/file.ex", 123, :other_rule, exclusions)
     end
   end
 
