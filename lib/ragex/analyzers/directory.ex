@@ -64,6 +64,7 @@ defmodule Ragex.Analyzers.Directory do
             if notify do
               notify_progress("analysis_scip", %{stage: "scip_indexing", path: path})
             end
+
             auto_index_scip(path)
           end
 
