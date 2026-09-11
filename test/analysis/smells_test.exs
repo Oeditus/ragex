@@ -1,5 +1,5 @@
 defmodule Ragex.Analysis.SmellsTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Ragex.Analysis.Smells
   alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
@@ -309,17 +309,11 @@ defmodule Ragex.Analysis.SmellsTest do
 
   describe "location tracking" do
     setup do
-      # Start the knowledge graph store if not already running
-      case Process.whereis(Ragex.Graph.Store) do
-        nil ->
-          {:ok, _pid} = Store.start_link()
-          on_exit(fn -> GenServer.stop(Ragex.Graph.Store) end)
-
-        _pid ->
-          :ok
-      end
-
-      # Clear the store
+      # Ragex.Graph.Store is a singleton GenServer started permanently by the
+      # application's supervision tree (see test_helper.exs), so it is always
+      # already running here. Do not manually start/stop it: doing so raced
+      # with the supervisor's own lifecycle and could permanently unregister
+      # the shared process for the remainder of the test suite.
       Store.clear()
       Store.sync()
 
