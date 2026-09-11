@@ -186,6 +186,16 @@ defmodule Ragex.Analyzers.SCIPTest do
       File.write!(Path.join(dir, "lib.ex"), "defmodule Lib do; end")
 
       # Enable auto SCIP in config
+      orig_scip = Application.get_env(:ragex, :enable_auto_scip)
+
+      on_exit(fn ->
+        if orig_scip != nil do
+          Application.put_env(:ragex, :enable_auto_scip, orig_scip)
+        else
+          Application.delete_env(:ragex, :enable_auto_scip)
+        end
+      end)
+
       Application.put_env(:ragex, :enable_auto_scip, true)
 
       # Directory analysis should complete without crashing even if scip-go is missing

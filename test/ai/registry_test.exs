@@ -3,6 +3,16 @@ defmodule Ragex.AI.RegistryTest do
 
   alias Ragex.AI.Registry
 
+  setup do
+    original_config = Application.get_env(:ragex, :ai, [])
+
+    on_exit(fn ->
+      Application.put_env(:ragex, :ai, original_config)
+    end)
+
+    {:ok, original_config: original_config}
+  end
+
   describe "get_provider/0" do
     test "returns {:ok, module} when default provider is configured" do
       # Get the configured default provider
@@ -11,10 +21,7 @@ defmodule Ragex.AI.RegistryTest do
       assert match?({:ok, _module}, result)
     end
 
-    test "returns :error when default provider is nil" do
-      # Save current config
-      original_config = Application.get_env(:ragex, :ai, [])
-
+    test "returns :error when default provider is nil", %{original_config: original_config} do
       # Set default_provider to nil
       updated_config = Keyword.put(original_config, :default_provider, nil)
       Application.put_env(:ragex, :ai, updated_config)
@@ -22,15 +29,9 @@ defmodule Ragex.AI.RegistryTest do
       result = Registry.get_provider()
 
       assert result == :error
-
-      # Restore original config
-      Application.put_env(:ragex, :ai, original_config)
     end
 
-    test "returns :error when provider not found in registry" do
-      # Save current config
-      original_config = Application.get_env(:ragex, :ai, [])
-
+    test "returns :error when provider not found in registry", %{original_config: original_config} do
       # Set an invalid provider name
       updated_config = Keyword.put(original_config, :default_provider, :nonexistent_provider)
       Application.put_env(:ragex, :ai, updated_config)
@@ -38,9 +39,6 @@ defmodule Ragex.AI.RegistryTest do
       result = Registry.get_provider()
 
       assert result == :error
-
-      # Restore original config
-      Application.put_env(:ragex, :ai, original_config)
     end
   end
 
@@ -50,18 +48,12 @@ defmodule Ragex.AI.RegistryTest do
       assert Registry.provider_available?() in [true, false]
     end
 
-    test "returns false when provider is nil" do
-      # Save current config
-      original_config = Application.get_env(:ragex, :ai, [])
-
+    test "returns false when provider is nil", %{original_config: original_config} do
       # Set default_provider to nil
       updated_config = Keyword.put(original_config, :default_provider, nil)
       Application.put_env(:ragex, :ai, updated_config)
 
       refute Registry.provider_available?()
-
-      # Restore original config
-      Application.put_env(:ragex, :ai, original_config)
     end
   end
 

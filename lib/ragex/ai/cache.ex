@@ -60,7 +60,7 @@ defmodule Ragex.AI.Cache do
   """
   @spec get(atom(), any(), any(), keyword()) :: {:ok, term()} | {:error, :not_found}
   def get(operation, query, context, opts \\ []) do
-    if enabled?() do
+    if enabled?() and table_exists?(@table_name) do
       provider = Keyword.get(opts, :provider, :unknown)
       model = Keyword.get(opts, :model, "unknown")
       key = generate_key(operation, query, context, provider, model, opts)
@@ -95,7 +95,7 @@ defmodule Ragex.AI.Cache do
   """
   @spec put(atom(), any(), any(), term(), keyword()) :: :ok
   def put(operation, query, context, response, opts \\ []) do
-    if enabled?() do
+    if enabled?() and table_exists?(@table_name) do
       provider = Keyword.get(opts, :provider, :unknown)
       model = Keyword.get(opts, :model, "unknown")
       key = generate_key(operation, query, context, provider, model, opts)
@@ -118,7 +118,10 @@ defmodule Ragex.AI.Cache do
   """
   @spec clear() :: :ok
   def clear do
-    :ets.delete_all_objects(@table_name)
+    if table_exists?(@table_name) do
+      :ets.delete_all_objects(@table_name)
+    end
+
     reset_stats()
     :ok
   end
@@ -137,36 +140,30 @@ defmodule Ragex.AI.Cache do
   """
   @spec stats() :: map()
   def stats do
-    case :ets.lookup(@stats_table, :stats) do
-      [{:stats, hits, misses, puts, evictions}] ->
-        stats_map = %{hits: hits, misses: misses, puts: puts, evictions: evictions}
-        size = :ets.info(@table_name, :size)
-        max_size = get_max_size()
-        ttl = Application.get_env(:ragex, :ai_cache, []) |> Keyword.get(:ttl, 3600)
+    if table_exists?(@stats_table) do
+      case :ets.lookup(@stats_table, :stats) do
+        [{:stats, hits, misses, puts, evictions}] ->
+          stats_map = %{hits: hits, misses: misses, puts: puts, evictions: evictions}
+          size = if table_exists?(@table_name), do: :ets.info(@table_name, :size), else: 0
+          max_size = get_max_size()
+          ttl = Application.get_env(:ragex, :ai_cache, []) |> Keyword.get(:ttl, 3600)
 
-        Map.merge(stats_map, %{
-          enabled: enabled?(),
-          size: size,
-          max_size: max_size,
-          ttl: ttl,
-          utilization: if(max_size > 0, do: size / max_size, else: 0.0),
-          hit_rate: calculate_hit_rate(stats_map),
-          # [TODO]: implement per-operation tracking
-          by_operation: %{}
-        })
+          Map.merge(stats_map, %{
+            enabled: enabled?(),
+            size: size,
+            max_size: max_size,
+            ttl: ttl,
+            utilization: if(max_size > 0, do: size / max_size, else: 0.0),
+            hit_rate: calculate_hit_rate(stats_map),
+            # [TODO]: implement per-operation tracking
+            by_operation: %{}
+          })
 
-      [] ->
-        %{
-          enabled: enabled?(),
-          hits: 0,
-          misses: 0,
-          puts: 0,
-          evictions: 0,
-          size: 0,
-          max_size: 0,
-          ttl: 3600,
-          by_operation: %{}
-        }
+        [] ->
+          default_stats_map()
+      end
+    else
+      default_stats_map()
     end
   end
 
@@ -301,25 +298,47 @@ defmodule Ragex.AI.Cache do
   end
 
   defp increment_stat(stat_name) do
-    :ets.update_counter(
-      @stats_table,
-      :stats,
-      {Map.get(
-         %{
-           hits: 2,
-           misses: 3,
-           puts: 4,
-           evictions: 5
-         },
-         stat_name,
-         2
-       ), 1},
-      {:stats, 0, 0, 0, 0}
-    )
+    if table_exists?(@stats_table) do
+      :ets.update_counter(
+        @stats_table,
+        :stats,
+        {Map.get(
+           %{
+             hits: 2,
+             misses: 3,
+             puts: 4,
+             evictions: 5
+           },
+           stat_name,
+           2
+         ), 1},
+        {:stats, 0, 0, 0, 0}
+      )
+    end
   end
 
   defp reset_stats do
-    :ets.insert(@stats_table, {:stats, 0, 0, 0, 0})
+    if table_exists?(@stats_table) do
+      :ets.insert(@stats_table, {:stats, 0, 0, 0, 0})
+    end
+  end
+
+  defp default_stats_map do
+    %{
+      enabled: enabled?(),
+      hits: 0,
+      misses: 0,
+      puts: 0,
+      evictions: 0,
+      size: 0,
+      max_size: 0,
+      ttl: 3600,
+      by_operation: %{}
+    }
+  end
+
+  defp table_exists?(table) do
+    :ets.whereis(table) != :undefined
   end
 
   defp calculate_hit_rate(%{hits: hits, misses: misses}) do
@@ -343,7 +362,7 @@ defmodule Ragex.AI.Cache do
     path = cache_file_path()
 
     if File.exists?(path) do
-      :ets.delete(@table_name)
+      if table_exists?(@table_name), do: :ets.delete(@table_name)
 
       case :ets.file2tab(String.to_charlist(path)) do
         {:ok, @table_name} ->
@@ -352,20 +371,25 @@ defmodule Ragex.AI.Cache do
 
         err ->
           Logger.warning("Failed to load AI Cache from disk: #{inspect(err)}")
-          :ets.new(@table_name, [:named_table, :public, :set, read_concurrency: true])
+
+          if not table_exists?(@table_name) do
+            :ets.new(@table_name, [:named_table, :public, :set, read_concurrency: true])
+          end
       end
     end
   end
 
   defp save_cache_to_disk do
-    path = cache_file_path()
+    if table_exists?(@table_name) do
+      path = cache_file_path()
 
-    case :ets.tab2file(@table_name, String.to_charlist(path)) do
-      :ok ->
-        Logger.debug("AI Cache saved to disk: #{path}")
+      case :ets.tab2file(@table_name, String.to_charlist(path)) do
+        :ok ->
+          Logger.debug("AI Cache saved to disk: #{path}")
 
-      err ->
-        Logger.warning("Failed to save AI Cache to disk: #{inspect(err)}")
+        err ->
+          Logger.warning("Failed to save AI Cache to disk: #{inspect(err)}")
+      end
     end
   end
 end
