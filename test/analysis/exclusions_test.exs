@@ -1,8 +1,8 @@
 defmodule Ragex.Analysis.ExclusionsTest do
   use ExUnit.Case, async: true
 
-  alias Ragex.Analysis.Exclusions
   alias Ragex.Analysis.Exclusion
+  alias Ragex.Analysis.Exclusions
 
   describe "parse_location_string/1" do
     test "parses path with line number" do
@@ -17,24 +17,56 @@ defmodule Ragex.Analysis.ExclusionsTest do
   end
 
   describe "parse_exclusion_item/1" do
-    test "parses user format tuple {\"file:line\", \"rule\"}" do
-      assert [%Exclusion{file: "lib/ragex/analyzers/directory.ex", line: 248, rule: "long_parameter_list"}] =
-               Exclusions.parse_exclusion_item({"lib/ragex/analyzers/directory.ex:248", "long_parameter_list"})
+    test ~s(parses user format tuple {"file:line", "rule"}) do
+      assert [
+               %Exclusion{
+                 file: "lib/ragex/analyzers/directory.ex",
+                 line: 248,
+                 rule: "long_parameter_list"
+               }
+             ] =
+               Exclusions.parse_exclusion_item(
+                 {"lib/ragex/analyzers/directory.ex:248", "long_parameter_list"}
+               )
     end
 
     test "parses atom rule format {\"file:line\", :rule}" do
-      assert [%Exclusion{file: "lib/ragex/analyzers/directory.ex", line: 248, rule: "long_parameter_list"}] =
-               Exclusions.parse_exclusion_item({"lib/ragex/analyzers/directory.ex:248", :long_parameter_list})
+      assert [
+               %Exclusion{
+                 file: "lib/ragex/analyzers/directory.ex",
+                 line: 248,
+                 rule: "long_parameter_list"
+               }
+             ] =
+               Exclusions.parse_exclusion_item(
+                 {"lib/ragex/analyzers/directory.ex:248", :long_parameter_list}
+               )
     end
 
-    test "parses 3-tuple format {\"file\", line, \"rule\"}" do
-      assert [%Exclusion{file: "lib/ragex/analyzers/directory.ex", line: 248, rule: "long_parameter_list"}] =
-               Exclusions.parse_exclusion_item({"lib/ragex/analyzers/directory.ex", 248, "long_parameter_list"})
+    test ~s(parses 3-tuple format {"file", line, "rule"}) do
+      assert [
+               %Exclusion{
+                 file: "lib/ragex/analyzers/directory.ex",
+                 line: 248,
+                 rule: "long_parameter_list"
+               }
+             ] =
+               Exclusions.parse_exclusion_item(
+                 {"lib/ragex/analyzers/directory.ex", 248, "long_parameter_list"}
+               )
     end
 
-    test "parses line-agnostic tuple {\"file\", \"rule\"}" do
-      assert [%Exclusion{file: "lib/ragex/analyzers/directory.ex", line: nil, rule: "long_parameter_list"}] =
-               Exclusions.parse_exclusion_item({"lib/ragex/analyzers/directory.ex", "long_parameter_list"})
+    test ~s(parses line-agnostic tuple {"file", "rule"}) do
+      assert [
+               %Exclusion{
+                 file: "lib/ragex/analyzers/directory.ex",
+                 line: nil,
+                 rule: "long_parameter_list"
+               }
+             ] =
+               Exclusions.parse_exclusion_item(
+                 {"lib/ragex/analyzers/directory.ex", "long_parameter_list"}
+               )
     end
   end
 
@@ -67,26 +99,54 @@ defmodule Ragex.Analysis.ExclusionsTest do
 
   describe "excluded?/4" do
     setup do
-      exclusions = Exclusions.parse_config_result([
-        {"lib/ragex/analyzers/directory.ex:248", "long_parameter_list"},
-        {"lib/ragex/analyzers/other.ex", "magic_number"}
-      ])
+      exclusions =
+        Exclusions.parse_config_result([
+          {"lib/ragex/analyzers/directory.ex:248", "long_parameter_list"},
+          {"lib/ragex/analyzers/other.ex", "magic_number"}
+        ])
 
       {:ok, exclusions: exclusions}
     end
 
     test "matches exact file, line, and rule", %{exclusions: exclusions} do
-      assert Exclusions.excluded?("lib/ragex/analyzers/directory.ex", 248, :long_parameter_list, exclusions)
-      assert Exclusions.excluded?("lib/ragex/analyzers/directory.ex", 248, "long_parameter_list", exclusions)
-      assert Exclusions.excluded?("lib/ragex/analyzers/directory.ex", 248, "LongParameterList", exclusions)
+      assert Exclusions.excluded?(
+               "lib/ragex/analyzers/directory.ex",
+               248,
+               :long_parameter_list,
+               exclusions
+             )
+
+      assert Exclusions.excluded?(
+               "lib/ragex/analyzers/directory.ex",
+               248,
+               "long_parameter_list",
+               exclusions
+             )
+
+      assert Exclusions.excluded?(
+               "lib/ragex/analyzers/directory.ex",
+               248,
+               "LongParameterList",
+               exclusions
+             )
     end
 
     test "does not match different line number", %{exclusions: exclusions} do
-      refute Exclusions.excluded?("lib/ragex/analyzers/directory.ex", 249, :long_parameter_list, exclusions)
+      refute Exclusions.excluded?(
+               "lib/ragex/analyzers/directory.ex",
+               249,
+               :long_parameter_list,
+               exclusions
+             )
     end
 
     test "does not match different rule on same line", %{exclusions: exclusions} do
-      refute Exclusions.excluded?("lib/ragex/analyzers/directory.ex", 248, :cyclomatic_complexity, exclusions)
+      refute Exclusions.excluded?(
+               "lib/ragex/analyzers/directory.ex",
+               248,
+               :cyclomatic_complexity,
+               exclusions
+             )
     end
 
     test "matches line-agnostic exclusion on any line", %{exclusions: exclusions} do
@@ -97,9 +157,10 @@ defmodule Ragex.Analysis.ExclusionsTest do
 
   describe "filter_results/2" do
     setup do
-      exclusions = Exclusions.parse_config_result([
-        {"lib/ragex/analyzers/directory.ex:248", "long_parameter_list"}
-      ])
+      exclusions =
+        Exclusions.parse_config_result([
+          {"lib/ragex/analyzers/directory.ex:248", "long_parameter_list"}
+        ])
 
       {:ok, exclusions: exclusions}
     end
@@ -114,8 +175,18 @@ defmodule Ragex.Analysis.ExclusionsTest do
               file: "lib/ragex/analyzers/directory.ex",
               has_issues?: true,
               issues: [
-                %{analyzer: :long_parameter_list, line: 248, file: "lib/ragex/analyzers/directory.ex", description: "Too many params"},
-                %{analyzer: :silent_error_case, line: 300, file: "lib/ragex/analyzers/directory.ex", description: "Silent error"}
+                %{
+                  analyzer: :long_parameter_list,
+                  line: 248,
+                  file: "lib/ragex/analyzers/directory.ex",
+                  description: "Too many params"
+                },
+                %{
+                  analyzer: :silent_error_case,
+                  line: 300,
+                  file: "lib/ragex/analyzers/directory.ex",
+                  description: "Silent error"
+                }
               ]
             }
           ]

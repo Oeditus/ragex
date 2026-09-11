@@ -112,12 +112,27 @@ defmodule Ragex.Analysis.Exclusions do
   def parse_exclusion_item({location_str, line, rule})
       when is_binary(location_str) and is_integer(line) do
     {file, _} = parse_location_string(location_str)
-    [%Exclusion{file: file, line: line, rule: normalize_rule(rule), raw: {location_str, line, rule}}]
+
+    [
+      %Exclusion{
+        file: file,
+        line: line,
+        rule: normalize_rule(rule),
+        raw: {location_str, line, rule}
+      }
+    ]
   end
 
   def parse_exclusion_item({file, line, rule})
       when is_binary(file) and (is_integer(line) or is_nil(line)) do
-    [%Exclusion{file: normalize_file_path(file), line: line, rule: normalize_rule(rule), raw: {file, line, rule}}]
+    [
+      %Exclusion{
+        file: normalize_file_path(file),
+        line: line,
+        rule: normalize_rule(rule),
+        raw: {file, line, rule}
+      }
+    ]
   end
 
   def parse_exclusion_item(location_str) when is_binary(location_str) do
@@ -274,7 +289,10 @@ defmodule Ragex.Analysis.Exclusions do
       Enum.reject(issues, fn issue ->
         file = Map.get(issue, :file) || get_in(issue, [:location, :file])
         line = Map.get(issue, :line) || get_in(issue, [:location, :line])
-        rule = Map.get(issue, :cwe) || Map.get(issue, :category) || Map.get(issue, :analyzer) || Map.get(issue, :check)
+
+        rule =
+          Map.get(issue, :cwe) || Map.get(issue, :category) || Map.get(issue, :analyzer) ||
+            Map.get(issue, :check)
 
         excluded?(file, line, rule, exclusions)
       end)
@@ -286,12 +304,19 @@ defmodule Ragex.Analysis.Exclusions do
             Enum.reject(vulns, fn v ->
               file = Map.get(v, :file) || get_in(v, [:location, :file])
               line = Map.get(v, :line) || get_in(v, [:location, :line])
-              rule = Map.get(v, :cwe) || Map.get(v, :category) || Map.get(v, :analyzer) || Map.get(v, :check)
+
+              rule =
+                Map.get(v, :cwe) || Map.get(v, :category) || Map.get(v, :analyzer) ||
+                  Map.get(v, :check)
 
               excluded?(file, line, rule, exclusions)
             end)
 
-          %{issue | vulnerabilities: filtered_vulns, has_vulnerabilities?: not Enum.empty?(filtered_vulns)}
+          %{
+            issue
+            | vulnerabilities: filtered_vulns,
+              has_vulnerabilities?: not Enum.empty?(filtered_vulns)
+          }
 
         other ->
           other
@@ -320,7 +345,12 @@ defmodule Ragex.Analysis.Exclusions do
     total = Enum.reduce(filtered_file_results, 0, fn r, acc -> acc + length(r.issues) end)
     files_with_issues = Enum.count(filtered_file_results, fn r -> r.has_issues? end)
 
-    %{data | results: filtered_file_results, total_issues: total, files_with_issues: files_with_issues}
+    %{
+      data
+      | results: filtered_file_results,
+        total_issues: total,
+        files_with_issues: files_with_issues
+    }
   end
 
   defp filter_type_results(:smells, %{smells: smells_data} = data, exclusions) do
@@ -340,7 +370,12 @@ defmodule Ragex.Analysis.Exclusions do
                 excluded?(file, line, rule, exclusions)
               end)
 
-            %{file_res | smells: filtered_smells, total_smells: length(filtered_smells), has_smells?: not Enum.empty?(filtered_smells)}
+            %{
+              file_res
+              | smells: filtered_smells,
+                total_smells: length(filtered_smells),
+                has_smells?: not Enum.empty?(filtered_smells)
+            }
           end)
 
         total = Enum.reduce(filtered_file_results, 0, fn r, acc -> acc + length(r.smells) end)

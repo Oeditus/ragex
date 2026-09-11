@@ -96,6 +96,7 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   use Mix.Task
 
+  alias Ragex.Analysis.Exclusions
   alias Ragex.Analysis.Runner
   alias Ragex.Git.Diff
   alias Ragex.MCP.{Client, Delegate}
@@ -211,12 +212,12 @@ defmodule Mix.Tasks.Ragex.Analyze do
             errors: []
           })
 
-        exclusions = Ragex.Analysis.Exclusions.load(config)
+        exclusions = Exclusions.load(config)
 
         results =
           remote_result
           |> Map.get(:results, %{})
-          |> Ragex.Analysis.Exclusions.filter_results(exclusions)
+          |> Exclusions.filter_results(exclusions)
 
         # Feed into the existing report/output/summary pipeline
         report = generate_report(config, analyze_result, results)

@@ -14,6 +14,8 @@ defmodule Ragex.Analysis.Runner do
     DeadCode,
     DependencyGraph,
     Duplication,
+    Exclusions,
+    MetaCredoBridge,
     Quality,
     Security,
     Smells
@@ -96,7 +98,7 @@ defmodule Ragex.Analysis.Runner do
   def run_all(config, opts \\ []) do
     analyses = config.analyses
     on_progress = Keyword.get(opts, :on_progress, fn _key, _phase -> :ok end)
-    exclusions = Ragex.Analysis.Exclusions.load(config)
+    exclusions = Exclusions.load(config)
 
     %{}
     |> maybe_run(:security, analyses, on_progress, fn -> run_security(config) end)
@@ -113,7 +115,7 @@ defmodule Ragex.Analysis.Runner do
     |> maybe_run(:unused_modules, analyses, on_progress, fn -> run_unused_modules() end)
     |> maybe_run(:coupling, analyses, on_progress, fn -> run_coupling() end)
     |> filter_results_by_switches(config)
-    |> Ragex.Analysis.Exclusions.filter_results(exclusions)
+    |> Exclusions.filter_results(exclusions)
   end
 
   # Private functions
@@ -461,13 +463,13 @@ defmodule Ragex.Analysis.Runner do
         vulns = Map.get(issue, :vulnerabilities, [])
         cat = issue[:category] || issue["category"]
 
-        (no_db? and Ragex.Analysis.MetaCredoBridge.db_check?(cat)) or
-          (no_user? and Ragex.Analysis.MetaCredoBridge.user_check?(cat)) or
+        (no_db? and MetaCredoBridge.db_check?(cat)) or
+          (no_user? and MetaCredoBridge.user_check?(cat)) or
           Enum.all?(vulns, fn v ->
             v_cat = Map.get(v, :category) || Map.get(v, :type)
 
-            (no_db? and Ragex.Analysis.MetaCredoBridge.db_check?(v_cat)) or
-              (no_user? and Ragex.Analysis.MetaCredoBridge.user_check?(v_cat))
+            (no_db? and MetaCredoBridge.db_check?(v_cat)) or
+              (no_user? and MetaCredoBridge.user_check?(v_cat))
           end)
       end)
 
@@ -488,11 +490,11 @@ defmodule Ragex.Analysis.Runner do
           Enum.reject(issues, fn issue ->
             analyzer = issue[:analyzer] || issue["analyzer"]
 
-            (no_db? and Ragex.Analysis.MetaCredoBridge.db_check?(analyzer)) or
-              (no_user? and Ragex.Analysis.MetaCredoBridge.user_check?(analyzer))
+            (no_db? and MetaCredoBridge.db_check?(analyzer)) or
+              (no_user? and MetaCredoBridge.user_check?(analyzer))
           end)
 
-        %{file_res | issues: filtered_issues, has_issues?: length(filtered_issues) > 0}
+        %{file_res | issues: filtered_issues, has_issues?: match?([_ | _], filtered_issues)}
       end)
 
     total_issues =
