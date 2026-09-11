@@ -383,8 +383,12 @@ defmodule Ragex.MCP.SocketServer do
   end
 
   defp result_to_json(value) when is_map(value) do
-    Map.new(value, fn {k, v} -> {k, result_to_json(v)} end)
+    Map.new(value, fn {k, v} -> {to_json_key(k), result_to_json(v)} end)
   end
 
   defp result_to_json(value), do: value
+
+  defp to_json_key(key) when is_binary(key), do: key
+  defp to_json_key(key) when is_atom(key), do: key
+  defp to_json_key(key), do: result_to_json(key) |> to_string()
 end

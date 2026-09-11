@@ -46,6 +46,7 @@ local state = {
   kind = nil,          -- "socket" | "stdio" | nil
   job_id = nil,        -- vim job id (both transports use jobstart)
   generation = 0,      -- bumped on every (re)connect; guards stale callbacks
+  close_epoch = 0,     -- bumped only by M.close(); guards in-flight connects
   next_id = 1,
   pending = {},        -- id -> { cb, timer, started_at, tool }
   subscribers = {},    -- id -> { on_chunk }
@@ -447,9 +448,39 @@ local function ensure_connected(cb)
   end
 
   state.starting = true
+  -- Snapshot the close epoch this attempt belongs to. `start_socket` and
+  -- `start_stdio` mutate `state.job_id`/`state.ready` as soon as a job
+  -- spawns successfully -- *before* the connection is confirmed usable.
+  -- If `M.close()` runs while this attempt is still in flight (e.g.
+  -- Neovim starts exiting while we're still probing a socket or booting
+  -- a fresh stdio server), nothing would otherwise stop the attempt from
+  -- completing *after* close() already returned, silently leaving a
+  -- brand-new job (potentially a whole `mix run` BEAM VM) running with no
+  -- autocmd left to ever stop it -- exactly the scenario that makes `:q`
+  -- hang until the user resorts to `:noa q`.
+  local my_close_epoch = state.close_epoch
 
   local function done(ok, err)
     state.starting = false
+
+    if state.close_epoch ~= my_close_epoch then
+      -- Superseded by a close() that happened mid-connect. Tear down
+      -- whatever this attempt just spawned instead of leaking it, and
+      -- report failure to the original caller.
+      if ok and state.job_id then
+        pcall(vim.fn.jobstop, state.job_id)
+        reset_connection()
+      end
+      cb(false, err or { kind = "stale", message = "connection attempt superseded by close()" })
+      return
+    end
+
+    if ok then
+      -- A fresh, non-stale connection just succeeded, so we're clearly not
+      -- mid editor-shutdown. Safe to let future failures notify again.
+      state.exiting = false
+    end
+
     cb(ok, err)
   end
 
@@ -646,6 +677,7 @@ end
 --- Close the active connection and fail outstanding requests.
 function M.close()
   state.exiting = true
+  state.close_epoch = (state.close_epoch or 0) + 1
   if state.starting_timer then
     pcall(vim.fn.timer_stop, state.starting_timer)
     state.starting_timer = nil

@@ -293,7 +293,17 @@ function M.analyze_directory(path, opts)
   opts = opts or {}
   local exclude = opts.exclude_patterns or { ".ragex", "dllb*", ".git", "_build", "deps", "node_modules", "target" }
 
-  M.update_statusline("Ȝ ragex [Indexing...]")
+  -- The very first request of a session may have to boot a whole fresh
+  -- ragex-mcp server first (compile, load the embedding model, start
+  -- dllb) before it can process anything at all -- that can legitimately
+  -- take anywhere from a few seconds to a couple of minutes and is easily
+  -- mistaken for a hang if the statusline just says "Indexing..." the
+  -- whole time. Say so explicitly while we're not connected yet.
+  if require("ragex.client").is_connected() then
+    M.update_statusline("Ȝ ragex [Indexing...]")
+  else
+    M.update_statusline("Ȝ ragex [Starting server...]")
+  end
 
   require("ragex.tools.run").run("analyze_directory", {
     path = path,
@@ -314,7 +324,23 @@ function M.analyze_directory(path, opts)
     end,
     on_result = function(data, err)
       if err then
-        M.update_statusline("Ȝ ragex [Error]")
+        -- `ragex.tools.run` already notifies with the raw error message; add
+        -- context here since a timeout during startup usually means a
+        -- stale/orphaned ragex-mcp or dllb-server process from a previous
+        -- crash is wedged and holding the port/db lock, not that this
+        -- request is simply slow.
+        local label = (err.kind == "timeout") and "Timed out" or "Error"
+        M.update_statusline(string.format("Ȝ ragex [%s]", label))
+        if err.kind == "timeout" then
+          vim.schedule(function()
+            require("ragex.ui").notify(
+              "analyze_directory timed out -- if this keeps happening, a stale/orphaned "
+                .. "ragex-mcp or dllb-server process from a previous crash may be wedged; "
+                .. "check `ps aux | grep -E 'ragex-mcp|dllb-server'`",
+              vim.log.levels.WARN
+            )
+          end)
+        end
       else
         M.update_statusline("Ȝ ragex")
         local count = data and (data.success or data.analyzed or data.total) or 0
@@ -450,6 +476,7 @@ function M.code_review(base_branch)
       require("ragex.rag").stream("rag_query", {
         query = prompt,
         limit = 20,
+        threshold = M.config.search.threshold or 0.2,
         include_code = true,
       }, {
         title = string.format("Ragex: PR Code Review (vs %s)", base),

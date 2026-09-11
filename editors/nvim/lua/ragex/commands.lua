@@ -73,7 +73,7 @@ end
 --- Show a summary of the connection + graph asynchronously.
 function M.status()
   client.call_tool("graph_stats", {}, {
-    timeout = 8000,
+    timeout = catalog.timeouts.fast,
     callback = function(result, err)
       if err then
         ui.notify("not connected: " .. response.error_message(err), vim.log.levels.WARN)

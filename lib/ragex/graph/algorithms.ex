@@ -575,12 +575,14 @@ defmodule Ragex.Graph.Algorithms do
             id = unwrap_dllb_value(row["id"])
             in_deg = unwrap_dllb_value(row["in_degree"]) || 0
             out_deg = unwrap_dllb_value(row["out_degree"]) || 0
+            raw_score = unwrap_dllb_value(row["score"]) || unwrap_dllb_value(row["degree"]) || 0
+            tot_deg = if in_deg + out_deg > 0, do: in_deg + out_deg, else: trunc(raw_score)
 
             {id,
              %{
                in_degree: in_deg,
                out_degree: out_deg,
-               total_degree: in_deg + out_deg
+               total_degree: tot_deg
              }}
           end)
 

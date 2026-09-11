@@ -434,7 +434,7 @@ defmodule Ragex.Dllb.ProjectManager do
   # exclusive lock is still held by the still-running orphan.
   defp adopt_if_alive(project_path, db_path, instance_file) do
     case read_instance_file(instance_file) do
-      {:ok, port} ->
+      {:ok, port, os_pid} ->
         if server_reachable?(port) do
           Logger.info(
             "Found already-running dllb-server for #{project_path} on port #{port} " <>
@@ -453,10 +453,25 @@ defmodule Ragex.Dllb.ProjectManager do
               :none
           end
         else
-          Logger.debug(
-            "Stale dllb instance file for #{project_path} (port #{port} unreachable); removing."
+          # `server_reachable?/1` performs a real protocol handshake, so
+          # this is not merely "the socket file is stale" -- it means a
+          # process is still bound to `port` (and thus still holding the
+          # redb file's exclusive lock) but isn't completing the dllb wire
+          # protocol. That's exactly what an orphan left behind by an
+          # ungracefully-killed BEAM VM (e.g. one force-killed after an
+          # editor's `:q` hung waiting on it) looks like: it never got the
+          # chance to run `do_stop_instance/1`, so the OS process is still
+          # running, possibly wedged mid-transaction. Reap it before
+          # spawning a replacement, otherwise the replacement's bind/lock
+          # attempt against the same db file and (likely) the same port
+          # will itself hang or fail.
+          Logger.warning(
+            "Stale dllb-server instance for #{project_path} on port #{port} did not " <>
+              "complete the dllb handshake (likely orphaned by an ungraceful shutdown); " <>
+              "terminating pid #{inspect(os_pid)} and removing #{instance_file}."
           )
 
+          kill_stale_process(os_pid)
           File.rm(instance_file)
           :none
         end
@@ -464,6 +479,20 @@ defmodule Ragex.Dllb.ProjectManager do
       :error ->
         :none
     end
+  end
+
+  defp kill_stale_process(nil), do: :ok
+
+  defp kill_stale_process(os_pid) do
+    System.cmd("kill", ["-9", to_string(os_pid)], stderr_to_stdout: true)
+    # Give the OS a brief moment to actually release the port/file lock
+    # before the caller tries to bind/open them again.
+    Process.sleep(200)
+    :ok
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 
   defp spawn_and_attach(project_path, port, db_path, instance_file) do
@@ -641,8 +670,8 @@ defmodule Ragex.Dllb.ProjectManager do
 
   defp read_instance_file(path) do
     with {:ok, content} <- File.read(path),
-         {:ok, %{"port" => port}} when is_integer(port) <- safe_json_decode(content) do
-      {:ok, port}
+         {:ok, %{"port" => port} = decoded} when is_integer(port) <- safe_json_decode(content) do
+      {:ok, port, Map.get(decoded, "os_pid")}
     else
       _ -> :error
     end
@@ -666,10 +695,21 @@ defmodule Ragex.Dllb.ProjectManager do
   # Liveness / output helpers
   # ---------------------------------------------------------------------------
 
+  # A bare TCP `connect/4` only proves the OS accepted the connection into
+  # the listen backlog -- it says nothing about whether the dllb-server on
+  # the other end is actually alive and processing requests. An orphaned
+  # instance (left running by a BEAM VM that got force-killed, e.g. after
+  # an editor's `:q` had to be forced because it was waiting on this exact
+  # dllb-server) can be perfectly happy to accept new sockets while wedged
+  # internally -- for example holding a dangling redb write-lock from an
+  # in-flight transaction whose client vanished mid-request. Performing the
+  # real `OUTCOME` handshake (the same one `Dllb.Connection.connect/1` uses
+  # for every real pool worker) with a short timeout catches that case
+  # instead of adopting a server that will hang every future query.
   defp server_reachable?(port) do
-    case :gen_tcp.connect(~c"127.0.0.1", port, [:binary, active: false], 300) do
+    case Dllb.Connection.connect(host: "127.0.0.1", port: port, timeout: 1500) do
       {:ok, socket} ->
-        :gen_tcp.close(socket)
+        Dllb.Connection.close(socket)
         true
 
       {:error, _} ->

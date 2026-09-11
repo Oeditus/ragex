@@ -140,7 +140,7 @@ defmodule Ragex.RAG.Pipeline do
 
   defp retrieve(query, opts) do
     limit = Keyword.get(opts, :limit, 10)
-    threshold = Keyword.get(opts, :threshold, 0.7)
+    threshold = Keyword.get(opts, :threshold, 0.2)
     strategy = Keyword.get(opts, :strategy, :fusion)
     rerank = Keyword.get(opts, :rerank, false)
 
@@ -162,7 +162,12 @@ defmodule Ragex.RAG.Pipeline do
         {:ok, final_results}
 
       {:ok, []} ->
-        {:error, :no_results_found}
+        if threshold > 0.0 do
+          opts_relaxed = Keyword.put(opts, :threshold, 0.0)
+          retrieve(query, opts_relaxed)
+        else
+          {:error, :no_results_found}
+        end
 
       {:error, reason} ->
         {:error, reason}

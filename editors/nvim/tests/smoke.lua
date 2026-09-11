@@ -58,7 +58,7 @@ check("catalog has no duplicate tool names", dup == nil, dup)
 
 -- 5. Live round-trip (best effort).
 local client = require("ragex.client")
-local result, err = client.call_tool_sync("graph_stats", {}, 15000)
+local result, err = client.call_tool_sync("graph_stats", {}, 25000)
 if err then
   print("warn - live call skipped: " .. require("ragex.response").error_message(err))
 else

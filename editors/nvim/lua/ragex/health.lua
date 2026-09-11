@@ -47,7 +47,7 @@ function M.check()
   end
 
   -- live connectivity probe
-  local result, err = client.call_tool_sync("graph_stats", {}, 8000)
+  local result, err = client.call_tool_sync("graph_stats", {}, 15000)
   if err then
     health.warn("Could not reach Ragex server: " .. require("ragex.response").error_message(err))
   else

@@ -140,7 +140,7 @@ defmodule Ragex.Retrieval.Hybrid do
 
   defp semantic_first_search(query, opts) do
     limit = Keyword.get(opts, :limit, 10)
-    threshold = Keyword.get(opts, :threshold, 0.7)
+    threshold = Keyword.get(opts, :threshold, 0.2)
     node_type = Keyword.get(opts, :node_type)
     graph_filter = Keyword.get(opts, :graph_filter, %{})
     use_hyde = Keyword.get(opts, :hyde, false)
@@ -199,8 +199,8 @@ defmodule Ragex.Retrieval.Hybrid do
 
   defp graph_first_search(query, opts) do
     limit = Keyword.get(opts, :limit, 10)
-    # Lower threshold for graph-first
-    threshold = Keyword.get(opts, :threshold, 0.5)
+    # Threshold for graph-first
+    threshold = Keyword.get(opts, :threshold, 0.2)
     graph_filter = Keyword.get(opts, :graph_filter, %{})
 
     # Generate query embedding
