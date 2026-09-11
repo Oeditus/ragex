@@ -661,7 +661,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp github_lines_for(:complexity, %{complex_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      file = format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+      file =
+        format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+
       line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
       cc = Map.get(f, :cyclomatic_complexity) || Map.get(f, :complexity) || 0
       "::warning file=#{file},line=#{line}::COMPLEXITY #{format_func_name(f)} cyclomatic=#{cc}"
@@ -670,7 +672,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp github_lines_for(:dead_code, %{dead_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      file = format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+      file =
+        format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+
       line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
       reason = Map.get(f, :reason, "unused function")
       "::notice file=#{file},line=#{line}::DEAD_CODE #{format_func_name(f)}: #{reason}"
@@ -757,7 +761,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp ci_lines_for(:complexity, %{complex_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      file = format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+      file =
+        format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+
       line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
       cc = Map.get(f, :cyclomatic_complexity) || Map.get(f, :complexity) || 0
 
@@ -809,7 +815,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   defp ci_lines_for(:dead_code, %{dead_functions: funcs}) do
     Enum.map(funcs, fn f ->
-      file = format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+      file =
+        format_file_path(Map.get(f, :file) || Map.get(f, :path) || get_in(f, [:metadata, :file]))
+
       line = Map.get(f, :line) || get_in(f, [:metadata, :line]) || 1
       reason = Map.get(f, :reason, "unused function")
 

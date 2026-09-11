@@ -201,10 +201,18 @@ defmodule Ragex.Analysis.ExclusionsTest do
     end
 
     test "matches 1-tuple project-wide rule exclusion on any file and line" do
-      exclusions = Exclusions.parse_config_result([{"missing_error_handling"}, {"n_plus_one_query"}])
+      exclusions =
+        Exclusions.parse_config_result([{"missing_error_handling"}, {"n_plus_one_query"}])
 
       assert Exclusions.excluded?("lib/any/file.ex", 123, :missing_error_handling, exclusions)
-      assert Exclusions.excluded?("test/smells_test.exs", 45, "missing_error_handling", exclusions)
+
+      assert Exclusions.excluded?(
+               "test/smells_test.exs",
+               45,
+               "missing_error_handling",
+               exclusions
+             )
+
       assert Exclusions.excluded?("web/router.ex", 1, :n_plus_one_query, exclusions)
 
       refute Exclusions.excluded?("lib/any/file.ex", 123, :other_rule, exclusions)

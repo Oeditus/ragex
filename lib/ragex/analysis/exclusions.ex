@@ -109,14 +109,18 @@ defmodule Ragex.Analysis.Exclusions do
     [%Exclusion{file: nil, line: nil, rule: normalize_rule(rule), raw: {rule}}]
   end
 
-  # 2-tuple with wildcard file: {"*", "missing_error_handling"} or {nil, "missing_error_handling"} or {:all, "missing_error_handling"}
+  # 2-tuple with wildcard file, one of:
+  #   - {"*", "missing_error_handling"}
+  #   - {nil, "missing_error_handling"}
+  #   - {:all, "missing_error_handling"}
   def parse_exclusion_item({file, rule})
-      when (is_nil(file) or file in ["*", "_", :all, "all"]) and (is_binary(rule) or is_atom(rule)) do
+      when (is_nil(file) or file in ["*", "_", :all, "all"]) and
+             (is_binary(rule) or is_atom(rule)) do
     [%Exclusion{file: nil, line: nil, rule: normalize_rule(rule), raw: {file, rule}}]
   end
 
   def parse_exclusion_item({location_str, rule}) when is_binary(location_str) do
-    if is_wildcard_file?(location_str) do
+    if wildcard_file?(location_str) do
       [%Exclusion{file: nil, line: nil, rule: normalize_rule(rule), raw: {location_str, rule}}]
     else
       {file, line} = parse_location_string(location_str)
@@ -125,8 +129,9 @@ defmodule Ragex.Analysis.Exclusions do
   end
 
   def parse_exclusion_item({location_str, line, rule})
-      when (is_binary(location_str) or is_nil(location_str)) and (is_integer(line) or is_nil(line)) do
-    file = if is_wildcard_file?(location_str), do: nil, else: normalize_file_path(location_str)
+      when (is_binary(location_str) or is_nil(location_str)) and
+             (is_integer(line) or is_nil(line)) do
+    file = if wildcard_file?(location_str), do: nil, else: normalize_file_path(location_str)
 
     [
       %Exclusion{
@@ -145,7 +150,7 @@ defmodule Ragex.Analysis.Exclusions do
 
   # Location string or bare rule string
   def parse_exclusion_item(location_str) when is_binary(location_str) do
-    if is_rule_name_only?(location_str) do
+    if rule_name_only?(location_str) do
       [%Exclusion{file: nil, line: nil, rule: normalize_rule(location_str), raw: location_str}]
     else
       {file, line} = parse_location_string(location_str)
@@ -155,13 +160,13 @@ defmodule Ragex.Analysis.Exclusions do
 
   def parse_exclusion_item(_), do: []
 
-  defp is_wildcard_file?(nil), do: true
-  defp is_wildcard_file?("*"), do: true
-  defp is_wildcard_file?("all"), do: true
-  defp is_wildcard_file?("_"), do: true
-  defp is_wildcard_file?(_), do: false
+  defp wildcard_file?(nil), do: true
+  defp wildcard_file?("*"), do: true
+  defp wildcard_file?("all"), do: true
+  defp wildcard_file?("_"), do: true
+  defp wildcard_file?(_), do: false
 
-  defp is_rule_name_only?(str) when is_binary(str) do
+  defp rule_name_only?(str) when is_binary(str) do
     not String.contains?(str, ["/", "\\", ".ex", ".exs", ".js", ".py", ".rb", ".erl", ":"]) and
       not File.exists?(str)
   end

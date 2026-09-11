@@ -44,9 +44,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
-            mix ragex.ci --base ${{ github.base_ref }} --format github
+            mix ragex.ci --no-db --no-user --base ${{ github.base_ref }} --format github
           else
-            mix ragex.ci --base HEAD~1 --format github
+            mix ragex.ci --no-db --no-user --base HEAD~1 --format github
           fi
 
       - name: Dogfood full-codebase self-analysis (non-blocking)
@@ -57,4 +57,4 @@ jobs:
         # single diff ever touches at once) as GitHub annotations for triage.
         # See the Ragex Codebase Health & Architecture Improvement Plan.
         if: always()
-        run: mix ragex.analyze --path lib --format github --verbose
+        run: mix ragex.analyze --no-db --no-user --path lib --format github --verbose

@@ -112,7 +112,7 @@ jobs:
       run: cd priv/js_parser && npm ci
 
     - name: Run diff analysis
-      run: mix ragex.ci --base origin/${{ github.base_ref }} --format github
+      run: mix ragex.ci --no-db --no-user --base origin/${{ github.base_ref }} --format github
 
   ci:
     name: CI
