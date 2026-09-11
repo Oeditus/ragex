@@ -96,6 +96,7 @@ defmodule Ragex.Analysis.Runner do
   def run_all(config, opts \\ []) do
     analyses = config.analyses
     on_progress = Keyword.get(opts, :on_progress, fn _key, _phase -> :ok end)
+    exclusions = Ragex.Analysis.Exclusions.load(config)
 
     %{}
     |> maybe_run(:security, analyses, on_progress, fn -> run_security(config) end)
@@ -111,6 +112,8 @@ defmodule Ragex.Analysis.Runner do
     |> maybe_run(:unstable_modules, analyses, on_progress, fn -> run_unstable_modules(config) end)
     |> maybe_run(:unused_modules, analyses, on_progress, fn -> run_unused_modules() end)
     |> maybe_run(:coupling, analyses, on_progress, fn -> run_coupling() end)
+    |> filter_results_by_switches(config)
+    |> Ragex.Analysis.Exclusions.filter_results(exclusions)
   end
 
   # Private functions
@@ -148,7 +151,13 @@ defmodule Ragex.Analysis.Runner do
   defp extract_issue_count(_), do: 0
 
   defp run_security(config) do
-    case Security.analyze_directory(config.path, severity: config.severity) do
+    opts = [
+      severity: config.severity,
+      no_db: Map.get(config, :no_db, false),
+      no_user: Map.get(config, :no_user, false)
+    ]
+
+    case Security.analyze_directory(config.path, opts) do
       {:ok, issues} -> %{issues: issues}
       {:error, _} -> %{issues: []}
     end
@@ -164,7 +173,13 @@ defmodule Ragex.Analysis.Runner do
 
     min_severity = Map.get(severity_map, config.severity, :medium)
 
-    case BusinessLogic.analyze_directory(config.path, min_severity: min_severity) do
+    opts = [
+      min_severity: min_severity,
+      no_db: Map.get(config, :no_db, false),
+      no_user: Map.get(config, :no_user, false)
+    ]
+
+    case BusinessLogic.analyze_directory(config.path, opts) do
       {:ok, result} -> result
       {:error, _} -> %{total_files: 0, files_with_issues: 0, total_issues: 0, results: []}
     end
@@ -179,7 +194,12 @@ defmodule Ragex.Analysis.Runner do
 
   @dialyzer {:nowarn_function, run_smells: 1}
   defp run_smells(config) do
-    case Smells.detect_smells(config.path) do
+    opts = [
+      no_db: Map.get(config, :no_db, false),
+      no_user: Map.get(config, :no_user, false)
+    ]
+
+    case Smells.detect_smells(config.path, opts) do
       {:ok, smells} -> %{smells: smells}
       {:error, _} -> %{smells: []}
     end
@@ -417,4 +437,76 @@ defmodule Ragex.Analysis.Runner do
         String.ends_with?(path, "/" <> f) or String.ends_with?(f, "/" <> path) or path == f
       end)
   end
+
+  @doc """
+  Filters analysis results based on `no_db` and `no_user` flags in config.
+  """
+  @spec filter_results_by_switches(map(), map()) :: map()
+  def filter_results_by_switches(results, config) do
+    no_db? = Map.get(config, :no_db, false)
+    no_user? = Map.get(config, :no_user, false)
+
+    if not no_db? and not no_user? do
+      results
+    else
+      Map.new(results, fn {type, data} ->
+        {type, filter_type_by_switches(type, data, no_db?, no_user?)}
+      end)
+    end
+  end
+
+  defp filter_type_by_switches(:security, %{issues: issues} = data, no_db?, no_user?) do
+    filtered =
+      Enum.reject(issues, fn issue ->
+        vulns = Map.get(issue, :vulnerabilities, [])
+        cat = issue[:category] || issue["category"]
+
+        (no_db? and Ragex.Analysis.MetaCredoBridge.db_check?(cat)) or
+          (no_user? and Ragex.Analysis.MetaCredoBridge.user_check?(cat)) or
+          Enum.all?(vulns, fn v ->
+            v_cat = Map.get(v, :category) || Map.get(v, :type)
+
+            (no_db? and Ragex.Analysis.MetaCredoBridge.db_check?(v_cat)) or
+              (no_user? and Ragex.Analysis.MetaCredoBridge.user_check?(v_cat))
+          end)
+      end)
+
+    %{data | issues: filtered}
+  end
+
+  defp filter_type_by_switches(
+         :business_logic,
+         %{results: file_results} = data,
+         no_db?,
+         no_user?
+       ) do
+    filtered_file_results =
+      Enum.map(file_results, fn file_res ->
+        issues = Map.get(file_res, :issues, [])
+
+        filtered_issues =
+          Enum.reject(issues, fn issue ->
+            analyzer = issue[:analyzer] || issue["analyzer"]
+
+            (no_db? and Ragex.Analysis.MetaCredoBridge.db_check?(analyzer)) or
+              (no_user? and Ragex.Analysis.MetaCredoBridge.user_check?(analyzer))
+          end)
+
+        %{file_res | issues: filtered_issues, has_issues?: length(filtered_issues) > 0}
+      end)
+
+    total_issues =
+      Enum.reduce(filtered_file_results, 0, fn r, acc -> acc + length(r.issues) end)
+
+    files_with_issues = Enum.count(filtered_file_results, & &1.has_issues?)
+
+    %{
+      data
+      | results: filtered_file_results,
+        total_issues: total_issues,
+        files_with_issues: files_with_issues
+    }
+  end
+
+  defp filter_type_by_switches(_type, data, _no_db?, _no_user?), do: data
 end

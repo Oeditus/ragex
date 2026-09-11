@@ -54,6 +54,8 @@ defmodule Mix.Tasks.Ragex.Analyze do
     * `--diff` - Diff mode: analyze only files changed between --base and --head (implies --ci)
     * `--base REF` - Base git ref for diff mode (default: origin/main)
     * `--head REF` - Head git ref for diff mode (default: HEAD)
+    * `--no-db` - Exclude DB-related checks and reports
+    * `--no-user` - Exclude user-input-related checks and reports
 
   ## Examples
 
@@ -105,7 +107,13 @@ defmodule Mix.Tasks.Ragex.Analyze do
 
   @impl Mix.Task
   def run(args) do
-    # Parse options early to check format and decide whether to start MCP server
+    args =
+      Enum.map(args, fn
+        "--no_db" -> "--no-db"
+        "--no_user" -> "--no-user"
+        other -> other
+      end)
+
     {opts, _, _} =
       OptionParser.parse(args,
         strict: [
@@ -137,7 +145,11 @@ defmodule Mix.Tasks.Ragex.Analyze do
           strict: :boolean,
           diff: :boolean,
           base: :string,
-          head: :string
+          head: :string,
+          no_db: :boolean,
+          no_user: :boolean,
+          ragex_config: :string,
+          config: :string
         ]
       )
 
@@ -199,7 +211,12 @@ defmodule Mix.Tasks.Ragex.Analyze do
             errors: []
           })
 
-        results = Map.get(remote_result, :results, %{})
+        exclusions = Ragex.Analysis.Exclusions.load(config)
+
+        results =
+          remote_result
+          |> Map.get(:results, %{})
+          |> Ragex.Analysis.Exclusions.filter_results(exclusions)
 
         # Feed into the existing report/output/summary pipeline
         report = generate_report(config, analyze_result, results)
@@ -376,6 +393,9 @@ defmodule Mix.Tasks.Ragex.Analyze do
       god_threshold: Keyword.get(opts, :god_threshold, 15),
       instability_threshold: Keyword.get(opts, :instability_threshold, 0.8),
       with_empty: Keyword.get(opts, :with_empty, false),
+      no_db: Keyword.get(opts, :no_db, false),
+      no_user: Keyword.get(opts, :no_user, false),
+      ragex_config: Keyword.get(opts, :ragex_config) || Keyword.get(opts, :config),
       analyses: %{
         security: resolve.(:security),
         business_logic: resolve.(:business_logic),
@@ -662,7 +682,15 @@ defmodule Mix.Tasks.Ragex.Analyze do
     all =
       case smells do
         %{results: results} when is_list(results) ->
-          Enum.flat_map(results, &Map.get(&1, :smells, []))
+          Enum.flat_map(results, fn file_result ->
+            file_path = Map.get(file_result, :path)
+
+            file_result
+            |> Map.get(:smells, [])
+            |> Enum.map(fn smell ->
+              Map.put_new(smell, :file, file_path)
+            end)
+          end)
 
         list when is_list(list) ->
           list
@@ -671,7 +699,20 @@ defmodule Mix.Tasks.Ragex.Analyze do
           []
       end
 
-    Enum.map(all, fn s -> "SMELL: #{s[:type]} (#{s[:severity]})" end)
+    Enum.map(all, fn s ->
+      file = s[:file] || get_in(s, [:location, :file])
+      line = s[:line] || get_in(s, [:location, :line])
+
+      loc =
+        cond do
+          file && line -> " #{file}:#{line}"
+          file -> " #{file}"
+          true -> ""
+        end
+
+      desc = if s[:description], do: " - #{s[:description]}", else: ""
+      "SMELL: #{s[:type]} (#{s[:severity]})#{loc}#{desc}"
+    end)
   end
 
   defp ci_lines_for(:duplicates, %{duplicates: dups}) do

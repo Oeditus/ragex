@@ -112,7 +112,8 @@ defmodule Ragex.Analysis.Smells do
 
     case MetaCredoBridge.parse_file(path) do
       {:ok, source_file} ->
-        issues = MetaCredoBridge.run_checks(source_file, @smell_checks)
+        checks = MetaCredoBridge.filter_checks(@smell_checks, opts)
+        issues = MetaCredoBridge.run_checks(source_file, checks)
         {:ok, format_result_from_issues(path, language, issues)}
 
       {:error, reason} = error ->

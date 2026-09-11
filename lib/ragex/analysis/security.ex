@@ -98,7 +98,11 @@ defmodule Ragex.Analysis.Security do
 
     case MetaCredoBridge.parse_file(path) do
       {:ok, source_file} ->
-        checks = MetaCredoBridge.filter_enabled_checks(@security_checks)
+        checks =
+          @security_checks
+          |> MetaCredoBridge.filter_enabled_checks()
+          |> MetaCredoBridge.filter_checks(opts)
+
         issues = MetaCredoBridge.run_checks(source_file, checks)
         result = build_result_from_issues(path, language, issues, min_severity, categories)
         {:ok, result}

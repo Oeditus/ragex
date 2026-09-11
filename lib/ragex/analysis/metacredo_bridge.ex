@@ -82,6 +82,93 @@ defmodule Ragex.Analysis.MetaCredoBridge do
     Enum.reject(checks, fn {mod, _} -> mod in disabled_modules end)
   end
 
+  @doc """
+  Filters a list of check tuples `{check_module, params}` or modules based on `no_db` and `no_user` options.
+  """
+  @spec filter_checks(list(), keyword() | map()) :: list()
+  def filter_checks(checks, opts) when is_list(checks) do
+    no_db? = (opts[:no_db] && true) || false
+    no_user? = (opts[:no_user] && true) || false
+
+    checks =
+      if no_db? do
+        Enum.reject(checks, fn
+          {mod, _} -> db_check?(mod)
+          mod when is_atom(mod) -> db_check?(mod)
+        end)
+      else
+        checks
+      end
+
+    if no_user? do
+      Enum.reject(checks, fn
+        {mod, _} -> user_check?(mod)
+        mod when is_atom(mod) -> user_check?(mod)
+      end)
+    else
+      checks
+    end
+  end
+
+  @doc """
+  Returns true if the check module or analyzer atom is DB-related.
+  """
+  @spec db_check?(module() | atom()) :: boolean()
+  def db_check?(mod) when is_atom(mod) do
+    tags = if function_exported?(mod, :tags, 0), do: mod.tags(), else: []
+
+    :db in tags or
+      mod in [:n_plus_one_query, :missing_preload, :sql_injection, :inefficient_filter] or
+      String.contains?(to_string(mod), [
+        "SQLInjection",
+        "NPlusOneQuery",
+        "MissingPreload",
+        "Database"
+      ])
+  end
+
+  def db_check?(_), do: false
+
+  @doc """
+  Returns true if the check module or analyzer atom is user-input-related.
+  """
+  @spec user_check?(module() | atom()) :: boolean()
+  def user_check?(mod) when is_atom(mod) do
+    tags = if function_exported?(mod, :tags, 0), do: mod.tags(), else: []
+
+    :user in tags or :user_input in tags or
+      mod in [
+        :xss_vulnerability,
+        :ssrf_vulnerability,
+        :path_traversal,
+        :insecure_direct_object_reference,
+        :missing_authentication,
+        :missing_authorization,
+        :incorrect_authorization,
+        :missing_csrf_protection,
+        :sensitive_data_exposure,
+        :unrestricted_file_upload,
+        :improper_input_validation,
+        :inline_javascript
+      ] or
+      String.contains?(to_string(mod), [
+        "InputValidation",
+        "XSS",
+        "CSRF",
+        "PathTraversal",
+        "DirectObjectReference",
+        "FileUpload",
+        "SSRF",
+        "SensitiveData",
+        "InlineJavascript",
+        "Authentication",
+        "Authorization",
+        "ParameterPatternMatching"
+      ])
+  end
+
+  def user_check?(_), do: false
+
   # -- Issue conversion: Business Logic --
 
   @doc """

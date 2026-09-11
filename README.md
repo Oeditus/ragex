@@ -605,6 +605,98 @@ config :ragex, :auto_analyze_dirs, [
 
 This pre-loads your frequently used codebases into the knowledge graph, making them immediately available for querying. See [CONFIGURATION](stuff/docs/CONFIGURATION.md#auto-analyze-directories) for details.
 
+### Suppressing Ragex Findings
+
+Findings from `mix ragex.analyze` and `mix ragex.ci` (which also runs MetaCredo) can be suppressed using inline comments, configuration files, or CLI flags.
+
+#### 1. Inline Comments
+
+Suppress findings directly at the code site using standard Credo-style directives:
+
+```elixir
+# Suppress a specific check on the next line
+# credo:disable-for-next-line MetaCredo.Check.Security.HardcodedValue
+api_endpoint = "https://internal-service.local/api"
+
+# Suppress all findings on the next line
+# credo:disable-for-next-line
+refactored_result = risky_operation()
+
+# Suppress a check for the entire file
+# credo:disable-for-this-file MetaCredo.Check.Readability.LongFunction
+
+# Suppress a check for a range of lines
+# credo:disable-for-lines:20 Credo.Check.Refactor.CyclomaticComplexity
+
+# Suppress via module attribute
+@credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
+def complex_function do
+  # ...
+end
+```
+
+#### 2. Configuration Files
+
+* **`.ragex.exs`** (Dedicated Ragex Exclusions Configuration):  
+  Create a `.ragex.exs` file in your project root to exclude specific findings by line number or rule:
+  ```elixir
+  [
+    {"lib/ragex/analyzers/directory.ex:248", "long_parameter_list"},
+    {"lib/ragex/analyzers/directory.ex", 150, "cyclomatic_complexity"},
+    {"lib/my_app/legacy.ex", "magic_number"}
+  ]
+  ```
+  *(Can also be passed explicitly via `--ragex-config path/to/config.exs` or `RAGEX_CONFIG` env variable)*
+
+* **`.metacredo.exs`** (Project-wide check configuration):  
+  Disable specific checks globally or exclude directories:
+  ```elixir
+  %{
+    configs: [
+      %{
+        name: "default",
+        files: %{
+          included: ["lib/", "src/"],
+          excluded: [~r"/_build/", ~r"/deps/", ~r"lib/legacy/"]
+        },
+        checks: %{
+          enabled: :all,
+          disabled: [
+            {MetaCredo.Check.Security.HardcodedValue, []},
+            {MetaCredo.Check.Readability.LongFunction, []}
+          ]
+        }
+      }
+    ]
+  }
+  ```
+
+* **`config/config.exs`** (Ragex engine configuration):  
+  Tune or disable Ragex static analysis passes (e.g. dead code detection):
+  ```elixir
+  import Config
+
+  config :ragex, :analysis,
+    enable_dead_code_detection: true,
+    dead_code_min_confidence: 0.8  # Only report high-confidence dead code (0.0 to 1.0)
+  ```
+
+#### 3. Command Line Flags
+
+Filter findings dynamically on invocation:
+
+```bash
+# Exclude DB-related or user-input security checks
+mix ragex.ci --no-db --no-user
+mix ragex.analyze --no-db --no-user
+
+# Filter by minimum severity (low, medium, high, critical)
+mix ragex.analyze --severity high
+
+# Custom thresholds for complexity and god modules
+mix ragex.analyze --min-complexity 15 --god-threshold 20 --threshold 0.90
+```
+
 ### MCP Protocol Example
 
 Initialize the server:

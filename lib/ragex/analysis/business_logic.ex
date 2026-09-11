@@ -349,7 +349,7 @@ defmodule Ragex.Analysis.BusinessLogic do
 
     case MetaCredoBridge.parse_file(path) do
       {:ok, source_file} ->
-        checks = resolve_checks(analyzers)
+        checks = resolve_checks(analyzers, opts)
         issues = MetaCredoBridge.run_checks(source_file, checks)
         result = build_result(path, language, issues, min_severity)
         {:ok, result}
@@ -438,18 +438,23 @@ defmodule Ragex.Analysis.BusinessLogic do
   defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
 
   # Resolve analyzer names to MetaCredo check tuples [{module, params}]
-  defp resolve_checks(:all) do
-    Map.values(@analyzer_modules)
-    |> Enum.map(&{&1, []})
-    |> MetaCredoBridge.filter_enabled_checks()
-  end
+  defp resolve_checks(analyzers, opts) do
+    base_checks =
+      case analyzers do
+        :all ->
+          Map.values(@analyzer_modules)
+          |> Enum.map(&{&1, []})
 
-  defp resolve_checks(analyzer_names) when is_list(analyzer_names) do
-    analyzer_names
-    |> Enum.map(&Map.get(@analyzer_modules, &1))
-    |> Enum.reject(&is_nil/1)
-    |> Enum.map(&{&1, []})
+        analyzer_names when is_list(analyzer_names) ->
+          analyzer_names
+          |> Enum.map(&Map.get(@analyzer_modules, &1))
+          |> Enum.reject(&is_nil/1)
+          |> Enum.map(&{&1, []})
+      end
+
+    base_checks
     |> MetaCredoBridge.filter_enabled_checks()
+    |> MetaCredoBridge.filter_checks(opts)
   end
 
   defp build_result(path, language, mc_issues, min_severity) do

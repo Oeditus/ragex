@@ -38,6 +38,8 @@ defmodule Ragex.Application do
     # Base children that always start
     base_children =
       [
+        # Global task supervisor for supervised async operations
+        {Task.Supervisor, name: Ragex.TaskSupervisor},
         # Per-project dllb manager
         Ragex.Dllb.ProjectManager,
         # Graph store must start before MCP server

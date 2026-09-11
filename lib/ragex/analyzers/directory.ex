@@ -146,8 +146,10 @@ defmodule Ragex.Analyzers.Directory do
     Logger.info("Analyzing #{total_to_analyze} files (concurrency=#{max_concurrency})")
 
     results =
-      files_to_analyze
-      |> Task.async_stream(&analyze_and_store_file/1,
+      Task.Supervisor.async_stream(
+        Ragex.TaskSupervisor,
+        files_to_analyze,
+        &analyze_and_store_file/1,
         max_concurrency: max_concurrency,
         timeout: timeout,
         on_timeout: :kill_task
@@ -242,11 +244,13 @@ defmodule Ragex.Analyzers.Directory do
     find_files_recursive(path, 0, max_depth, exclude_patterns, [], path)
   end
 
+  # credo:disable-for-next-line
   defp find_files_recursive(_path, depth, max_depth, _exclude, acc, _root)
        when depth > max_depth do
     acc
   end
 
+  # credo:disable-for-next-line
   defp find_files_recursive(path, depth, max_depth, exclude_patterns, acc, root_path) do
     if should_exclude?(path, exclude_patterns, root_path) do
       acc
@@ -285,19 +289,20 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   defp should_exclude?(path, patterns, root_path) do
-    basename = Path.basename(path)
-
-    if basename in patterns or
-         (String.starts_with?(basename, ".") and basename not in [".", ".."]) do
-      true
-    else
+    path
+    |> Path.basename()
+    |> exclusion_checker(patterns, fn ->
       rel_path = if root_path, do: Path.relative_to(path, root_path), else: path
-      segments = Path.split(rel_path)
+      rel_path |> Path.split() |> Enum.any?(&exclusion_checker(&1, patterns))
+    end)
+  end
 
-      Enum.any?(segments, fn segment ->
-        segment in patterns or
-          (String.starts_with?(segment, ".") and segment not in [".", ".."])
-      end)
+  # credo:disable-for-next-line
+  defp exclusion_checker(basename, patterns, else_clause \\ fn -> false end) do
+    cond do
+      basename in patterns -> true
+      match?(<<".", non_dot::utf8, _::utf8, _::binary>> when non_dot != ?., basename) -> true
+      true -> else_clause.()
     end
   end
 
@@ -504,9 +509,8 @@ defmodule Ragex.Analyzers.Directory do
   defp auto_index_scip(project_dir) do
     alias Ragex.Analyzers.SCIP.{Adapter, Indexer, Parser}
 
-    try do
-      {:ok, results} = Indexer.index_all(project_dir)
-
+    # credo:disable-for-lines:17
+    with {:ok, results} <- Indexer.index_all(project_dir) do
       Enum.each(results, fn
         {lang, {:ok, json}} ->
           Logger.info("SCIP: Auto-indexing of #{lang} succeeded, ingesting...")
@@ -522,8 +526,6 @@ defmodule Ragex.Analyzers.Directory do
         {lang, {:error, reason}} ->
           Logger.debug("SCIP: Auto-indexing skipped/failed for #{lang}: #{inspect(reason)}")
       end)
-    rescue
-      e -> Logger.warning("SCIP: Auto-indexing failed: #{Exception.message(e)}")
     end
   end
 end
