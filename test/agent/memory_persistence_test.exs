@@ -6,6 +6,15 @@ defmodule Ragex.Agent.MemoryPersistenceTest do
   @tmp_dir System.tmp_dir!() |> Path.join("ragex_session_test_#{:os.getpid()}")
 
   setup do
+    # Start Memory GenServer if not already running
+    case GenServer.whereis(Memory) do
+      nil ->
+        {:ok, _pid} = Memory.start_link([])
+
+      _pid ->
+        :ok
+    end
+
     # Point persistence at a temp dir for each test
     Application.put_env(:ragex, :session_persistence_dir, @tmp_dir)
     File.mkdir_p!(@tmp_dir)
