@@ -167,20 +167,15 @@ defmodule Ragex.Watcher do
 
   defp restart_watcher(state, new_watched) do
     # Stop existing watcher if any
-    if state.watcher_pid do
-      Process.exit(state.watcher_pid, :normal)
-    end
+    if state.watcher_pid, do: Process.exit(state.watcher_pid, :normal)
 
     # Start new watcher with updated directory list
     new_watcher_pid =
-      if MapSet.size(new_watched) > 0 do
-        dirs = MapSet.to_list(new_watched)
-        {:ok, pid} = FileSystem.start_link(dirs: dirs)
-        FileSystem.subscribe(pid)
-        pid
-      else
-        nil
-      end
+      with size when size > 0 <- MapSet.size(new_watched),
+           dirs <- MapSet.to_list(new_watched),
+           {:ok, pid} <- FileSystem.start_link(dirs: dirs),
+           do: tap(pid, &FileSystem.subscribe/1),
+           else: (_ -> nil)
 
     %{state | watcher_pid: new_watcher_pid, watched_dirs: new_watched}
   end
