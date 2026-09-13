@@ -383,6 +383,12 @@ function M.analyze_directory(path, opts)
   })
 end
 
+--- Prime and force re-index the project directory.
+---@param path string|nil
+function M.prime(path)
+  M.analyze_directory(path, { force_refresh = true })
+end
+
 --- Watch a directory for changes (defaults to project root).
 ---@param path string|nil
 function M.watch_directory(path)

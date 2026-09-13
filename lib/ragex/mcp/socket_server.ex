@@ -159,7 +159,7 @@ defmodule Ragex.MCP.SocketServer do
 
     # Since we removed {:packet, :line}, we need to read until newline manually
     # Read all available data (0 means read what's available)
-    recv_result = :gen_tcp.recv(socket, 0, 30_000)
+    recv_result = :gen_tcp.recv(socket, 0, :infinity)
 
     File.write!(
       "/tmp/ragex_debug.log",

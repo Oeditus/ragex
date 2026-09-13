@@ -143,6 +143,8 @@ function M.dispatch(fargs)
     require("ragex").analyze_file()
   elseif sub == "analyze_dir" then
     require("ragex").analyze_directory()
+  elseif sub == "prime" then
+    require("ragex").prime()
   elseif sub == "watch" then
     require("ragex").watch_directory()
   elseif sub == "query" then
@@ -190,6 +192,7 @@ function M.setup()
         "word",
         "analyze",
         "analyze_dir",
+        "prime",
         "watch",
         "query",
         "explain",

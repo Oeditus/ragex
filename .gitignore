@@ -38,7 +38,7 @@ ragex-*.tar
 
 /priv/parsers/haskell/.stack-work/
 
-ragex.log
+/ragex.log*
 oeditus.json
 audit.json
 

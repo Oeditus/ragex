@@ -172,6 +172,7 @@ defmodule Ragex.MixProject do
         docs/WHY_RAGEX.md
         stuff/docs/CUSTOM_PLUGINS.md
         bin/ragex-mcp
+        bin/ragex-prime
         examples/product_cart/README.md
         examples/product_cart/DEMO.md
       ),

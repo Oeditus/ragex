@@ -77,8 +77,8 @@ defmodule Ragex.MCP.Client do
   Returns `{:ok, result}` where result is the decoded JSON response,
   or `{:error, reason}`.
   """
-  @spec call_tool(t(), String.t(), map()) :: {:ok, term()} | {:error, term()}
-  def call_tool(%__MODULE__{} = conn, tool_name, arguments \\ %{}) do
+  @spec call_tool(t(), String.t(), map(), timeout()) :: {:ok, term()} | {:error, term()}
+  def call_tool(%__MODULE__{} = conn, tool_name, arguments \\ %{}, timeout \\ @recv_timeout) do
     request = %{
       "jsonrpc" => "2.0",
       "id" => conn.request_id,
@@ -89,7 +89,7 @@ defmodule Ragex.MCP.Client do
       }
     }
 
-    case send_and_receive(conn, request) do
+    case send_and_receive(conn, request, timeout) do
       {:ok, %{"result" => result}} ->
         # MCP wraps tool results in content array
         parsed = extract_tool_result(result)
@@ -115,7 +115,7 @@ defmodule Ragex.MCP.Client do
       "params" => %{}
     }
 
-    send_and_receive(conn, request)
+    send_and_receive(conn, request, @connect_timeout)
   end
 
   @doc """
@@ -144,7 +144,7 @@ defmodule Ragex.MCP.Client do
       }
     }
 
-    case send_and_receive(conn, request) do
+    case send_and_receive(conn, request, @connect_timeout) do
       {:ok, %{"result" => _}} ->
         {:ok, %{conn | request_id: conn.request_id + 1}}
 
@@ -156,25 +156,25 @@ defmodule Ragex.MCP.Client do
     end
   end
 
-  defp send_and_receive(conn, request) do
+  defp send_and_receive(conn, request, timeout) do
     json = :json.encode(request) |> IO.iodata_to_binary()
 
     case :gen_tcp.send(conn.socket, json <> "\n") do
       :ok ->
-        receive_response(conn)
+        receive_response(conn, timeout)
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp receive_response(conn) do
+  defp receive_response(conn, timeout) do
     # Read until we get a complete JSON line
-    receive_line(conn, <<>>)
+    receive_line(conn, <<>>, timeout)
   end
 
-  defp receive_line(conn, buffer) do
-    case :gen_tcp.recv(conn.socket, 0, @recv_timeout) do
+  defp receive_line(conn, buffer, timeout) do
+    case :gen_tcp.recv(conn.socket, 0, timeout) do
       {:ok, data} ->
         combined = buffer <> data
         # Split on newlines - the response is a single JSON line
@@ -184,7 +184,7 @@ defmodule Ragex.MCP.Client do
 
           _ ->
             # Haven't received a complete line yet, keep reading
-            receive_line(conn, combined)
+            receive_line(conn, combined, timeout)
         end
 
       {:error, reason} ->

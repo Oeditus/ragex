@@ -41,7 +41,11 @@ defmodule Ragex.Analyzers.Directory do
     end
 
     max_depth = Keyword.get(opts, :max_depth, 10)
-    exclude_patterns = Keyword.get(opts, :exclude_patterns, default_exclude_patterns())
+    user_exclude = Keyword.get(opts, :exclude_patterns, [])
+
+    exclude_patterns =
+      Enum.uniq(default_exclude_patterns() ++ load_gitignore_patterns(path) ++ user_exclude)
+
     incremental = Keyword.get(opts, :incremental, true)
     force_refresh = Keyword.get(opts, :force_refresh, false)
     notify = Keyword.get(opts, :notify, true)
@@ -289,12 +293,42 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   defp should_exclude?(path, patterns, root_path) do
-    path
-    |> Path.basename()
-    |> exclusion_checker(patterns, fn ->
-      rel_path = if root_path, do: Path.relative_to(path, root_path), else: path
-      rel_path |> Path.split() |> Enum.any?(&exclusion_checker(&1, patterns))
-    end)
+    basename = Path.basename(path)
+
+    cond do
+      exclusion_checker(basename, patterns) ->
+        true
+
+      is_binary(root_path) and root_path != path ->
+        rel_path = Path.relative_to(path, root_path)
+        parts = Path.split(rel_path)
+
+        Enum.any?(parts, &exclusion_checker(&1, patterns)) or
+          Enum.any?(patterns, fn pattern ->
+            if String.contains?(pattern, "*") or String.contains?(pattern, "?") do
+              matches_glob?(basename, pattern) or matches_glob?(rel_path, pattern)
+            else
+              false
+            end
+          end)
+
+      true ->
+        false
+    end
+  end
+
+  defp matches_glob?(string, pattern) do
+    regex_str =
+      "^" <>
+        (pattern
+         |> Regex.escape()
+         |> String.replace("\\*", ".*")
+         |> String.replace("\\?", ".")) <> "$"
+
+    case Regex.compile(regex_str) do
+      {:ok, regex} -> Regex.match?(regex, string)
+      _ -> false
+    end
   end
 
   # credo:disable-for-next-line
@@ -482,17 +516,52 @@ defmodule Ragex.Analyzers.Directory do
       ".svn",
       "_build",
       "deps",
+      "vendor",
+      "third_party",
+      "bower_components",
       "target",
       "dist",
       "build",
+      "out",
+      ".deps",
+      ".libs",
+      ".venv",
+      "venv",
+      "env",
+      ".env",
       "coverage",
       ".elixir_ls",
       "__pycache__",
       ".pytest_cache",
       ".mypy_cache",
       ".bundle",
-      "vendor/bundle"
+      "vendor/bundle",
+      "tmp",
+      ".ragex"
     ]
+  end
+
+  defp load_gitignore_patterns(project_path) do
+    gitignore_path = Path.join(project_path, ".gitignore")
+
+    if File.exists?(gitignore_path) do
+      try do
+        gitignore_path
+        |> File.read!()
+        |> String.split("\n")
+        |> Enum.map(&String.trim/1)
+        |> Enum.reject(fn line -> line == "" or String.starts_with?(line, "#") end)
+        |> Enum.map(fn line ->
+          line
+          |> String.trim_leading("/")
+          |> String.trim_trailing("/")
+        end)
+      rescue
+        _ -> []
+      end
+    else
+      []
+    end
   end
 
   defp notify_progress(event, params) do

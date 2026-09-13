@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+#
+# ragex-prime -- Pre-index and prime Ragex caches for fast editor startup.
+#
+# Usage:
+#   bin/ragex-prime                          # Prime current directory & keep daemon running
+#   bin/ragex-prime --project /path/to/code  # Target specific directory
+#   bin/ragex-prime --full                   # Force full re-indexing
+#   bin/ragex-prime --no-daemon              # Index in foreground and exit without daemon
+#   bin/ragex-prime --status                 # Check daemon & cache status
+#   bin/ragex-prime --stop                   # Stop background daemon
+#
+
+set -euo pipefail
+
+ORIGINAL_PWD="$PWD"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+cd "$PROJECT_DIR"
+
+# -- Defaults ---------------------------------------------------------------
+PROJECT="${RAGEX_PROJECT:-}"
+NO_DAEMON=0
+STATUS=0
+STOP=0
+EXTRA_ARGS=()
+
+# -- Parse arguments --------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project)
+      PROJECT="$2"; shift 2 ;;
+    --project=*)
+      PROJECT="${1#*=}"; shift ;;
+    --path)
+      PROJECT="$2"; shift 2 ;;
+    --path=*)
+      PROJECT="${1#*=}"; shift ;;
+    --no-daemon)
+      NO_DAEMON=1; EXTRA_ARGS+=("--no-daemon"); shift ;;
+    --status)
+      STATUS=1; EXTRA_ARGS+=("--status"); shift ;;
+    --stop)
+      STOP=1; EXTRA_ARGS+=("--stop"); shift ;;
+    --help|-h)
+      sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
+    *)
+      EXTRA_ARGS+=("$1"); shift ;;
+  esac
+done
+
+# -- Resolve target directory if not set ------------------------------------
+if [[ -z "$PROJECT" ]]; then
+  find_mix_exs() {
+    local dir="$1"
+    while [[ "$dir" != "/" ]]; do
+      if [[ -f "$dir/mix.exs" ]]; then
+        echo "$dir"
+        return 0
+      fi
+      dir="$(dirname "$dir")"
+    done
+    return 1
+  }
+
+  PROJECT="$(find_mix_exs "$ORIGINAL_PWD" || echo "$ORIGINAL_PWD")"
+fi
+
+export RAGEX_PROJECT="$PROJECT"
+
+# Resolve Unix socket path matching Ragex.MCP.SocketPath logic
+IDENTITY="$PROJECT"
+ABS_IDENTITY="$(cd "$IDENTITY" 2>/dev/null && pwd || echo "$IDENTITY")"
+SANITIZED=$(printf '%s' "$ABS_IDENTITY" | sed -e 's#^/##' -e 's#[^A-Za-z0-9]#_#g' -e 's#_*$##')
+SOCKET_PATH="${RAGEX_MCP_SOCK:-/tmp/ragex_mcp_${SANITIZED}.sock}"
+export RAGEX_MCP_SOCK="$SOCKET_PATH"
+
+if [[ "$STOP" -eq 1 || "$STATUS" -eq 1 || "$NO_DAEMON" -eq 1 ]]; then
+  exec mix ragex.prime --project "$PROJECT" "${EXTRA_ARGS[@]}"
+fi
+
+# Check if socket server is already listening
+PING='{"jsonrpc":"2.0","id":0,"method":"ping","params":{}}'
+PONG=$( (echo "$PING" | timeout 2 socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null | head -1) || true )
+
+if echo "$PONG" | grep -q '"result"'; then
+  echo "[ragex-prime] Reusing running server via $SOCKET_PATH" >&2
+  exec mix ragex.prime --project "$PROJECT" "${EXTRA_ARGS[@]}"
+fi
+
+# No server running yet: start background daemon first if daemon mode enabled
+echo "[ragex-prime] Launching Ragex background daemon for $PROJECT..." >&2
+LOG_FILE="/tmp/ragex_daemon_${SANITIZED}.log"
+nohup "$SCRIPT_DIR/ragex-mcp" --project "$PROJECT" > "$LOG_FILE" 2>&1 &
+DAEMON_PID=$!
+
+echo "[ragex-prime] Waiting for daemon socket at $SOCKET_PATH..." >&2
+
+# Poll for socket readiness up to 15 seconds
+READY=0
+for i in {1..75}; do
+  PONG=$( (echo "$PING" | timeout 1 socat - UNIX-CONNECT:"$SOCKET_PATH" 2>/dev/null | head -1) || true )
+  if echo "$PONG" | grep -q '"result"'; then
+    READY=1
+    break
+  fi
+  sleep 0.2
+done
+
+if [[ "$READY" -eq 1 ]]; then
+  echo "[ragex-prime] Daemon active (PID $DAEMON_PID). Starting priming..." >&2
+  exec mix ragex.prime --project "$PROJECT" "${EXTRA_ARGS[@]}"
+else
+  echo "[ragex-prime] Warning: Background daemon took too long to open socket." >&2
+  echo "              Check log file: $LOG_FILE" >&2
+  echo "              Falling back to inline priming..." >&2
+  exec mix ragex.prime --project "$PROJECT" "${EXTRA_ARGS[@]}"
+fi
