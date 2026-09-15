@@ -93,7 +93,12 @@ fi
 # No server running yet: start background daemon first if daemon mode enabled
 echo "[ragex-prime] Launching Ragex background daemon for $PROJECT..." >&2
 LOG_FILE="/tmp/ragex_daemon_${SANITIZED}.log"
-nohup "$SCRIPT_DIR/ragex-mcp" --project "$PROJECT" > "$LOG_FILE" 2>&1 &
+# Skip the daemon's own auto-analyze-on-startup: ragex-prime explicitly
+# triggers a single `analyze_directory` call over the socket once the daemon
+# is up (see below). Letting the daemon *also* auto-analyze the same
+# directory would run two full indexing passes concurrently, which for large
+# projects can take long enough to blow past the priming call's own timeout.
+RAGEX_SKIP_AUTO_ANALYZE=1 nohup "$SCRIPT_DIR/ragex-mcp" --project "$PROJECT" > "$LOG_FILE" 2>&1 &
 DAEMON_PID=$!
 
 echo "[ragex-prime] Waiting for daemon socket at $SOCKET_PATH..." >&2

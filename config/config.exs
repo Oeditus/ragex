@@ -19,6 +19,20 @@ config :logger,
     ]
   ]
 
+# EXLA Compiler & CUDA Memory Configuration
+# Prevents EXLA from pre-allocating 90% of GPU VRAM upfront to avoid OOM
+config :exla,
+  clients: [
+    cuda: [
+      platform: :cuda,
+      preallocate: false,
+      memory_fraction: 0.2
+    ],
+    host: [
+      platform: :host
+    ]
+  ]
+
 # Bumblebee Configuration
 # Disable progress bars to avoid ANSI escape sequences in MCP stdio output
 config :bumblebee, :progress_bar_enabled, false

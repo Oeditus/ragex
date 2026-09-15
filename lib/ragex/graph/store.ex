@@ -471,10 +471,24 @@ defmodule Ragex.Graph.Store do
 
     # At startup, load CWD-based cache (backward compat for MCP server / interactive use).
     # Agent.Core.analyze_project will call load_project/1 to switch to the correct path.
+    #
+    # Loading is deferred to `handle_continue/2` rather than performed here so
+    # that this GenServer -- and therefore every child started *after* it in
+    # the supervision tree, including the MCP socket/stdio servers editors
+    # connect to -- registers and becomes available immediately, even when
+    # the on-disk graph/embedding cache (or a per-project dllb bootstrap) for
+    # a large project would otherwise take a long time to load. The load
+    # still happens before any other message this process receives, so
+    # observable behavior for callers is unchanged.
     cwd = canonical_project_root(nil)
-    do_load_project_cache(cwd)
 
-    {:ok, %{project_path: cwd}}
+    {:ok, %{project_path: cwd, cache_loaded: false}, {:continue, {:load_initial_cache, cwd}}}
+  end
+
+  @impl true
+  def handle_continue({:load_initial_cache, project_path}, state) do
+    do_load_project_cache(project_path)
+    {:noreply, %{state | cache_loaded: true}}
   end
 
   @impl true

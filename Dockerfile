@@ -38,9 +38,9 @@ RUN mix compile
 # Pre-download Bumblebee models
 # Set cache directory to a known location that we'll copy to final image
 ENV BUMBLEBEE_CACHE_DIR=/app/bumblebee_cache
-# CUDA 13 GPU support (set to "cpu" and "host" for CPU-only builds)
-# ENV XLA_TARGET=cuda13
-# ENV EXLA_TARGET=cuda
+ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
+ENV XLA_PYTHON_CLIENT_MEM_FRACTION=0.2
+# CUDA 13 GPU support (uncomment for CUDA builds: ENV XLA_TARGET=cuda13 EXLA_TARGET=cuda)
 ENV XLA_TARGET=cpu
 ENV EXLA_TARGET=host
 
@@ -84,8 +84,9 @@ COPY --from=builder --chown=ragex:ragex /app/bumblebee_cache /home/ragex/.cache/
 
 # Set environment variables
 ENV BUMBLEBEE_CACHE_DIR=/home/ragex/.cache/bumblebee
-# ENV XLA_TARGET=cuda13
-# ENV EXLA_TARGET=cuda
+ENV XLA_PYTHON_CLIENT_PREALLOCATE=false
+ENV XLA_PYTHON_CLIENT_MEM_FRACTION=0.2
+# CUDA 13 GPU support (uncomment for CUDA builds: ENV XLA_TARGET=cuda13 EXLA_TARGET=cuda)
 ENV XLA_TARGET=cpu
 ENV EXLA_TARGET=host
 ENV MIX_ENV=prod

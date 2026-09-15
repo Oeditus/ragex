@@ -22,7 +22,7 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   defmodule State do
     @moduledoc false
-    defstruct [:serving, :tokenizer, :model, :model_info, ready: false]
+    defstruct [:serving, :host_serving, :tokenizer, :model, :model_info, ready: false]
   end
 
   @timeout :ragex
@@ -42,6 +42,63 @@ defmodule Ragex.Embeddings.Bumblebee do
   @spec available?() :: boolean()
   def available? do
     Code.ensure_loaded?(Bumblebee) and Code.ensure_loaded?(Nx) and Code.ensure_loaded?(EXLA)
+  end
+
+  @doc """
+  Returns `true` when CUDA GPU acceleration is available via EXLA.
+  """
+  @spec cuda_available?() :: boolean()
+  def cuda_available? do
+    if available?() do
+      try do
+        _ = EXLA.Client.fetch!(:cuda)
+        true
+      rescue
+        _ -> false
+      catch
+        _, _ -> false
+      end
+    else
+      false
+    end
+  end
+
+  @doc """
+  Returns information about the EXLA execution backend and CUDA status.
+  """
+  @spec backend_info() :: map()
+  def backend_info do
+    if available?() do
+      default_client =
+        try do
+          EXLA.Client.default_name()
+        rescue
+          _ -> :unknown
+        end
+
+      platforms =
+        try do
+          EXLA.Client.get_supported_platforms()
+        rescue
+          _ -> %{}
+        end
+
+      %{
+        available: true,
+        compiler: EXLA,
+        default_client: default_client,
+        cuda_available: Map.has_key?(platforms, :cuda),
+        supported_platforms: platforms
+      }
+    else
+      %{
+        available: false,
+        compiler: nil,
+        default_client: nil,
+        cuda_available: false,
+        supported_platforms: %{}
+      }
+    end
   end
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -170,7 +227,7 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   @impl true
   def handle_call({:embed, text}, _from, state) do
-    result = generate_embedding(text, state.serving)
+    result = generate_embedding(text, state)
     {:reply, result, state}
   end
 
@@ -186,7 +243,7 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   @impl true
   def handle_call({:embed_batch, texts}, _from, state) do
-    result = generate_embeddings_batch(texts, state.serving)
+    result = generate_embeddings_batch(texts, state)
     {:reply, result, state}
   end
 
@@ -204,55 +261,158 @@ defmodule Ragex.Embeddings.Bumblebee do
     {:ok, model} = Bumblebee.load_model({:hf, model_info.repo}, model_opts)
 
     # Create a serving for embeddings
-    # Adjust sequence length based on model's max_tokens
     sequence_length = min(model_info.max_tokens, 512)
 
-    serving =
-      TextEmbedding.text_embedding(model, tokenizer,
-        output_attribute: :hidden_state,
-        output_pool: :mean_pooling,
-        embedding_processor: :l2_norm,
-        compile: [batch_size: 32, sequence_length: sequence_length],
-        defn_options: [compiler: EXLA]
-      )
+    exla_client =
+      Application.get_env(:ragex, :exla_client) ||
+        System.get_env("RAGEX_EXLA_CLIENT") ||
+        System.get_env("EXLA_CLIENT")
 
-    {:ok, serving, tokenizer, model}
+    defn_options =
+      cond do
+        exla_client ->
+          client_atom =
+            if is_atom(exla_client), do: exla_client, else: String.to_atom(to_string(exla_client))
+
+          [compiler: EXLA, client: client_atom]
+
+        cuda_available?() ->
+          [compiler: EXLA, client: :cuda]
+
+        true ->
+          [compiler: EXLA, client: :host]
+      end
+
+    try do
+      serving = build_serving(model, tokenizer, sequence_length, defn_options)
+      {:ok, serving, tokenizer, model}
+    rescue
+      e ->
+        if defn_options[:client] == :cuda do
+          Logger.warning(
+            "Failed to initialize EXLA with CUDA (#{Exception.message(e)}). Falling back to host CPU..."
+          )
+
+          try do
+            serving = build_serving(model, tokenizer, sequence_length, [compiler: EXLA, client: :host])
+            {:ok, serving, tokenizer, model}
+          rescue
+            fallback_err ->
+              {:error, Exception.message(fallback_err)}
+          end
+        else
+          {:error, Exception.message(e)}
+        end
+    end
   rescue
     e ->
       {:error, Exception.message(e)}
   end
 
-  defp generate_embedding(text, serving) do
+  defp build_serving(model, tokenizer, sequence_length, defn_options) do
+    TextEmbedding.text_embedding(model, tokenizer,
+      output_attribute: :hidden_state,
+      output_pool: :mean_pooling,
+      embedding_processor: :l2_norm,
+      compile: [batch_size: 32, sequence_length: sequence_length],
+      defn_options: defn_options
+    )
+  end
+
+  defp generate_embedding(text, state) do
     # Truncate very long texts to avoid OOM
-    text = String.slice(text, 0, 5000)
+    sliced_text = String.slice(text, 0, 5000)
 
-    result = Nx.Serving.run(serving, text)
-
-    # Extract the embedding tensor and convert to list
-    embedding = result.embedding |> Nx.to_flat_list()
-
-    {:ok, embedding}
-  rescue
-    e ->
-      {:error, Exception.message(e)}
+    try do
+      result = Nx.Serving.run(state.serving, sliced_text)
+      {:ok, result.embedding |> Nx.to_flat_list()}
+    rescue
+      e ->
+        fallback_generate_embedding(sliced_text, state, Exception.message(e))
+    catch
+      :exit, reason ->
+        fallback_generate_embedding(sliced_text, state, inspect(reason))
+    end
   end
 
-  defp generate_embeddings_batch(texts, serving) do
-    # Truncate texts
-    texts = Enum.map(texts, &String.slice(&1, 0, 5000))
+  defp fallback_generate_embedding(sliced_text, state, error_reason) do
+    if state.serving && state.model && state.tokenizer do
+      Logger.warning("CUDA/EXLA execution error (#{error_reason}). Attempting host CPU fallback...")
 
-    results = Nx.Serving.run(serving, texts)
+      try do
+        host_serving =
+          state.host_serving ||
+            build_serving(
+              state.model,
+              state.tokenizer,
+              min(state.model_info.max_tokens, 512),
+              [compiler: EXLA, client: :host]
+            )
 
-    # Extract embeddings
-    embeddings =
-      results
-      |> Enum.map(fn result ->
-        result.embedding |> Nx.to_flat_list()
-      end)
+        result = Nx.Serving.run(host_serving, sliced_text)
+        {:ok, result.embedding |> Nx.to_flat_list()}
+      rescue
+        e -> {:error, "CUDA and host fallback failed: #{Exception.message(e)}"}
+      catch
+        :exit, reason -> {:error, "CUDA and host fallback failed: #{inspect(reason)}"}
+      end
+    else
+      {:error, error_reason}
+    end
+  end
 
-    {:ok, embeddings}
-  rescue
-    e ->
-      {:error, Exception.message(e)}
+  defp generate_embeddings_batch(texts, state) do
+    sliced_texts = Enum.map(texts, &String.slice(&1, 0, 5000))
+
+    try do
+      results = Nx.Serving.run(state.serving, sliced_texts)
+
+      embeddings =
+        results
+        |> Enum.map(fn result ->
+          result.embedding |> Nx.to_flat_list()
+        end)
+
+      {:ok, embeddings}
+    rescue
+      e ->
+        fallback_generate_embeddings_batch(sliced_texts, state, Exception.message(e))
+    catch
+      :exit, reason ->
+        fallback_generate_embeddings_batch(sliced_texts, state, inspect(reason))
+    end
+  end
+
+  defp fallback_generate_embeddings_batch(sliced_texts, state, error_reason) do
+    if state.serving && state.model && state.tokenizer do
+      Logger.warning("CUDA/EXLA execution error (#{error_reason}). Attempting host CPU fallback...")
+
+      try do
+        host_serving =
+          state.host_serving ||
+            build_serving(
+              state.model,
+              state.tokenizer,
+              min(state.model_info.max_tokens, 512),
+              [compiler: EXLA, client: :host]
+            )
+
+        results = Nx.Serving.run(host_serving, sliced_texts)
+
+        embeddings =
+          results
+          |> Enum.map(fn result ->
+            result.embedding |> Nx.to_flat_list()
+          end)
+
+        {:ok, embeddings}
+      rescue
+        e -> {:error, "CUDA and host fallback failed: #{Exception.message(e)}"}
+      catch
+        :exit, reason -> {:error, "CUDA and host fallback failed: #{inspect(reason)}"}
+      end
+    else
+      {:error, error_reason}
+    end
   end
 end

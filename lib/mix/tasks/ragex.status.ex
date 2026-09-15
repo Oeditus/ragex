@@ -76,6 +76,16 @@ defmodule Mix.Tasks.Ragex.Status do
       end
 
     Mix.shell().info("  Model loaded: #{ready}")
+
+    info = EmbeddingModel.backend_info()
+    Mix.shell().info("  EXLA available: #{info.available}")
+
+    if info.available do
+      Mix.shell().info("  Default client: #{info.default_client}")
+      cuda_str = if info.cuda_available, do: "available (GPU accelerated)", else: "not detected (CPU fallback)"
+      Mix.shell().info("  CUDA status: #{cuda_str}")
+    end
+
     Mix.shell().info("")
   end
 

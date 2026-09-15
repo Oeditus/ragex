@@ -20,6 +20,25 @@ defmodule Ragex.Embeddings.BumblebeeTest do
     end
   end
 
+  describe "cuda_available?/0" do
+    test "returns a boolean" do
+      assert is_boolean(Bumblebee.cuda_available?())
+    end
+  end
+
+  describe "backend_info/0" do
+    test "returns map with EXLA backend and CUDA status" do
+      info = Bumblebee.backend_info()
+
+      assert is_map(info)
+      assert info.available == true
+      assert info.compiler == EXLA
+      assert is_boolean(info.cuda_available)
+      assert is_atom(info.default_client)
+      assert is_map(info.supported_platforms)
+    end
+  end
+
   describe "embed/1" do
     test "generates embedding for simple text" do
       # Wait for model to be ready

@@ -13,6 +13,15 @@ defmodule Ragex.Application do
 
   @impl true
   def start(_type, _args) do
+    # Default CUDA/XLA memory pre-allocation settings to avoid VRAM hogging & OOM
+    if is_nil(System.get_env("XLA_PYTHON_CLIENT_PREALLOCATE")) do
+      System.put_env("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+    end
+
+    if is_nil(System.get_env("XLA_PYTHON_CLIENT_MEM_FRACTION")) do
+      System.put_env("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.2")
+    end
+
     # Validate AI config on startup (only if server is being started)
     if Application.get_env(:ragex, :start_server, true) do
       try do
@@ -35,41 +44,19 @@ defmodule Ragex.Application do
       Application.get_env(:ragex, :skip_bumblebee, false) or
         not BumblebeeEmbeddings.available?()
 
-    # Base children that always start
-    base_children =
+    # Critical children: only what the MCP servers themselves need to be
+    # able to start. Kept minimal and fast on purpose -- see `mcp_children`
+    # below.
+    critical_children =
       [
         # Global task supervisor for supervised async operations
         {Task.Supervisor, name: Ragex.TaskSupervisor},
-        # Per-project dllb manager
+        # Per-project dllb manager (lazy: only spawns instances on demand)
         Ragex.Dllb.ProjectManager,
-        # Graph store must start before MCP server
-        Ragex.Graph.Store,
-        # Embedding model for semantic search (heavy -- needs GPU)
-        if(!skip_bumblebee, do: Ragex.Embeddings.Bumblebee),
-        # Vector similarity search (depends on embeddings)
-        if(!skip_bumblebee, do: Ragex.VectorStore),
-        # File system watcher for auto-reindex
-        Ragex.Watcher,
-        # AI Provider Registry
-        Ragex.AI.Provider.Registry,
-        # AI response caching
-        Ragex.AI.Cache,
-        # AI Usage tracking and rate limiting
-        Ragex.AI.Usage,
-        # Agent conversation memory
-        Ragex.Agent.Memory,
-        # MCP tool telemetry tracking
-        Ragex.MCP.Telemetry,
-        # Task Supervisor for parallel plugin tool execution
-        {Task.Supervisor, name: Ragex.Plugin.TaskSupervisor},
-        # Plugin Registry for dynamic MCP tools & extensions
-        Ragex.Plugin.Registry,
-        # Inter-Plugin EventBus
-        Ragex.Plugin.EventBus,
-        # Git Enricher (background git metadata enrichment)
-        Ragex.Git.Enricher,
-        # Git RepoServer (NIF isolation for egit, only when egit is available)
-        if(GitBackend.egit_available?(), do: Ragex.Git.RepoServer)
+        # Graph store must start before MCP server. Its own cache load is
+        # deferred to `handle_continue/2`, so this returns immediately even
+        # for large projects -- see `Ragex.Graph.Store.init/1`.
+        Ragex.Graph.Store
       ]
       |> Enum.reject(&is_nil/1)
 
@@ -100,7 +87,47 @@ defmodule Ragex.Application do
         []
       end
 
+    # Started right after `critical_children` so editors get a fast,
+    # responsive `initialize` handshake instead of waiting behind
+    # `background_children` below (embedding model loading, the file
+    # watcher, git enrichment, the plugin registry, etc.). None of those
+    # subsystems are required for MCP protocol responsiveness -- callers
+    # look them up by name (e.g. `Process.whereis/1`) when needed and
+    # degrade gracefully while they are still starting.
     mcp_children = socket_children ++ stdio_children
+
+    background_children =
+      [
+        # Embedding model for semantic search (heavy -- needs GPU; loads
+        # asynchronously via `handle_info/2`, but listed here to keep all
+        # non-critical startup work grouped together)
+        if(!skip_bumblebee, do: Ragex.Embeddings.Bumblebee),
+        # Vector similarity search (depends on embeddings)
+        if(!skip_bumblebee, do: Ragex.VectorStore),
+        # File system watcher for auto-reindex
+        Ragex.Watcher,
+        # AI Provider Registry
+        Ragex.AI.Provider.Registry,
+        # AI response caching
+        Ragex.AI.Cache,
+        # AI Usage tracking and rate limiting
+        Ragex.AI.Usage,
+        # Agent conversation memory
+        Ragex.Agent.Memory,
+        # MCP tool telemetry tracking
+        Ragex.MCP.Telemetry,
+        # Task Supervisor for parallel plugin tool execution
+        {Task.Supervisor, name: Ragex.Plugin.TaskSupervisor},
+        # Plugin Registry for dynamic MCP tools & extensions
+        Ragex.Plugin.Registry,
+        # Inter-Plugin EventBus
+        Ragex.Plugin.EventBus,
+        # Git Enricher (background git metadata enrichment)
+        Ragex.Git.Enricher,
+        # Git RepoServer (NIF isolation for egit, only when egit is available)
+        if(GitBackend.egit_available?(), do: Ragex.Git.RepoServer)
+      ]
+      |> Enum.reject(&is_nil/1)
 
     # REST API server (started when :start_api is true)
     api_children =
@@ -110,7 +137,7 @@ defmodule Ragex.Application do
         []
       end
 
-    children = base_children ++ mcp_children ++ api_children
+    children = critical_children ++ mcp_children ++ background_children ++ api_children
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options

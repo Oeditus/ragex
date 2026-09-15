@@ -111,10 +111,20 @@ fi
 export MIX_ENV=prod
 export RAGEX_STDIO=1
 export LOG_LEVEL="$LOG_LEVEL"
+export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
+export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.2}"
 
 if [[ -n "$PROJECT" ]]; then
-  export RAGEX_AUTO_ANALYZE="$PROJECT"
-  export RAGEX_AUTO_ANALYZE_DIRS="${RAGEX_AUTO_ANALYZE_DIRS:-$PROJECT}"
+  # RAGEX_SKIP_AUTO_ANALYZE=1 is set by bin/ragex-prime when it launches the
+  # background daemon: priming explicitly triggers a single `analyze_directory`
+  # call over the socket right after the daemon comes up, so auto-analyzing
+  # the same directory again here would race that call and (for large
+  # projects) roughly double the total indexing time -- which is exactly what
+  # was blowing past the client's indexing timeout.
+  if [[ "${RAGEX_SKIP_AUTO_ANALYZE:-0}" != "1" ]]; then
+    export RAGEX_AUTO_ANALYZE="$PROJECT"
+    export RAGEX_AUTO_ANALYZE_DIRS="${RAGEX_AUTO_ANALYZE_DIRS:-$PROJECT}"
+  fi
   export RAGEX_STORE_BACKEND="${RAGEX_STORE_BACKEND:-dllb}"
   export RAGEX_DLLB_MODE="${RAGEX_DLLB_MODE:-per_project}"
 fi

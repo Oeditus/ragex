@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Editor startup and `ragex-prime` indexing timeouts on large projects**:
+  - `Ragex.Graph.Store.init/1` no longer loads the on-disk graph/embedding
+    cache (and bootstraps the per-project `dllb` backend) synchronously
+    during application startup. Loading is now deferred to
+    `handle_continue/2`, so the `Store` GenServer -- and every child started
+    after it in the supervision tree, including the MCP socket and stdio
+    servers editors connect to -- registers and becomes reachable
+    immediately, even for projects with a large existing cache.
+  - Reordered `Ragex.Application`'s supervision tree so the MCP socket and
+    stdio servers start right after `Ragex.Graph.Store`, ahead of slower,
+    independently-looked-up subsystems (embedding model loading, the file
+    watcher, AI subsystems, the plugin registry, git enrichment). Editors
+    now get a fast `initialize` response regardless of how long those
+    subsystems take to finish starting.
+  - `bin/ragex-prime` no longer causes the background daemon it launches to
+    also auto-analyze the target project on startup (`RAGEX_SKIP_AUTO_ANALYZE=1`).
+    Previously, the daemon's own startup auto-analysis and `ragex-prime`'s
+    explicit `analyze_directory` call raced each other, indexing the same
+    large project twice concurrently, which could exceed the priming
+    client's indexing timeout and fail with `Daemon indexing failed:
+    :timeout`.
+  - `mix ragex.prime` no longer imposes a fixed one-hour ceiling on the
+    daemon-delegated `analyze_directory` call; a first-time full index of a
+    large project now runs to completion regardless of how long it
+    legitimately takes.
+
 ## [0.30.0]
 
 ### Added

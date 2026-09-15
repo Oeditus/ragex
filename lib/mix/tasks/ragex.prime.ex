@@ -197,6 +197,11 @@ defmodule Mix.Tasks.Ragex.Prime do
         {:ok, conn} ->
           spinner = Progress.spinner(label: "Priming project index via daemon...")
 
+          # No fixed ceiling here: a first-time full index of a large
+          # monorepo has no reasonable one-size-fits-all time bound, and the
+          # daemon no longer races its own auto-analyze against this call
+          # (see bin/ragex-prime), so this is expected to complete in one
+          # indexing pass however long that legitimately takes.
           case Client.call_tool(
                  conn,
                  "analyze_directory",
@@ -204,7 +209,7 @@ defmodule Mix.Tasks.Ragex.Prime do
                    "path" => path,
                    "force_refresh" => full_mode
                  },
-                 3_600_000
+                 :infinity
                ) do
             {:ok, summary} ->
               Progress.stop_spinner(

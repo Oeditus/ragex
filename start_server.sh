@@ -20,6 +20,10 @@ else
 fi
 export RAGEX_MCP_SOCK="$SOCKET_PATH"
 
+# Prevent XLA from pre-allocating 90% of CUDA VRAM upfront
+export XLA_PYTHON_CLIENT_PREALLOCATE="${XLA_PYTHON_CLIENT_PREALLOCATE:-false}"
+export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.2}"
+
 echo "════════════════════════════════════════════════════════"
 echo "  Starting Ragex MCP Server"
 echo "════════════════════════════════════════════════════════"
