@@ -1,6 +1,9 @@
 defmodule Ragex.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
+
+  # credo:disable-for-this-file Credo.Check.Refactor.ModuleDependencies
+
   @moduledoc false
 
   use Application

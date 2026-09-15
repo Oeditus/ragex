@@ -294,7 +294,9 @@ defmodule Ragex.Embeddings.Bumblebee do
           )
 
           try do
-            serving = build_serving(model, tokenizer, sequence_length, [compiler: EXLA, client: :host])
+            serving =
+              build_serving(model, tokenizer, sequence_length, compiler: EXLA, client: :host)
+
             {:ok, serving, tokenizer, model}
           rescue
             fallback_err ->
@@ -337,7 +339,9 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   defp fallback_generate_embedding(sliced_text, state, error_reason) do
     if state.serving && state.model && state.tokenizer do
-      Logger.warning("CUDA/EXLA execution error (#{error_reason}). Attempting host CPU fallback...")
+      Logger.warning(
+        "CUDA/EXLA execution error (#{error_reason}). Attempting host CPU fallback..."
+      )
 
       try do
         host_serving =
@@ -346,7 +350,8 @@ defmodule Ragex.Embeddings.Bumblebee do
               state.model,
               state.tokenizer,
               min(state.model_info.max_tokens, 512),
-              [compiler: EXLA, client: :host]
+              compiler: EXLA,
+              client: :host
             )
 
         result = Nx.Serving.run(host_serving, sliced_text)
@@ -385,7 +390,9 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   defp fallback_generate_embeddings_batch(sliced_texts, state, error_reason) do
     if state.serving && state.model && state.tokenizer do
-      Logger.warning("CUDA/EXLA execution error (#{error_reason}). Attempting host CPU fallback...")
+      Logger.warning(
+        "CUDA/EXLA execution error (#{error_reason}). Attempting host CPU fallback..."
+      )
 
       try do
         host_serving =
@@ -394,7 +401,8 @@ defmodule Ragex.Embeddings.Bumblebee do
               state.model,
               state.tokenizer,
               min(state.model_info.max_tokens, 512),
-              [compiler: EXLA, client: :host]
+              compiler: EXLA,
+              client: :host
             )
 
         results = Nx.Serving.run(host_serving, sliced_texts)
