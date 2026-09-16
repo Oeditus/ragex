@@ -101,44 +101,73 @@ defmodule Ragex.Analysis.Runner do
     exclusions = Exclusions.load(config)
 
     %{}
-    |> maybe_run(:security, analyses, on_progress, fn -> run_security(config) end)
-    |> maybe_run(:business_logic, analyses, on_progress, fn -> run_business_logic(config) end)
-    |> maybe_run(:complexity, analyses, on_progress, fn -> run_complexity(config) end)
-    |> maybe_run(:smells, analyses, on_progress, fn -> run_smells(config) end)
-    |> maybe_run(:duplicates, analyses, on_progress, fn -> run_duplicates(config) end)
-    |> maybe_run(:dead_code, analyses, on_progress, fn -> run_dead_code() end)
-    |> maybe_run(:dependencies, analyses, on_progress, fn -> run_dependencies() end)
-    |> maybe_run(:quality, analyses, on_progress, fn -> run_quality(config) end)
-    |> maybe_run(:circulars, analyses, on_progress, fn -> run_circulars() end)
-    |> maybe_run(:god_modules, analyses, on_progress, fn -> run_god_modules(config) end)
-    |> maybe_run(:unstable_modules, analyses, on_progress, fn -> run_unstable_modules(config) end)
-    |> maybe_run(:unused_modules, analyses, on_progress, fn -> run_unused_modules() end)
-    |> maybe_run(:coupling, analyses, on_progress, fn -> run_coupling() end)
+    |> maybe_run(:security, analyses, on_progress, fn -> run_security(config) end, config)
+    |> maybe_run(
+      :business_logic,
+      analyses,
+      on_progress,
+      fn -> run_business_logic(config) end,
+      config
+    )
+    |> maybe_run(:complexity, analyses, on_progress, fn -> run_complexity(config) end, config)
+    |> maybe_run(:smells, analyses, on_progress, fn -> run_smells(config) end, config)
+    |> maybe_run(:duplicates, analyses, on_progress, fn -> run_duplicates(config) end, config)
+    |> maybe_run(:dead_code, analyses, on_progress, fn -> run_dead_code() end, config)
+    |> maybe_run(:dependencies, analyses, on_progress, fn -> run_dependencies() end, config)
+    |> maybe_run(:quality, analyses, on_progress, fn -> run_quality(config) end, config)
+    |> maybe_run(:circulars, analyses, on_progress, fn -> run_circulars() end, config)
+    |> maybe_run(:god_modules, analyses, on_progress, fn -> run_god_modules(config) end, config)
+    |> maybe_run(
+      :unstable_modules,
+      analyses,
+      on_progress,
+      fn -> run_unstable_modules(config) end,
+      config
+    )
+    |> maybe_run(:unused_modules, analyses, on_progress, fn -> run_unused_modules() end, config)
+    |> maybe_run(:coupling, analyses, on_progress, fn -> run_coupling() end, config)
     |> filter_results_by_switches(config)
     |> Exclusions.filter_results(exclusions)
   end
 
   # Private functions
 
-  defp maybe_run(results, key, analyses, on_progress, fun) do
+  defp maybe_run(results, key, analyses, on_progress, fun, config) do
     if Map.get(analyses, key, false) do
       on_progress.(key, :start)
       task = Task.async(fn -> fun.() end)
 
-      case Task.yield(task, 300_000) || Task.shutdown(task) do
+      timeout =
+        Map.get(config, :pass_timeout) ||
+          Application.get_env(:ragex, :pass_timeout, 900_000)
+
+      case Task.yield(task, timeout) || Task.shutdown(task) do
         {:ok, result} ->
           on_progress.(key, {:done, extract_issue_count(result)})
           Map.put(results, key, result)
 
         nil ->
           on_progress.(key, {:done, 0})
-          Logger.warning("Analysis pass #{key} timed out after 5 minutes")
+          timeout_desc = format_timeout(timeout)
+          Logger.warning("Analysis pass #{key} timed out after #{timeout_desc}")
           results
       end
     else
       results
     end
   end
+
+  defp format_timeout(:infinity), do: "infinity"
+
+  defp format_timeout(ms) when is_integer(ms) and ms >= 60_000 and rem(ms, 60_000) == 0 do
+    "#{div(ms, 60_000)} minutes"
+  end
+
+  defp format_timeout(ms) when is_integer(ms) and ms >= 1_000 and rem(ms, 1_000) == 0 do
+    "#{div(ms, 1_000)} seconds"
+  end
+
+  defp format_timeout(ms), do: "#{inspect(ms)} ms"
 
   defp extract_issue_count(%{issues: issues}) when is_list(issues), do: length(issues)
   defp extract_issue_count(%{smells: smells}) when is_list(smells), do: length(smells)

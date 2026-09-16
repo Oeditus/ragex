@@ -61,6 +61,7 @@ defmodule Ragex.Analysis.DependencyGraph do
   def find_cycles(opts \\ []) do
     scope = Keyword.get(opts, :scope, :module)
     min_length = Keyword.get(opts, :min_cycle_length, 2)
+    max_depth = Keyword.get(opts, :max_depth, 15)
     limit = Keyword.get(opts, :limit, 100)
 
     try do
@@ -69,7 +70,7 @@ defmodule Ragex.Analysis.DependencyGraph do
 
       # Find all cycles using DFS
       nodes = Map.keys(adjacency)
-      cycles = find_all_cycles(nodes, adjacency, min_length, limit)
+      cycles = find_all_cycles(nodes, adjacency, min_length, limit, max_depth)
 
       {:ok, cycles}
     rescue
@@ -563,13 +564,13 @@ defmodule Ragex.Analysis.DependencyGraph do
   end
 
   # Find all cycles using DFS
-  defp find_all_cycles(nodes, adjacency, min_length, limit) do
+  defp find_all_cycles(nodes, adjacency, min_length, limit, max_depth) do
     {cycles, _} =
       Enum.reduce_while(nodes, {[], 0}, fn node, {cycles_acc, count} ->
         if count >= limit do
           {:halt, {cycles_acc, count}}
         else
-          node_cycles = find_cycles_from_node(node, adjacency, min_length)
+          node_cycles = find_cycles_from_node(node, adjacency, min_length, max_depth)
           new_count = count + length(node_cycles)
           {:cont, {cycles_acc ++ node_cycles, new_count}}
         end
@@ -583,33 +584,53 @@ defmodule Ragex.Analysis.DependencyGraph do
   end
 
   # Find cycles starting from a specific node using DFS
-  defp find_cycles_from_node(start_node, adjacency, min_length) do
-    find_cycles_dfs(start_node, adjacency, [start_node], MapSet.new([start_node]), start_node, [])
+  defp find_cycles_from_node(start_node, adjacency, min_length, max_depth) do
+    find_cycles_dfs(
+      start_node,
+      adjacency,
+      [start_node],
+      MapSet.new([start_node]),
+      start_node,
+      [],
+      max_depth
+    )
     |> Enum.filter(fn cycle -> length(cycle) >= min_length end)
   end
 
   # DFS to detect cycles
-  @dialyzer {:nowarn_function, find_cycles_dfs: 6}
-  defp find_cycles_dfs(current, adjacency, path, visited, target, cycles) do
-    neighbors = Map.get(adjacency, current, [])
+  @dialyzer {:nowarn_function, find_cycles_dfs: 7}
+  defp find_cycles_dfs(current, adjacency, path, visited, target, cycles, max_depth) do
+    if length(path) >= max_depth do
+      cycles
+    else
+      neighbors = Map.get(adjacency, current, [])
 
-    Enum.reduce(neighbors, cycles, fn neighbor, acc ->
-      cond do
-        # Found cycle back to target
-        neighbor == target && length(path) >= 2 ->
-          [path | acc]
+      Enum.reduce_while(neighbors, cycles, fn neighbor, acc ->
+        cond do
+          # Found cycle back to target
+          neighbor == target && length(path) >= 2 ->
+            {:cont, [path | acc]}
 
-        # Already visited, skip
-        MapSet.member?(visited, neighbor) ->
-          acc
+          # Already visited, skip
+          MapSet.member?(visited, neighbor) ->
+            {:cont, acc}
 
-        # Continue DFS
-        true ->
-          new_path = path ++ [neighbor]
-          new_visited = MapSet.put(visited, neighbor)
-          find_cycles_dfs(neighbor, adjacency, new_path, new_visited, target, acc)
-      end
-    end)
+          # Continue DFS
+          true ->
+            new_path = path ++ [neighbor]
+            new_visited = MapSet.put(visited, neighbor)
+
+            sub_cycles =
+              find_cycles_dfs(neighbor, adjacency, new_path, new_visited, target, acc, max_depth)
+
+            if length(sub_cycles) >= 50 do
+              {:halt, sub_cycles}
+            else
+              {:cont, sub_cycles}
+            end
+        end
+      end)
+    end
   end
 
   # Normalize cycle to start with the smallest element (for deduplication)
