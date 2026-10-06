@@ -1,5 +1,6 @@
 defmodule Ragex.Test.GraphAnalysisHelper do
-  @moduledoc """
+  @moduledoc false
+  _ = """
   Shared test helper for storing analyzer output into `Ragex.Graph.Store`.
 
   Extracted because `test/editor/refactor_test.exs` and
