@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.33.2"
+  @version "0.34.0"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -84,8 +84,8 @@ defmodule Ragex.MixProject do
       # inside an escript archive; degrades gracefully when absent, see
       # Ragex.Embeddings.Bumblebee.available?/0)
       {:bumblebee, "~> 0.5", optional: true},
-      {:nx, "~> 0.12", optional: true},
-      {:exla, "~> 0.9", optional: true},
+      {:nx, "~> 1.0", optional: true, override: true},
+      {:exla, "~> 1.0", optional: true, override: true},
       # AI Provider
       {:req, "~> 0.5"},
       # Terminal Markdown rendering
