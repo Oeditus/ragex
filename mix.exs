@@ -84,8 +84,8 @@ defmodule Ragex.MixProject do
       # inside an escript archive; degrades gracefully when absent, see
       # Ragex.Embeddings.Bumblebee.available?/0)
       {:bumblebee, "~> 0.5", optional: true},
-      {:nx, "~> 1.0", optional: true, override: true},
-      {:exla, "~> 1.0", optional: true, override: true},
+      {:nx, "~> 0.12 or ~> 1.0", optional: true},
+      {:exla, "~> 0.12 or ~> 1.0", optional: true},
       # AI Provider
       {:req, "~> 0.5"},
       # Terminal Markdown rendering
