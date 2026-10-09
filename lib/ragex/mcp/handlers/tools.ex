@@ -184,6 +184,17 @@ defmodule Ragex.MCP.Handlers.Tools do
                   path: %{
                     type: "string",
                     description: "Path to the directory to watch"
+                  },
+                  dirs: %{
+                    type: "array",
+                    items: %{type: "string"},
+                    description: "Optional list of specific subdirectories to watch"
+                  },
+                  source_only: %{
+                    type: "boolean",
+                    description:
+                      "Whether to only watch source directories like lib and test (default: true)",
+                    default: true
                   }
                 },
                 required: ["path"]
@@ -2514,9 +2525,20 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp analyze_directory(_), do: {:error, "Invalid parameters for analyze_directory"}
 
-  defp watch_directory(%{"path" => path}) do
-    case Watcher.watch_directory(path) do
-      :ok -> {:ok, %{status: "watching", path: path}}
+  defp watch_directory(%{"path" => path} = params) do
+    opts =
+      []
+      |> then(fn opts ->
+        if is_list(params["dirs"]), do: [{:dirs, params["dirs"]} | opts], else: opts
+      end)
+      |> then(fn opts ->
+        if is_boolean(params["source_only"]),
+          do: [{:source_only, params["source_only"]} | opts],
+          else: opts
+      end)
+
+    case Watcher.watch_directory(path, opts) do
+      :ok -> {:ok, %{status: "watching", path: path, watched_directories: Watcher.list_watched()}}
       {:error, reason} -> {:error, "Failed to watch directory: #{inspect(reason)}"}
     end
   end
