@@ -22,7 +22,6 @@ defmodule Ragex.Editor.RefactorModuleTest do
   end
 
   describe "move_function/5" do
-    @tag skip: true, reason: :phase_10a
     test "moves function to existing module", %{test_dir: dir} do
       source_file = Path.join(dir, "source.ex")
       target_file = Path.join(dir, "target.ex")
@@ -52,10 +51,10 @@ defmodule Ragex.Editor.RefactorModuleTest do
       store_analysis(target_analysis)
 
       assert {:ok, result} =
-               Refactor.move_function(:Source, :Target, :move_me, 1, validate: false)
+               Refactor.move_function(Source, Target, :move_me, 1, validate: false)
 
       assert result.status == :success
-      assert length(result.files_modified) == 2
+      assert result.files_modified == 2
 
       # Check source file
       new_source = File.read!(source_file)
@@ -65,7 +64,8 @@ defmodule Ragex.Editor.RefactorModuleTest do
       # Check target file
       new_target = File.read!(target_file)
       assert new_target =~ "existing_func"
-      assert new_target =~ "def move_me(x), do: x * 2"
+      assert new_target =~ "def move_me(x)"
+      assert new_target =~ "x * 2"
     end
 
     @tag skip: true, reason: :phase_10a

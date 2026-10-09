@@ -31,20 +31,14 @@ defmodule Ragex.Analysis.DeadCodeMetastaticTest do
       end
     end
 
-    @tag :skip
-    test "detects unreachable code after return in Elixir", %{tmp_dir: tmp_dir} do
-      # Note: 'return' is not valid Elixir syntax
-      # This test is skipped as Metastatic parses valid syntax
+    test "detects unreachable branch in constant conditional in Elixir", %{tmp_dir: tmp_dir} do
       file_path = Path.join(tmp_dir, "unreachable.ex")
 
       File.write!(file_path, """
-      defmodule Unreachable do
-        def process(x) do
-          if x > 0 do
-            return x
-            IO.puts("unreachable")
-          end
-        end
+      if false do
+        IO.puts("unreachable")
+      else
+        :ok
       end
       """)
 
@@ -52,7 +46,7 @@ defmodule Ragex.Analysis.DeadCodeMetastaticTest do
 
       assert result.has_dead_code?
       assert result.total_dead_statements > 0
-      assert Enum.any?(result.dead_locations, &(&1.type == :unreachable_after_return))
+      assert Enum.any?(result.dead_locations, &(&1.type == :constant_conditional))
     end
 
     @tag :skip
@@ -269,32 +263,27 @@ defmodule Ragex.Analysis.DeadCodeMetastaticTest do
       end
     end
 
-    @tag :skip
     test "detects multiple dead code patterns in one file", %{tmp_dir: tmp_dir} do
-      # Skipped: 'return' is not valid Elixir syntax
       file_path = Path.join(tmp_dir, "multiple.ex")
 
       File.write!(file_path, """
-      defmodule Multiple do
-        def func1 do
-          if true do
-            :ok
-          else
-            :dead1
-          end
-        end
+      if true do
+        :ok
+      else
+        :dead1
+      end
 
-        def func2 do
-          return :early
-          IO.puts("dead2")
-        end
+      if false do
+        IO.puts("dead2")
+      else
+        :ok
       end
       """)
 
       {:ok, result} = DeadCode.analyze_file(file_path)
 
       assert result.has_dead_code?
-      # Should detect both constant conditional and unreachable after return
+      # Should detect both constant conditionals
       assert result.total_dead_statements >= 2
     end
   end

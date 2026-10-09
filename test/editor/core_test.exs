@@ -110,12 +110,6 @@ defmodule Ragex.Editor.CoreTest do
 
       assert {:error, _reason} = Core.edit_file(path, invalid_changes, validate: false)
     end
-
-    test "fails on concurrent modification", %{test_file: _path} do
-      # This test is challenging due to timing - mark as skipped for now
-      # In production, concurrent modification detection works via mtime checking
-      :skip
-    end
   end
 
   describe "validate_changes/3" do

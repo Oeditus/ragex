@@ -14,7 +14,6 @@ defmodule Ragex.Analysis.DuplicationTest do
   end
 
   describe "detect_between_files/3" do
-    @tag skip: true, reason: :metastatic, failure: :duplication_detection
     test "detects identical files (Type I clone)", %{test_dir: test_dir} do
       file1 = Path.join(test_dir, "identical1.ex")
       file2 = Path.join(test_dir, "identical2.ex")
@@ -37,7 +36,6 @@ defmodule Ragex.Analysis.DuplicationTest do
       assert result.similarity_score >= 0.9
     end
 
-    @tag :skip
     test "detects renamed variables (Type II clone)", %{test_dir: test_dir} do
       # Skipped: Metastatic's Elixir adapter may have issues with certain module patterns
       # The test is valid but encounters FunctionClauseError in module_to_string/1
@@ -144,7 +142,6 @@ defmodule Ragex.Analysis.DuplicationTest do
   end
 
   describe "detect_in_files/2" do
-    @tag skip: true, reason: :metastatic, failure: :duplication_detection
     test "detects duplicates across multiple files", %{test_dir: test_dir} do
       file1 = Path.join(test_dir, "multi1.ex")
       file2 = Path.join(test_dir, "multi2.ex")
@@ -213,7 +210,6 @@ defmodule Ragex.Analysis.DuplicationTest do
       assert clones == []
     end
 
-    @tag skip: true, reason: :metastatic, failure: :duplication_detection
     test "includes clone type and similarity in results", %{test_dir: test_dir} do
       file1 = Path.join(test_dir, "dup1.ex")
       file2 = Path.join(test_dir, "dup2.ex")
