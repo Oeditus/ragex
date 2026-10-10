@@ -18,19 +18,30 @@ defmodule Ragex.Cure.Loader do
 
   require Logger
 
+  # Set once the compiler has been verified (or fully loaded) while holding the
+  # global load lock. Beams are loaded one at a time, so the lexer is visible to
+  # other processes well before the rest of the compiler (for example
+  # `Cure.Edition`). Without this flag a concurrent caller would see the lexer
+  # and start parsing against a half-loaded compiler.
+  @ready_key {__MODULE__, :ready}
+  @lock {__MODULE__, :load}
+
   @doc """
-  Returns `true` when the Cure lexer and parser are loaded or loadable.
+  Returns `true` when the Cure compiler has been fully loaded or verified as
+  loadable by `ensure_loaded/0`.
+
+  This is deliberately conservative: it never returns `true` while another
+  process is still in the middle of loading the compiler.
   """
   @spec loaded?() :: boolean()
-  def loaded? do
-    :code.is_loaded(Cure.Compiler.Lexer) != false or
-      (match?({:module, _}, Code.ensure_compiled(Cure.Compiler.Lexer)) and
-         match?({:module, _}, Code.ensure_compiled(Cure.Compiler.Parser)))
-  end
+  def loaded?, do: :persistent_term.get(@ready_key, false)
 
   @doc """
   Ensures the Cure compiler is available, loading it from the `cure` escript
   when necessary.
+
+  Concurrent callers are serialized: all of them wait for a single load to
+  finish and none returns before every beam has been loaded.
 
   ## Returns
   - `:ok` when the Cure lexer and parser are available
@@ -41,7 +52,11 @@ defmodule Ragex.Cure.Loader do
     if loaded?() do
       :ok
     else
-      load_from_executable()
+      :global.trans({@lock, self()}, &locked_ensure_loaded/0, [node()], :infinity)
+      |> case do
+        :aborted -> {:error, :cure_not_available}
+        result -> result
+      end
     end
   end
 
@@ -61,6 +76,33 @@ defmodule Ragex.Cure.Loader do
 
   # Private functions
 
+  # Runs while holding the global lock, so no other process is loading beams
+  # and the code server state observed here is consistent.
+  defp locked_ensure_loaded do
+    cond do
+      loaded?() ->
+        :ok
+
+      compiler_available?() ->
+        mark_ready()
+
+      true ->
+        load_from_executable()
+    end
+  end
+
+  defp mark_ready do
+    :persistent_term.put(@ready_key, true)
+    :ok
+  end
+
+  defp compiler_available? do
+    Enum.all?(
+      [Cure.Compiler.Lexer, Cure.Compiler.Parser],
+      &match?({:module, _}, Code.ensure_compiled(&1))
+    )
+  end
+
   defp load_from_executable do
     with path when is_binary(path) <- find_executable(),
          {:ok, sections} <- :escript.extract(String.to_charlist(path), []),
@@ -68,7 +110,7 @@ defmodule Ragex.Cure.Loader do
          {:ok, files} <- :zip.extract(archive, [:memory]) do
       load_beams(files)
 
-      if loaded?(), do: :ok, else: {:error, :cure_not_available}
+      if compiler_available?(), do: mark_ready(), else: {:error, :cure_not_available}
     else
       _ -> {:error, :cure_not_available}
     end

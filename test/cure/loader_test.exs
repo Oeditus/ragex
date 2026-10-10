@@ -38,5 +38,35 @@ defmodule Ragex.Cure.LoaderTest do
     test "returns :ok or a not-available error without raising" do
       assert Loader.ensure_loaded() in [:ok, {:error, :cure_not_available}]
     end
+
+    test "concurrent callers never observe a partially loaded compiler" do
+      results =
+        1..32
+        |> Task.async_stream(
+          fn _ ->
+            case Loader.ensure_loaded() do
+              :ok ->
+                {:ok,
+                 Enum.map(
+                   [Cure.Compiler.Lexer, Cure.Compiler.Parser, Cure.Edition],
+                   &match?({:module, _}, Code.ensure_loaded(&1))
+                 )}
+
+              other ->
+                other
+            end
+          end,
+          max_concurrency: 32,
+          timeout: 60_000
+        )
+        |> Enum.map(fn {:ok, result} -> result end)
+
+      for result <- results do
+        case result do
+          {:ok, loaded} -> assert Enum.all?(loaded)
+          {:error, :cure_not_available} -> :ok
+        end
+      end
+    end
   end
 end
