@@ -13,15 +13,9 @@ defmodule Ragex.LanguageSupport do
   - `:python` -- `.py`
   - `:ruby` -- `.rb`
   - `:haskell` -- `.hs`
-  - `:javascript` -- `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`
-
-  Note: JavaScript/TypeScript use `Metastatic.Adapters.JavaScript`, a pure-Elixir
-  adapter that produces MetaAST directly from source text without an intermediate parse step.
   - `:javascript` -- `.js`, `.jsx`, `.mjs`, `.cjs`
   - `:typescript` -- `.ts`, `.tsx`
-
-  Note: JavaScript/TypeScript use `Metastatic.Adapters.JavaScript` and `Metastatic.Adapters.TypeScript`,
-  which bridge Babel AST to MetaAST.
+  - `:cure` -- `.cure`
 
   ## Usage
 
@@ -39,7 +33,15 @@ defmodule Ragex.LanguageSupport do
   alias Metastatic.{Adapter, Document}
 
   @type language ::
-          :elixir | :erlang | :python | :ruby | :haskell | :javascript | :typescript | :unknown
+          :elixir
+          | :erlang
+          | :python
+          | :ruby
+          | :haskell
+          | :javascript
+          | :typescript
+          | :cure
+          | :unknown
 
   @extension_map %{
     ".ex" => :elixir,
@@ -54,7 +56,8 @@ defmodule Ragex.LanguageSupport do
     ".ts" => :typescript,
     ".tsx" => :typescript,
     ".mjs" => :javascript,
-    ".cjs" => :javascript
+    ".cjs" => :javascript,
+    ".cure" => :cure
   }
 
   @adapter_map %{
@@ -64,10 +67,11 @@ defmodule Ragex.LanguageSupport do
     ruby: Metastatic.Adapters.Ruby,
     haskell: Metastatic.Adapters.Haskell,
     javascript: Metastatic.Adapters.JavaScript,
-    typescript: Metastatic.Adapters.TypeScript
+    typescript: Metastatic.Adapters.TypeScript,
+    cure: Metastatic.Adapters.Cure
   }
 
-  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .js .jsx .ts .tsx .mjs .cjs)
+  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .js .jsx .ts .tsx .mjs .cjs .cure)
 
   @all_extensions Map.keys(@extension_map)
 

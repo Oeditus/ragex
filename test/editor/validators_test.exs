@@ -2,13 +2,23 @@ defmodule Ragex.Editor.ValidatorsTest do
   use ExUnit.Case, async: true
 
   alias Ragex.Editor.Validator
+  alias Ragex.Editor.Validators.{Cure, Erlang, Javascript, Python}
   alias Ragex.Editor.Validators.Elixir, as: ElixirValidator
-  alias Ragex.Editor.Validators.{Erlang, Javascript, Python}
 
   describe "Ragex.Editor.Validator" do
     test "detects Elixir files" do
       assert {:ok, :valid} = Validator.validate("defmodule Test, do: :ok", path: "test.ex")
       assert {:ok, :valid} = Validator.validate("defmodule Test, do: :ok", path: "test.exs")
+    end
+
+    test "detects Cure files" do
+      code = """
+      mod Math
+        fn add(x: Int, y: Int) -> Int =
+          x + y
+      """
+
+      assert {:ok, :valid} = Validator.validate(code, path: "math.cure")
     end
 
     test "detects Erlang files" do
@@ -253,6 +263,54 @@ defmodule Ragex.Editor.ValidatorsTest do
       assert Javascript.can_validate?("test.cjs")
       refute Javascript.can_validate?("test.ex")
       refute Javascript.can_validate?("test.py")
+    end
+  end
+
+  describe "Ragex.Editor.Validators.Cure" do
+    test "validates correct Cure code" do
+      code = """
+      mod Math
+        fn add(x: Int, y: Int) -> Int =
+          x + y
+      """
+
+      assert {:ok, :valid} = Cure.validate(code)
+    end
+
+    test "validates existing Cure stdlib files" do
+      option_path = "/opt/Proyectos/Cure/cure/lib/std/option.cure"
+
+      if File.exists?(option_path) do
+        content = File.read!(option_path)
+        assert {:ok, :valid} = Cure.validate(content, path: option_path)
+        assert {:ok, :valid} = Validator.validate(content, path: option_path)
+      end
+    end
+
+    test "detects syntax errors" do
+      code = """
+      mod Math
+        fn add(x, y) = +
+      """
+
+      assert {:error, [error | _]} = Cure.validate(code)
+      assert error.line == 2
+      assert error.message =~ ~r/(unexpected|token)/i
+    end
+
+    test "detects unterminated strings" do
+      code = "\"unterminated string"
+
+      assert {:error, [error]} = Cure.validate(code)
+      assert error.line == 1
+      assert error.message =~ ~r/unterminated string/i
+    end
+
+    test "can_validate? returns true for .cure files" do
+      assert Cure.can_validate?("test.cure")
+      assert Cure.can_validate?("/path/to/lib/std/option.cure")
+      refute Cure.can_validate?("test.ex")
+      refute Cure.can_validate?("test.py")
     end
   end
 end

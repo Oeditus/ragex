@@ -80,6 +80,7 @@ defmodule Ragex.Editor.Formatter do
       ".jsx" -> :javascript
       ".ts" -> :typescript
       ".tsx" -> :typescript
+      ".cure" -> :cure
       _ -> nil
     end
   end
@@ -155,6 +156,26 @@ defmodule Ragex.Editor.Formatter do
   defp detect_formatter(:typescript, path) do
     # TypeScript uses same formatters as JavaScript
     detect_formatter(:javascript, path)
+  end
+
+  defp detect_formatter(:cure, path) do
+    cond do
+      command_exists?("cure") ->
+        {"cure", ["fmt"]}
+
+      File.exists?(Path.expand("../../Cure/cure/cure", File.cwd!())) ->
+        {Path.expand("../../Cure/cure/cure", File.cwd!()), ["fmt"]}
+
+      true ->
+        case find_project_root(path, "cure") do
+          nil ->
+            nil
+
+          root ->
+            bin = Path.join(root, "cure")
+            if File.exists?(bin), do: {bin, ["fmt"]}, else: nil
+        end
+    end
   end
 
   defp detect_formatter(_language, _path), do: nil

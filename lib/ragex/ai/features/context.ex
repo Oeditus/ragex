@@ -366,6 +366,7 @@ defmodule Ragex.AI.Features.Context do
       ".py" -> :python
       ".js" -> :javascript
       ".ts" -> :typescript
+      ".cure" -> :cure
       _ -> :unknown
     end
   end

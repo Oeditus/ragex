@@ -460,6 +460,7 @@ defmodule Ragex.MCP.Handlers.Resources do
       ".py" -> "python"
       ext when ext in [".js", ".jsx", ".mjs"] -> "javascript"
       ext when ext in [".ts", ".tsx"] -> "typescript"
+      ".cure" -> "cure"
       _ -> "unknown"
     end
   end

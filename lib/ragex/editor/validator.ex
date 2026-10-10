@@ -87,7 +87,8 @@ defmodule Ragex.Editor.Validator do
       erlang: Ragex.Editor.Validators.Erlang,
       python: Ragex.Editor.Validators.Python,
       ruby: Ragex.Editor.Validators.Ruby,
-      javascript: Ragex.Editor.Validators.Javascript
+      javascript: Ragex.Editor.Validators.Javascript,
+      cure: Ragex.Editor.Validators.Cure
     }
   end
 
@@ -146,6 +147,7 @@ defmodule Ragex.Editor.Validator do
         ".tsx" -> :javascript
         ".mjs" -> :javascript
         ".cjs" -> :javascript
+        ".cure" -> :cure
         _ -> nil
       end
 

@@ -38,6 +38,10 @@ defmodule Ragex.LanguageSupportTest do
       assert :typescript = LanguageSupport.detect_language("App.tsx")
     end
 
+    test "detects Cure" do
+      assert :cure = LanguageSupport.detect_language("lib/std/option.cure")
+    end
+
     test "returns :unknown for unsupported extensions" do
       assert :unknown = LanguageSupport.detect_language("file.txt")
       assert :unknown = LanguageSupport.detect_language("Makefile")
@@ -52,6 +56,7 @@ defmodule Ragex.LanguageSupportTest do
       assert {:ok, Metastatic.Adapters.Python} = LanguageSupport.get_adapter(:python)
       assert {:ok, Metastatic.Adapters.Ruby} = LanguageSupport.get_adapter(:ruby)
       assert {:ok, Metastatic.Adapters.Haskell} = LanguageSupport.get_adapter(:haskell)
+      assert {:ok, Metastatic.Adapters.Cure} = LanguageSupport.get_adapter(:cure)
     end
 
     test "returns adapter for JavaScript and TypeScript" do
@@ -68,6 +73,13 @@ defmodule Ragex.LanguageSupportTest do
     test "parses valid Elixir source" do
       source = "defmodule Foo do\n  def bar, do: :ok\nend\n"
       assert {:ok, %Metastatic.Document{}} = LanguageSupport.parse_document(source, :elixir)
+    end
+
+    test "parses valid Cure source" do
+      source = "mod Math\n  fn add(x: Int, y: Int) -> Int =\n    x + y\n"
+
+      assert {:ok, %Metastatic.Document{language: :cure}} =
+               LanguageSupport.parse_document(source, :cure)
     end
 
     test "returns error for unsupported language" do
