@@ -35,6 +35,9 @@ jobs:
         
       - name: Install Node parser dependencies
         run: cd priv/js_parser && npm ci
+
+      - name: Set up Cure
+        uses: cure-lang/setup-cure@v1
         
       - name: Run Ragex CI Audit (diff-based, blocking)
         # Use GITHUB_BASE_REF when running on PRs to run differential analysis,

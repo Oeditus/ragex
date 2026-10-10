@@ -278,9 +278,19 @@ defmodule Ragex.Editor.ValidatorsTest do
     end
 
     test "validates existing Cure stdlib files" do
-      option_path = "/opt/Proyectos/Cure/cure/lib/std/option.cure"
+      cure_home = System.get_env("CURE_HOME")
 
-      if File.exists?(option_path) do
+      option_path =
+        [
+          cure_home && Path.join([cure_home, "lib", "std", "option.cure"]),
+          cure_home && Path.join([cure_home, "priv", "std", "option.cure"]),
+          "/opt/Proyectos/Cure/cure/lib/std/option.cure",
+          Path.expand("../../Cure/cure/lib/std/option.cure", File.cwd!())
+        ]
+        |> Enum.reject(&is_nil/1)
+        |> Enum.find(&File.exists?/1)
+
+      if option_path do
         content = File.read!(option_path)
         assert {:ok, :valid} = Cure.validate(content, path: option_path)
         assert {:ok, :valid} = Validator.validate(content, path: option_path)

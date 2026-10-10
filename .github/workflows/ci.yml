@@ -81,6 +81,9 @@ jobs:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
 
+    - name: Set up Cure
+      uses: cure-lang/setup-cure@v1
+
     - name: Install Ruby parser gem
       run: gem install --user-install parser
 
@@ -107,6 +110,9 @@ jobs:
       with:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
+
+    - name: Set up Cure
+      uses: cure-lang/setup-cure@v1
 
     - name: Install Node parser dependencies
       run: cd priv/js_parser && npm ci
