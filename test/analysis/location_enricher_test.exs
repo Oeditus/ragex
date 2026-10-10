@@ -1,10 +1,15 @@
 defmodule Ragex.Analysis.LocationEnricherTest do
-  use ExUnit.Case, async: true
+  # The knowledge graph store is a global singleton and several async tests
+  # clear it in their own setup, so this suite must run serially to keep the
+  # nodes it registers visible for the duration of each test.
+  use ExUnit.Case, async: false
 
   alias Ragex.Analysis.LocationEnricher
   alias Ragex.Graph.Store
 
   setup do
+    Store.clear()
+    Store.sync()
     LocationEnricher.clear_cache()
     :ok
   end
