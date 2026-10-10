@@ -9,6 +9,7 @@ defmodule Ragex.Editor.Validators.Cure do
   @behaviour Ragex.Editor.Validator
 
   alias Metastatic.Adapters.Cure
+  alias Ragex.Cure.Loader
   alias Ragex.Editor.Types
   require Logger
 
@@ -166,8 +167,13 @@ defmodule Ragex.Editor.Validators.Cure do
 
   defp humanize_tag(other), do: to_string(other)
 
+  # Cure is looked up in this order: already loaded, a `_build/*/lib/cure/ebin`
+  # near the validated file, then the `cure` escript. The escript is loaded by
+  # `Ragex.Cure.Loader`, which never replaces modules the host already has.
+  # Without that, Metastatic's own escript fallback overwrites its Cure adapter
+  # with the older copy embedded in the escript.
   defp maybe_ensure_cure_compiler(opts) do
-    if not cure_loaded?() do
+    if not Loader.loaded?() do
       case Keyword.get(opts, :path) do
         path when is_binary(path) ->
           find_and_load_cure_ebin(path)
@@ -175,13 +181,11 @@ defmodule Ragex.Editor.Validators.Cure do
         _ ->
           :ok
       end
-    end
-  end
 
-  defp cure_loaded? do
-    :code.is_loaded(Cure.Compiler.Lexer) != false or
-      (match?({:module, _}, Code.ensure_compiled(Cure.Compiler.Lexer)) and
-         match?({:module, _}, Code.ensure_compiled(Cure.Compiler.Parser)))
+      Loader.ensure_loaded()
+    end
+
+    :ok
   end
 
   defp find_and_load_cure_ebin(file_path) do
