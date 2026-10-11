@@ -16,6 +16,7 @@ defmodule Ragex.LanguageSupport do
   - `:javascript` -- `.js`, `.jsx`, `.mjs`, `.cjs`
   - `:typescript` -- `.ts`, `.tsx`
   - `:cure` -- `.cure`
+  - `:agda` -- `.agda`, `.lagda`
 
   ## Usage
 
@@ -41,6 +42,7 @@ defmodule Ragex.LanguageSupport do
           | :javascript
           | :typescript
           | :cure
+          | :agda
           | :unknown
 
   @extension_map %{
@@ -57,7 +59,9 @@ defmodule Ragex.LanguageSupport do
     ".tsx" => :typescript,
     ".mjs" => :javascript,
     ".cjs" => :javascript,
-    ".cure" => :cure
+    ".cure" => :cure,
+    ".agda" => :agda,
+    ".lagda" => :agda
   }
 
   @adapter_map %{
@@ -68,10 +72,11 @@ defmodule Ragex.LanguageSupport do
     haskell: Metastatic.Adapters.Haskell,
     javascript: Metastatic.Adapters.JavaScript,
     typescript: Metastatic.Adapters.TypeScript,
-    cure: Metastatic.Adapters.Cure
+    cure: Metastatic.Adapters.Cure,
+    agda: Metastatic.Adapters.Agda
   }
 
-  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .js .jsx .ts .tsx .mjs .cjs .cure)
+  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .js .jsx .ts .tsx .mjs .cjs .cure .agda .lagda)
 
   @all_extensions Map.keys(@extension_map)
 

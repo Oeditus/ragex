@@ -211,7 +211,7 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ MCP Tools: `get_ai_usage`, `get_ai_cache_stats`<br/><br/>
     ▸ Metastatic Integration<br/>
       ▹ MetaAST Analyzer: Enhanced cross-language analysis via Metastatic library<br/>
-      ▹ Supported Languages: Elixir, Erlang, Python, Ruby, Haskell<br/>
+      ▹ Supported Languages: Elixir, Erlang, Python, Ruby, Haskell, JavaScript, TypeScript, Cure, March, Agda<br/>
       ▹ Fallback Strategy: Graceful degradation to native analyzers<br/>
       ▹ Feature Flags: Configurable `use_metastatic` option<br/><br/>
     ▸ RAG Pipeline<br/>
@@ -1169,6 +1169,7 @@ Everything that’s supported by [`metastatic`](https://metastatic.hexdocs.pm)
 
 | Language | Atom Identifier | Extensions   | Adapter Module | Parser Strategy                                      |
 |----------|-----------------|--------------|----------------|------------------------------------------------------|
+| Agda     | :agda           | .agda, .lagda| agda.ex        | Subprocess Agda parser bridge (priv/parsers/agda)    |
 | Cure     | :cure           | .cure        | cure.ex        | In-process BEAM modules with Subprocess fallback     |
 | Elixir   | :elixir         | .ex, .exs	| elixir.ex      | Native Elixir Code.string_to_quoted/2                |
 | Erlang   | :erlang         | .erl, .hrl	| erlang.ex      | Native BEAM :erl_scan and :erl_parse                 |

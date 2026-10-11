@@ -35,7 +35,10 @@ defmodule Ragex.URLAnalyzer.Classifier do
     ".bash",
     ".zsh",
     ".sql",
-    ".hs"
+    ".hs",
+    ".cure",
+    ".agda",
+    ".lagda"
   ]
   @api_spec_extensions [".json", ".yaml", ".yml"]
 

@@ -69,19 +69,9 @@ defmodule Ragex.Editor.Formatter do
   # Private functions
 
   defp detect_language(path) do
-    case Path.extname(path) do
-      ".ex" -> :elixir
-      ".exs" -> :elixir
-      ".erl" -> :erlang
-      ".hrl" -> :erlang
-      ".py" -> :python
-      ".rb" -> :ruby
-      ".js" -> :javascript
-      ".jsx" -> :javascript
-      ".ts" -> :typescript
-      ".tsx" -> :typescript
-      ".cure" -> :cure
-      _ -> nil
+    case Ragex.LanguageSupport.detect_language(path) do
+      :unknown -> nil
+      lang -> lang
     end
   end
 
@@ -99,14 +89,15 @@ defmodule Ragex.Editor.Formatter do
   end
 
   defp detect_formatter(:erlang, path) do
-    # Check if we're in a rebar3 project
-    project_root = find_project_root(path, "rebar.config")
+    cond do
+      command_exists?("erlfmt") ->
+        {"erlfmt", ["-w"]}
 
-    if project_root && command_exists?("rebar3") do
-      {"rebar3", ["fmt", "-w", path]}
-    else
-      # No standard Erlang formatter without rebar3
-      nil
+      find_project_root(path, "rebar.config") && command_exists?("rebar3") ->
+        {"rebar3", ["fmt", "-w"]}
+
+      true ->
+        nil
     end
   end
 

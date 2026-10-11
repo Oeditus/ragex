@@ -187,7 +187,7 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   end
 
   defp walk({:import, meta, children}, ctx, acc) when is_list(meta) do
-    source = Keyword.get(meta, :source, "unknown")
+    source = Keyword.get(meta, :source) || Keyword.get(meta, :module, "unknown")
     import_type = Keyword.get(meta, :import_type, :import)
 
     import_entry = %{

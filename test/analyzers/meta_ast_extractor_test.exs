@@ -186,6 +186,23 @@ defmodule Ragex.Analyzers.MetaASTExtractorTest do
           :ok
       end
     end
+
+    test "extracts modules, functions, and calls from Erlang MetaAST" do
+      ast =
+        {:container, [container_type: :module, name: "math_utils", language: :erlang],
+         [
+           {:function_def, [name: "add", params: [{:param, [], "A"}, {:param, [], "B"}]],
+            [
+              {:function_call, [name: "erlang.+"], [{:variable, [], "A"}, {:variable, [], "B"}]}
+            ]}
+         ]}
+
+      doc = Document.new(ast, :erlang)
+      {:ok, result} = MetaASTExtractor.extract(doc, "src/math_utils.erl")
+
+      assert [%{name: :math_utils, file: "src/math_utils.erl"}] = result.modules
+      assert [%{name: :add, arity: 2, module: :math_utils}] = result.functions
+    end
   end
 
   describe "extract/2 with synthetic MetaAST" do
@@ -285,6 +302,28 @@ defmodule Ragex.Analyzers.MetaASTExtractorTest do
       assert :map in call_names
       assert :fetch_data in call_names
       assert :transform in call_names
+    end
+  end
+
+  describe "extract/2 with Agda MetaAST" do
+    test "extracts modules, functions, calls, and imports from Agda AST" do
+      ast =
+        {:container, [container_type: :module, name: "Data.Nat", language: :agda],
+         [
+           {:import, [module: "Agda.Primitive", open: true], []},
+           {:function_def, [name: "add", params: [{:param, [], "x"}, {:param, [], "y"}]],
+            [
+              {:function_call, [name: "plus"], [{:variable, [], "x"}, {:variable, [], "y"}]}
+            ]}
+         ]}
+
+      doc = Document.new(ast, :agda)
+      {:ok, result} = MetaASTExtractor.extract(doc, "src/Data/Nat.agda")
+
+      assert [%{name: "Data.Nat", file: "src/Data/Nat.agda"}] = result.modules
+      assert [%{name: :add, arity: 2, module: "Data.Nat"}] = result.functions
+      assert [%{to_function: :plus, from_module: "Data.Nat", from_function: :add}] = result.calls
+      assert [%{to_module: "Agda.Primitive"}] = result.imports
     end
   end
 

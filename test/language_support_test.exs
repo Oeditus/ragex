@@ -42,6 +42,11 @@ defmodule Ragex.LanguageSupportTest do
       assert :cure = LanguageSupport.detect_language("lib/std/option.cure")
     end
 
+    test "detects Agda" do
+      assert :agda = LanguageSupport.detect_language("src/Data/Nat.agda")
+      assert :agda = LanguageSupport.detect_language("src/Data/Nat.lagda")
+    end
+
     test "returns :unknown for unsupported extensions" do
       assert :unknown = LanguageSupport.detect_language("file.txt")
       assert :unknown = LanguageSupport.detect_language("Makefile")
@@ -57,6 +62,7 @@ defmodule Ragex.LanguageSupportTest do
       assert {:ok, Metastatic.Adapters.Ruby} = LanguageSupport.get_adapter(:ruby)
       assert {:ok, Metastatic.Adapters.Haskell} = LanguageSupport.get_adapter(:haskell)
       assert {:ok, Metastatic.Adapters.Cure} = LanguageSupport.get_adapter(:cure)
+      assert {:ok, Metastatic.Adapters.Agda} = LanguageSupport.get_adapter(:agda)
     end
 
     test "returns adapter for JavaScript and TypeScript" do
@@ -173,6 +179,8 @@ defmodule Ragex.LanguageSupportTest do
       assert ".ex" in exts
       assert ".js" in exts
       assert ".py" in exts
+      assert ".agda" in exts
+      assert ".lagda" in exts
     end
   end
 
@@ -183,6 +191,8 @@ defmodule Ragex.LanguageSupportTest do
       assert ".py" in exts
       assert ".js" in exts
       assert ".ts" in exts
+      assert ".agda" in exts
+      assert ".lagda" in exts
     end
   end
 
@@ -190,6 +200,7 @@ defmodule Ragex.LanguageSupportTest do
     test "true for languages with adapters" do
       assert LanguageSupport.has_adapter?(:elixir)
       assert LanguageSupport.has_adapter?(:python)
+      assert LanguageSupport.has_adapter?(:agda)
     end
 
     test "false for unknown languages" do

@@ -89,6 +89,11 @@ defmodule Ragex.Editor.FormatterTest do
       js_available = Formatter.available?("script.js")
       assert is_boolean(js_available)
     end
+
+    test "checks Erlang formatters if available" do
+      erlang_available = Formatter.available?("src/module.erl")
+      assert is_boolean(erlang_available)
+    end
   end
 
   describe "integration with Core.edit_file" do

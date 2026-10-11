@@ -130,25 +130,11 @@ defmodule Ragex.Editor.Validator do
   end
 
   defp detect_validator_from_path(path) do
-    ext = Path.extname(path)
-
     language =
-      case ext do
-        ".ex" -> :elixir
-        ".exs" -> :elixir
-        ".erl" -> :erlang
-        ".hrl" -> :erlang
-        ".py" -> :python
-        ".rb" -> :ruby
-        ".js" -> :javascript
-        ".jsx" -> :javascript
-        # TypeScript uses JS validator
-        ".ts" -> :javascript
-        ".tsx" -> :javascript
-        ".mjs" -> :javascript
-        ".cjs" -> :javascript
-        ".cure" -> :cure
-        _ -> nil
+      case Ragex.LanguageSupport.detect_language(path) do
+        :typescript -> :javascript
+        :unknown -> nil
+        lang -> lang
       end
 
     if language do

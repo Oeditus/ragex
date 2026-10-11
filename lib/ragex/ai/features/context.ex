@@ -358,17 +358,7 @@ defmodule Ragex.AI.Features.Context do
   end
 
   defp detect_language(file_path) do
-    case Path.extname(file_path) do
-      ".ex" -> :elixir
-      ".exs" -> :elixir
-      ".erl" -> :erlang
-      ".hrl" -> :erlang
-      ".py" -> :python
-      ".js" -> :javascript
-      ".ts" -> :typescript
-      ".cure" -> :cure
-      _ -> :unknown
-    end
+    Ragex.LanguageSupport.detect_language(file_path)
   end
 
   defp find_similar_patterns(code, _language, opts) do

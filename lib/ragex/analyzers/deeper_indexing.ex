@@ -140,6 +140,10 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     Enum.sort_by(templates ++ quoted, &elem(&1, 0))
   end
 
+  def extract_strings(source, lang) when lang in [:haskell, :agda, :cure] do
+    extract_strings_regex(source, ~r/"([^"\\]|\\.)*"/, 1)
+  end
+
   def extract_strings(_source, _language), do: []
 
   defp extract_strings_regex(source, regex, _group) do
@@ -212,6 +216,24 @@ defmodule Ragex.Analyzers.DeeperIndexing do
       end)
 
     Enum.sort_by(line_comments ++ block_comments, &elem(&1, 0))
+  end
+
+  def extract_comments(source, lang) when lang in [:haskell, :agda] do
+    line_comments = extract_line_comments(source, ~r/^\s*--\s*(.*)$/)
+
+    block_comments =
+      Regex.scan(~r/\{-\s*([\s\S]*?)\s*-\}/, source)
+      |> Enum.flat_map(fn [full_match, content] ->
+        before = String.split(source, full_match) |> hd()
+        line_num = length(String.split(before, "\n"))
+        [{line_num, String.trim(content)}]
+      end)
+
+    Enum.sort_by(line_comments ++ block_comments, &elem(&1, 0))
+  end
+
+  def extract_comments(source, :cure) do
+    extract_line_comments(source, ~r/^\s*#+\s*(.*)$/)
   end
 
   def extract_comments(_source, _language), do: []

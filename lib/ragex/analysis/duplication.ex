@@ -320,7 +320,7 @@ defmodule Ragex.Analysis.Duplication do
   # Private functions
 
   defp find_supported_files(dir, recursive, exclude_patterns) do
-    extensions = [".ex", ".exs", ".erl", ".hrl", ".py", ".rb", ".hs"]
+    extensions = Ragex.LanguageSupport.metastatic_extensions()
 
     pattern = if recursive, do: Path.join(dir, "**/*"), else: Path.join(dir, "*")
 

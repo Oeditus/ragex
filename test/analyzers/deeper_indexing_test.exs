@@ -160,6 +160,50 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
     end
   end
 
+  describe "extract/3 with Agda" do
+    @agda_source """
+    -- Natural number utilities
+    module Data.Nat.Utils where
+
+    {- Block comment
+       about addition -}
+    greeting : String
+    greeting = "Hello, Agda!"
+    """
+
+    test "extracts strings and comments from Agda source" do
+      analysis = %{functions: [], modules: []}
+      enrichment = DeeperIndexing.extract(@agda_source, "Utils.agda", analysis)
+      all_strings = enrichment.strings |> Map.values() |> List.flatten()
+      assert Enum.any?(all_strings, &String.contains?(&1, "Hello, Agda!"))
+
+      all_comments = enrichment.comments |> Map.values() |> List.flatten()
+      assert Enum.any?(all_comments, &String.contains?(&1, "Natural number utilities"))
+      assert Enum.any?(all_comments, &String.contains?(&1, "Block comment"))
+    end
+  end
+
+  describe "extract/3 with Cure" do
+    @cure_source """
+    # Option type module
+    ## Standard library implementation
+    mod Option
+      fn map(opt: Option, f: Any) -> Option =
+        "option result"
+    """
+
+    test "extracts strings and comments from Cure source" do
+      analysis = %{functions: [], modules: []}
+      enrichment = DeeperIndexing.extract(@cure_source, "option.cure", analysis)
+      all_strings = enrichment.strings |> Map.values() |> List.flatten()
+      assert Enum.any?(all_strings, &String.contains?(&1, "option result"))
+
+      all_comments = enrichment.comments |> Map.values() |> List.flatten()
+      assert Enum.any?(all_comments, &String.contains?(&1, "Option type module"))
+      assert Enum.any?(all_comments, &String.contains?(&1, "Standard library implementation"))
+    end
+  end
+
   describe "merge_into_analysis/2" do
     test "merges enrichment into function metadata" do
       analysis = %{

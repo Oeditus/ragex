@@ -454,14 +454,9 @@ defmodule Ragex.MCP.Handlers.Resources do
   end
 
   defp detect_language(file_path) do
-    case Path.extname(file_path) do
-      ext when ext in [".ex", ".exs"] -> "elixir"
-      ext when ext in [".erl", ".hrl"] -> "erlang"
-      ".py" -> "python"
-      ext when ext in [".js", ".jsx", ".mjs"] -> "javascript"
-      ext when ext in [".ts", ".tsx"] -> "typescript"
-      ".cure" -> "cure"
-      _ -> "unknown"
+    case Ragex.LanguageSupport.detect_language(file_path) do
+      :unknown -> "unknown"
+      lang -> Atom.to_string(lang)
     end
   end
 

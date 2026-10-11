@@ -60,7 +60,6 @@ defmodule Ragex.MCP.Handlers.Tools do
   alias Ragex.Analyzers.Elixir, as: ElixirAnalyzer
   alias Ragex.Analyzers.Erlang, as: ErlangAnalyzer
   alias Ragex.Analyzers.JavaScript, as: JavaScriptAnalyzer
-  alias Ragex.Analyzers.Metastatic
   alias Ragex.Analyzers.Python, as: PythonAnalyzer
 
   alias Ragex.Editor.{
@@ -2588,6 +2587,8 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp get_analyzer("javascript", _path), do: JavaScriptAnalyzer
   defp get_analyzer("typescript", _path), do: JavaScriptAnalyzer
+  defp get_analyzer("agda", _path), do: Ragex.Analyzers.Metastatic
+  defp get_analyzer("cure", _path), do: Ragex.Analyzers.Metastatic
   defp get_analyzer(_, path), do: get_analyzer("auto", path)
 
   defp use_metastatic? do
@@ -2596,7 +2597,7 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp metastatic_supports?(path) do
     ext = Path.extname(path)
-    ext in Metastatic.supported_extensions()
+    ext in Ragex.LanguageSupport.metastatic_extensions()
   end
 
   defp get_native_analyzer(path) do
