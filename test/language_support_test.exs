@@ -38,10 +38,12 @@ defmodule Ragex.LanguageSupportTest do
       assert :typescript = LanguageSupport.detect_language("App.tsx")
     end
 
+    @tag :cure
     test "detects Cure" do
       assert :cure = LanguageSupport.detect_language("lib/std/option.cure")
     end
 
+    @tag :agda
     test "detects Agda" do
       assert :agda = LanguageSupport.detect_language("src/Data/Nat.agda")
       assert :agda = LanguageSupport.detect_language("src/Data/Nat.lagda")
@@ -61,7 +63,15 @@ defmodule Ragex.LanguageSupportTest do
       assert {:ok, Metastatic.Adapters.Python} = LanguageSupport.get_adapter(:python)
       assert {:ok, Metastatic.Adapters.Ruby} = LanguageSupport.get_adapter(:ruby)
       assert {:ok, Metastatic.Adapters.Haskell} = LanguageSupport.get_adapter(:haskell)
+    end
+
+    @tag :cure
+    test "returns adapter for Cure" do
       assert {:ok, Metastatic.Adapters.Cure} = LanguageSupport.get_adapter(:cure)
+    end
+
+    @tag :agda
+    test "returns adapter for Agda" do
       assert {:ok, Metastatic.Adapters.Agda} = LanguageSupport.get_adapter(:agda)
     end
 
@@ -81,6 +91,7 @@ defmodule Ragex.LanguageSupportTest do
       assert {:ok, %Metastatic.Document{}} = LanguageSupport.parse_document(source, :elixir)
     end
 
+    @tag :cure
     test "parses valid Cure source" do
       source = "mod Math\n  fn add(x: Int, y: Int) -> Int =\n    x + y\n"
 
@@ -179,8 +190,18 @@ defmodule Ragex.LanguageSupportTest do
       assert ".ex" in exts
       assert ".js" in exts
       assert ".py" in exts
+    end
+
+    @tag :agda
+    test "includes Agda extensions" do
+      exts = LanguageSupport.supported_extensions()
       assert ".agda" in exts
       assert ".lagda" in exts
+    end
+
+    @tag :cure
+    test "includes the Cure extension" do
+      assert ".cure" in LanguageSupport.supported_extensions()
     end
   end
 
@@ -191,8 +212,18 @@ defmodule Ragex.LanguageSupportTest do
       assert ".py" in exts
       assert ".js" in exts
       assert ".ts" in exts
+    end
+
+    @tag :agda
+    test "includes Agda extensions" do
+      exts = LanguageSupport.metastatic_extensions()
       assert ".agda" in exts
       assert ".lagda" in exts
+    end
+
+    @tag :cure
+    test "includes the Cure extension" do
+      assert ".cure" in LanguageSupport.metastatic_extensions()
     end
   end
 
@@ -200,7 +231,16 @@ defmodule Ragex.LanguageSupportTest do
     test "true for languages with adapters" do
       assert LanguageSupport.has_adapter?(:elixir)
       assert LanguageSupport.has_adapter?(:python)
+    end
+
+    @tag :agda
+    test "true for Agda" do
       assert LanguageSupport.has_adapter?(:agda)
+    end
+
+    @tag :cure
+    test "true for Cure" do
+      assert LanguageSupport.has_adapter?(:cure)
     end
 
     test "false for unknown languages" do

@@ -3,6 +3,10 @@ defmodule Ragex.Cure.LoaderTest do
 
   alias Ragex.Cure.Loader
 
+  # The Cure toolchain is not installed in CI; see `--exclude cure` in
+  # .github/workflows/ci.yml.
+  @moduletag :cure
+
   describe "load_beams/1" do
     test "loads beams for modules that are not available yet" do
       [{module, binary}] =

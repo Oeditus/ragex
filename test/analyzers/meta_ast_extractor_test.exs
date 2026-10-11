@@ -306,6 +306,8 @@ defmodule Ragex.Analyzers.MetaASTExtractorTest do
   end
 
   describe "extract/2 with Agda MetaAST" do
+    @describetag :agda
+
     test "extracts modules, functions, calls, and imports from Agda AST" do
       ast =
         {:container, [container_type: :module, name: "Data.Nat", language: :agda],

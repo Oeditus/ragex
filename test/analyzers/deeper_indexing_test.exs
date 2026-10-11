@@ -161,6 +161,8 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
   end
 
   describe "extract/3 with Agda" do
+    @describetag :agda
+
     @agda_source """
     -- Natural number utilities
     module Data.Nat.Utils where
@@ -184,6 +186,8 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
   end
 
   describe "extract/3 with Cure" do
+    @describetag :cure
+
     @cure_source """
     # Option type module
     ## Standard library implementation

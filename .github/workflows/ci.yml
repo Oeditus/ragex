@@ -81,19 +81,19 @@ jobs:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
 
-    - name: Set up Cure
-      uses: cure-lang/setup-cure@v1
-
     - name: Install Ruby parser gem
       run: gem install --user-install parser
 
     - name: Install Node parser dependencies
       run: cd priv/js_parser && npm ci
 
+    # Agda and Cure tests are excluded: neither toolchain is installed on the
+    # runner, and the upstream adapters are already excluded the same way in
+    # metastatic's CI.
     - name: Run tests with coverage
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: mix coveralls.github --exclude resource_intensive
+      run: mix coveralls.github --exclude resource_intensive --exclude agda --exclude cure
 
   analysis:
     name: Diff Analysis

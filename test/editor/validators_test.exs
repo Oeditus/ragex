@@ -11,6 +11,7 @@ defmodule Ragex.Editor.ValidatorsTest do
       assert {:ok, :valid} = Validator.validate("defmodule Test, do: :ok", path: "test.exs")
     end
 
+    @tag :cure
     test "detects Cure files" do
       code = """
       mod Math
@@ -267,6 +268,8 @@ defmodule Ragex.Editor.ValidatorsTest do
   end
 
   describe "Ragex.Editor.Validators.Cure" do
+    @describetag :cure
+
     test "validates correct Cure code" do
       code = """
       mod Math
