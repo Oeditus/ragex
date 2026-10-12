@@ -2,7 +2,7 @@ defmodule Ragex.Editor.ValidatorsTest do
   use ExUnit.Case, async: true
 
   alias Ragex.Editor.Validator
-  alias Ragex.Editor.Validators.{Cure, Erlang, Javascript, Python}
+  alias Ragex.Editor.Validators.{Agda, Cure, Erlang, Javascript, Python}
   alias Ragex.Editor.Validators.Elixir, as: ElixirValidator
 
   describe "Ragex.Editor.Validator" do
@@ -24,6 +24,26 @@ defmodule Ragex.Editor.ValidatorsTest do
 
     test "detects Erlang files" do
       assert {:ok, :valid} = Validator.validate("-module(test).", path: "test.erl")
+    end
+
+    @tag :agda
+    test "detects Agda files" do
+      code = """
+      module Test where
+
+      data Bool : Set where
+        true  : Bool
+        false : Bool
+      """
+
+      case System.find_executable("agda") do
+        nil ->
+          assert {:error, [error]} = Validator.validate(code, path: "Test.agda")
+          assert error.severity == :warning
+
+        _ ->
+          assert {:ok, :valid} = Validator.validate(code, path: "Test.agda")
+      end
     end
 
     test "detects Python files" do
@@ -324,6 +344,112 @@ defmodule Ragex.Editor.ValidatorsTest do
       assert Cure.can_validate?("/path/to/lib/std/option.cure")
       refute Cure.can_validate?("test.ex")
       refute Cure.can_validate?("test.py")
+    end
+  end
+
+  describe "Ragex.Editor.Validators.Agda" do
+    @describetag :agda
+
+    test "validates correct Agda code" do
+      code = """
+      module Test where
+
+      data Nat : Set where
+        zero : Nat
+        suc  : Nat -> Nat
+      """
+
+      case System.find_executable("agda") do
+        nil ->
+          assert {:error, [error]} = Agda.validate(code, path: "Test.agda")
+          assert error.severity == :warning
+
+        _ ->
+          assert {:ok, :valid} = Agda.validate(code, path: "Test.agda")
+      end
+    end
+
+    test "validates hierarchical module name matching path" do
+      code = """
+      module Data.Nat.Base where
+
+      data Nat : Set where
+        zero : Nat
+      """
+
+      case System.find_executable("agda") do
+        nil ->
+          :ok
+
+        _ ->
+          assert {:ok, :valid} = Agda.validate(code, path: "Data/Nat/Base.agda")
+      end
+    end
+
+    test "detects syntax errors" do
+      code = """
+      module Test where
+
+      data Nat : Set where
+        syntax error :::
+      """
+
+      case System.find_executable("agda") do
+        nil ->
+          :ok
+
+        _ ->
+          assert {:error, [error | _]} = Agda.validate(code, path: "Test.agda")
+          assert error.line == 4
+          assert error.message =~ ~r/(ParseError|syntax)/i
+      end
+    end
+
+    test "detects scope errors" do
+      code = """
+      module TestScope where
+
+      data Nat : Set where
+        zero : Nat
+        suc  : UnknownType -> Nat
+      """
+
+      case System.find_executable("agda") do
+        nil ->
+          :ok
+
+        _ ->
+          assert {:error, [error | _]} = Agda.validate(code, path: "TestScope.agda")
+          assert error.message =~ ~r/(NotInScope|UnknownType)/i
+      end
+    end
+
+    test "validates literate Agda (.lagda)" do
+      code = """
+      \\begin{code}
+      module TestLit where
+
+      data Bool : Set where
+        true  : Bool
+        false : Bool
+      \\end{code}
+      """
+
+      case System.find_executable("agda") do
+        nil ->
+          :ok
+
+        _ ->
+          assert {:ok, :valid} = Agda.validate(code, path: "TestLit.lagda")
+      end
+    end
+
+    test "can_validate? returns true for .agda and .lagda files" do
+      assert Agda.can_validate?("Test.agda")
+      assert Agda.can_validate?("/path/to/Module.lagda")
+      refute Agda.can_validate?("test.ex")
+      refute Agda.can_validate?("test.cure")
+      refute Agda.can_validate?("test.py")
     end
   end
 end

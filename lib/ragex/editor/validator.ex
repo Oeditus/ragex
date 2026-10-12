@@ -88,7 +88,8 @@ defmodule Ragex.Editor.Validator do
       python: Ragex.Editor.Validators.Python,
       ruby: Ragex.Editor.Validators.Ruby,
       javascript: Ragex.Editor.Validators.Javascript,
-      cure: Ragex.Editor.Validators.Cure
+      cure: Ragex.Editor.Validators.Cure,
+      agda: Ragex.Editor.Validators.Agda
     }
   end
 
