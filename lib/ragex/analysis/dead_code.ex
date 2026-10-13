@@ -568,8 +568,45 @@ defmodule Ragex.Analysis.DeadCode do
     {module, name, arity} = extract_func_parts(func_ref)
     tuple_ref = {:function, module, name, arity}
 
-    Store.get_incoming_edges(tuple_ref, :calls)
-    |> length()
+    edges = Store.get_incoming_edges(tuple_ref, :calls)
+
+    if Enum.empty?(edges) do
+      # Fallback: check with nil module, or string/atom module variants
+      alt_modules =
+        cond do
+          is_binary(module) -> [nil, try_to_atom(module)]
+          is_atom(module) and not is_nil(module) -> [nil, Atom.to_string(module)]
+          true -> [nil]
+        end
+
+      alt_names =
+        cond do
+          is_binary(name) -> [name, try_to_atom(name)]
+          is_atom(name) and not is_nil(name) -> [name, Atom.to_string(name)]
+          true -> [name]
+        end
+        |> Enum.uniq()
+
+      Enum.reduce_while(alt_modules, 0, fn alt_mod, _acc ->
+        caller_count =
+          Enum.reduce_while(alt_names, 0, fn alt_name, _inner ->
+            case Store.get_incoming_edges({:function, alt_mod, alt_name, arity}, :calls) do
+              [] -> {:cont, 0}
+              found -> {:halt, length(found)}
+            end
+          end)
+
+        if caller_count > 0, do: {:halt, caller_count}, else: {:cont, 0}
+      end)
+    else
+      length(edges)
+    end
+  end
+
+  defp try_to_atom(val) do
+    String.to_existing_atom(val)
+  rescue
+    ArgumentError -> String.to_atom(val)
   end
 
   # Check if function is public
@@ -616,12 +653,28 @@ defmodule Ragex.Analysis.DeadCode do
 
   # Check if function matches callback patterns
   defp callback_pattern?(name, arity) do
-    {name, arity} in @callback_patterns
+    atom_name =
+      cond do
+        is_atom(name) ->
+          name
+
+        is_binary(name) ->
+          try do
+            String.to_existing_atom(name)
+          rescue
+            ArgumentError -> nil
+          end
+
+        true ->
+          nil
+      end
+
+    {atom_name, arity} in @callback_patterns
   end
 
   # Check if function name matches entry point patterns
   defp entry_point_pattern?(name) do
-    name_str = Atom.to_string(name)
+    name_str = to_string(name)
 
     Enum.any?(entry_point_patterns(), fn pattern ->
       Regex.match?(pattern, name_str)

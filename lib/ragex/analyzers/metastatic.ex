@@ -27,7 +27,7 @@ defmodule Ragex.Analyzers.Metastatic do
 
   require Logger
   alias MetaCredo.Analysis.Complexity
-  alias Metastatic.{Builder, Document}
+  alias Metastatic.Document
   alias Ragex.Analyzers.MetaASTExtractor
 
   alias Ragex.Analyzers.Elixir, as: ExAnalyzer
@@ -40,7 +40,7 @@ defmodule Ragex.Analyzers.Metastatic do
   def analyze(source, file_path) do
     language = detect_language(file_path)
 
-    case Builder.from_source(source, language) do
+    case Ragex.LanguageSupport.parse_document(source, language) do
       {:ok, doc} ->
         analyze_via_meta_ast(doc, file_path)
 
@@ -82,12 +82,14 @@ defmodule Ragex.Analyzers.Metastatic do
 
     enriched_functions =
       Enum.map(analysis.functions, fn func ->
-        case Map.get(function_data, func.name) do
+        case Map.get(function_data, {func.name, func.arity}) ||
+               Map.get(function_data, func.name) ||
+               Map.get(function_data, to_string(func.name)) do
           nil ->
             func
 
-          {func_node, body, _meta} ->
-            metrics = calculate_function_metrics(body)
+          {func_node, _body, _meta} ->
+            metrics = calculate_function_metrics(func_node, language)
             ast_serialized = Dllb.MetaAST.to_json_string(func_node)
             metadata = Map.merge(func.metadata, %{metastatic: metrics})
 
@@ -128,17 +130,27 @@ defmodule Ragex.Analyzers.Metastatic do
     case ast do
       {:function_def, meta, body} when is_list(meta) ->
         case Keyword.get(meta, :name) do
-          name when is_binary(name) ->
-            func_name = String.to_atom(name)
+          name when is_binary(name) or is_atom(name) ->
+            func_name = if is_atom(name), do: name, else: String.to_atom(to_string(name))
+            params = Keyword.get(meta, :params, [])
+            arity = length(params)
 
             metadata = %{
-              function_name: name,
-              params: Keyword.get(meta, :params, []),
+              function_name: to_string(name),
+              params: params,
               visibility: Keyword.get(meta, :visibility, :public),
               body: body
             }
 
-            [{func_name, {{:function_def, meta, body}, body, metadata}} | acc]
+            entry = {{:function_def, meta, body}, body, metadata}
+
+            [
+              {{func_name, arity}, entry},
+              {{to_string(name), arity}, entry},
+              {func_name, entry},
+              {to_string(name), entry}
+              | acc
+            ]
 
           _ ->
             acc
@@ -209,8 +221,8 @@ defmodule Ragex.Analyzers.Metastatic do
 
   defp normalize_module_name(name, _language), do: name
 
-  defp calculate_function_metrics(ast_node) do
-    doc = Document.new(ast_node, :elixir)
+  defp calculate_function_metrics(ast_node, language) do
+    doc = Document.new(ast_node, language)
 
     case Complexity.analyze(doc) do
       {:ok, complexity} ->

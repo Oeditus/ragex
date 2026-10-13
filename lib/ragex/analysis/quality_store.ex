@@ -59,7 +59,7 @@ defmodule Ragex.Analysis.QualityStore do
       halstead: get_in(result, [:complexity, :halstead]) || %{},
       loc: get_in(result, [:complexity, :loc]) || %{},
       function_metrics: get_in(result, [:complexity, :function_metrics]) || %{},
-      per_function: get_in(result, [:complexity, :per_function]) || %{},
+      per_function: result |> get_in([:complexity, :per_function]) |> stringify_per_function(),
       purity_pure?: get_in(result, [:purity, :pure?]) |> boolean_default(true),
       purity_effects: get_in(result, [:purity, :effects]) || [],
       purity_confidence: get_in(result, [:purity, :confidence]) || :unknown,
@@ -76,6 +76,32 @@ defmodule Ragex.Analysis.QualityStore do
       Logger.error("Failed to store metrics for #{path}: #{inspect(e)}")
       {:error, e}
   end
+
+  defp stringify_per_function(per_func) when is_map(per_func) do
+    Enum.reduce(per_func, %{}, fn
+      {k, v}, acc when is_binary(k) -> Map.put(acc, k, v)
+      {{mod, fun, arity}, v}, acc -> Map.put(acc, "#{mod}.#{fun}/#{arity}", v)
+      {{fun, arity}, v}, acc -> Map.put(acc, "#{fun}/#{arity}", v)
+      {k, v}, acc when is_atom(k) -> Map.put(acc, Atom.to_string(k), v)
+      {k, v}, acc -> Map.put(acc, inspect(k), v)
+    end)
+  end
+
+  defp stringify_per_function(per_func) when is_list(per_func) do
+    Enum.reduce(per_func, %{}, fn
+      %{} = item, acc ->
+        name =
+          Map.get(item, :name) || Map.get(item, "name") || Map.get(item, :function, "unknown")
+
+        arity = Map.get(item, :arity) || Map.get(item, "arity", 0)
+        Map.put(acc, "#{name}/#{arity}", item)
+
+      _, acc ->
+        acc
+    end)
+  end
+
+  defp stringify_per_function(_), do: %{}
 
   @doc """
   Retrieves quality metrics for a specific file.

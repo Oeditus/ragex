@@ -612,30 +612,72 @@ defmodule Ragex.Analysis.Quality do
   # Build module analysis from stored metrics
   defp build_module_analysis(metrics, module, file_path, sort_by, threshold) do
     per_function = Map.get(metrics, :per_function, %{})
+    mod_str = to_string(module) |> String.replace_prefix("Elixir.", "")
 
-    # Extract all functions for this module
     functions =
-      per_function
-      |> Enum.filter(fn {func_key, _metrics} ->
-        String.starts_with?(func_key, "#{module}.")
-      end)
-      |> Enum.map(fn {func_key, func_metrics} ->
-        # Parse function key: "Module.function/arity"
-        [_module, name_arity] = String.split(func_key, ".", parts: 2)
-        [name_str, arity_str] = String.split(name_arity, "/")
-        name = String.to_atom(name_str)
-        arity = String.to_integer(arity_str)
+      case per_function do
+        %{} = map ->
+          map
+          |> Enum.filter(fn {func_key, _metrics} ->
+            cond do
+              is_binary(func_key) ->
+                clean_key = String.replace_prefix(func_key, "Elixir.", "")
 
-        %{
-          function: name,
-          arity: arity,
-          cyclomatic: Map.get(func_metrics, :cyclomatic, 0),
-          cognitive: Map.get(func_metrics, :cognitive, 0),
-          nesting: Map.get(func_metrics, :nesting, 0),
-          halstead: Map.get(func_metrics, :halstead, %{}),
-          loc: Map.get(func_metrics, :loc, %{})
-        }
-      end)
+                String.starts_with?(clean_key, "#{mod_str}.") or
+                  String.starts_with?(func_key, "#{module}.") or
+                  not String.contains?(clean_key, ".")
+
+              is_tuple(func_key) ->
+                case func_key do
+                  {m, _, _} ->
+                    m_str = to_string(m) |> String.replace_prefix("Elixir.", "")
+                    m_str == mod_str or m == module
+
+                  _ ->
+                    true
+                end
+
+              true ->
+                false
+            end
+          end)
+          |> Enum.map(fn {func_key, func_metrics} ->
+            {name, arity} = parse_func_key(func_key)
+
+            %{
+              function: name,
+              arity: arity,
+              cyclomatic: Map.get(func_metrics, :cyclomatic, 0),
+              cognitive: Map.get(func_metrics, :cognitive, 0),
+              nesting: Map.get(func_metrics, :nesting) || Map.get(func_metrics, :max_nesting, 0),
+              halstead: Map.get(func_metrics, :halstead, %{}),
+              loc: Map.get(func_metrics, :loc, %{})
+            }
+          end)
+          |> Enum.uniq_by(fn f -> {f.function, f.arity} end)
+
+        list when is_list(list) ->
+          list
+          |> Enum.map(fn func_metrics ->
+            name_raw = Map.get(func_metrics, :name) || Map.get(func_metrics, :function, "unknown")
+            name = if is_atom(name_raw), do: name_raw, else: String.to_atom(to_string(name_raw))
+            arity = Map.get(func_metrics, :arity, 0)
+
+            %{
+              function: name,
+              arity: arity,
+              cyclomatic: Map.get(func_metrics, :cyclomatic, 0),
+              cognitive: Map.get(func_metrics, :cognitive, 0),
+              nesting: Map.get(func_metrics, :nesting) || Map.get(func_metrics, :max_nesting, 0),
+              halstead: Map.get(func_metrics, :halstead, %{}),
+              loc: Map.get(func_metrics, :loc, %{})
+            }
+          end)
+          |> Enum.uniq_by(fn f -> {f.function, f.arity} end)
+
+        _ ->
+          []
+      end
 
     # Apply threshold filter if specified
     functions =
@@ -717,9 +759,9 @@ defmodule Ragex.Analysis.Quality do
 
   # Extract function-specific metrics from stored metrics
   defp extract_function_metrics(metrics, module, function, arity) do
-    func_key = "#{module}.#{function}/#{arity}"
+    per_function = Map.get(metrics, :per_function)
 
-    case get_in(metrics, [:per_function, func_key]) do
+    case get_func_metrics(per_function, {module, function, arity}) do
       nil ->
         {:error, {:function_not_found, {module, function, arity}}}
 
@@ -731,7 +773,7 @@ defmodule Ragex.Analysis.Quality do
            arity: arity,
            cyclomatic: Map.get(func_metrics, :cyclomatic, 0),
            cognitive: Map.get(func_metrics, :cognitive, 0),
-           nesting: Map.get(func_metrics, :nesting, 0),
+           nesting: Map.get(func_metrics, :nesting) || Map.get(func_metrics, :max_nesting, 0),
            halstead: Map.get(func_metrics, :halstead, %{}),
            loc: Map.get(func_metrics, :loc, %{})
          }}
@@ -740,9 +782,9 @@ defmodule Ragex.Analysis.Quality do
 
   # Extract function metrics from fresh analysis result
   defp extract_function_metrics_from_result(result, module, function, arity) do
-    func_key = "#{module}.#{function}/#{arity}"
+    per_function = get_in(result, [:complexity, :per_function])
 
-    case get_in(result, [:complexity, :per_function, func_key]) do
+    case get_func_metrics(per_function, {module, function, arity}) do
       nil ->
         {:error, {:function_not_found, {module, function, arity}}}
 
@@ -754,7 +796,7 @@ defmodule Ragex.Analysis.Quality do
            arity: arity,
            cyclomatic: Map.get(func_metrics, :cyclomatic, 0),
            cognitive: Map.get(func_metrics, :cognitive, 0),
-           nesting: Map.get(func_metrics, :nesting, 0),
+           nesting: Map.get(func_metrics, :nesting) || Map.get(func_metrics, :max_nesting, 0),
            halstead: Map.get(func_metrics, :halstead, %{}),
            loc: Map.get(func_metrics, :loc, %{})
          }}
@@ -1010,17 +1052,15 @@ defmodule Ragex.Analysis.Quality do
 
   # Check if this function's file was analyzed
   defp file_metrics?(metrics, {module, name, arity}, min_complexity) do
-    complexity =
-      metrics
-      |> Map.get(:per_function, [])
-      |> Enum.reduce(0, fn per_func, acc ->
-        per_func
-        |> Map.get({module, name, arity}, %{})
-        |> Map.get(:cyclomatic, 0)
-        |> Kernel.+(acc)
-      end)
+    per_function = Map.get(metrics, :per_function)
 
-    complexity >= min_complexity
+    case get_func_metrics(per_function, {module, name, arity}) do
+      %{} = func_metrics ->
+        Map.get(func_metrics, :cyclomatic, 0) >= min_complexity
+
+      _ ->
+        false
+    end
   end
 
   defp do_file_metrics(
@@ -1030,8 +1070,8 @@ defmodule Ragex.Analysis.Quality do
        when not is_nil(file) do
     with {:ok, metrics} <- QualityStore.get_metrics(file),
          true <- file_metrics?(metrics, {module, name, arity}, min_complexity),
-         %{} = per_func <- Map.get(metrics, :per_function),
-         %{} = func_metrics <- Map.get(per_func, {module, name, arity}) do
+         per_function <- Map.get(metrics, :per_function),
+         %{} = func_metrics <- get_func_metrics(per_function, {module, name, arity}) do
       [
         %{
           module: module,
@@ -1041,7 +1081,7 @@ defmodule Ragex.Analysis.Quality do
           line: line,
           cyclomatic_complexity: Map.get(func_metrics, :cyclomatic, 0),
           cognitive_complexity: Map.get(func_metrics, :cognitive),
-          max_nesting: Map.get(func_metrics, :max_nesting),
+          max_nesting: Map.get(func_metrics, :nesting) || Map.get(func_metrics, :max_nesting),
           location: if(line, do: "#{file}:#{line}", else: file)
         }
       ]
@@ -1051,6 +1091,84 @@ defmodule Ragex.Analysis.Quality do
   end
 
   defp do_file_metrics(_, _), do: []
+
+  defp get_func_metrics(per_function_data, {module, function, arity}) do
+    mod_str = to_string(module) |> String.replace_prefix("Elixir.", "")
+    func_str = to_string(function)
+    func_atom = if is_atom(function), do: function, else: try_to_atom(function)
+    arity_int = if is_integer(arity), do: arity, else: 0
+
+    candidates = [
+      "#{module}.#{function}/#{arity}",
+      "#{mod_str}.#{func_str}/#{arity_int}",
+      {module, func_atom, arity_int},
+      {mod_str, func_atom, arity_int},
+      {module, func_str, arity_int},
+      "#{func_str}/#{arity_int}",
+      "#{mod_str}.#{func_str}",
+      func_str,
+      func_atom,
+      {func_atom, arity_int},
+      {func_str, arity_int}
+    ]
+
+    case per_function_data do
+      %{} = map ->
+        Enum.find_value(candidates, fn key -> Map.get(map, key) end)
+
+      list when is_list(list) ->
+        Enum.find_value(list, fn
+          %{} = item ->
+            name = Map.get(item, :name) || Map.get(item, "name") || Map.get(item, :function)
+            item_arity = Map.get(item, :arity) || Map.get(item, "arity")
+
+            name_matches? =
+              cond do
+                is_nil(name) -> false
+                is_atom(name) -> name == func_atom or Atom.to_string(name) == func_str
+                is_binary(name) -> name == func_str or name == "#{mod_str}.#{func_str}"
+                true -> false
+              end
+
+            arity_matches? = is_nil(item_arity) or item_arity == arity_int
+
+            if name_matches? and arity_matches? do
+              item
+            else
+              nil
+            end
+
+          _ ->
+            nil
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_func_key({_mod, name, arity}) do
+    name_atom = if is_atom(name), do: name, else: String.to_atom(to_string(name))
+    {name_atom, arity}
+  end
+
+  defp parse_func_key(key) when is_binary(key) do
+    clean = key |> String.replace_prefix("Elixir.", "")
+    parts = String.split(clean, "/")
+    arity = if length(parts) == 2, do: String.to_integer(List.last(parts)), else: 0
+    func_part = List.first(parts)
+    name_str = func_part |> String.split(".") |> List.last()
+    {String.to_atom(name_str), arity}
+  end
+
+  defp parse_func_key(atom) when is_atom(atom), do: {atom, 0}
+  defp parse_func_key(_), do: {:unknown, 0}
+
+  defp try_to_atom(val) do
+    String.to_existing_atom(val)
+  rescue
+    ArgumentError -> String.to_atom(val)
+  end
 
   @doc """
   Analyzes directory quality metrics.

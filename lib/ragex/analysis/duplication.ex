@@ -143,24 +143,26 @@ defmodule Ragex.Analysis.Duplication do
       for {path1, doc1} <- documents,
           {path2, doc2} <- documents,
           path1 < path2 do
-        case MetaDuplication.detect(doc1, doc2, opts) do
-          {:ok, result} ->
-            if result.duplicate? do
-              %{
-                file1: path1,
-                file2: path2,
-                clone_type: result.clone_type,
-                type: result.clone_type,
-                similarity: result.similarity_score,
-                snippets: extract_snippets(result, path1, path2),
-                details: %{
-                  locations: result.locations || [],
-                  summary: result.summary || ""
-                }
-              }
-            else
-              nil
-            end
+        {:ok, result} = MetaDuplication.detect(doc1, doc2, opts)
+
+        if result.duplicate? do
+          similarity =
+            Map.get(result, :similarity_score) || Map.get(result, :similarity, 0.0)
+
+          %{
+            file1: path1,
+            file2: path2,
+            clone_type: result.clone_type,
+            type: result.clone_type,
+            similarity: similarity,
+            snippets: extract_snippets(result, path1, path2),
+            details: %{
+              locations: result.locations || [],
+              summary: result.summary || ""
+            }
+          }
+        else
+          nil
         end
       end
       |> Enum.filter(&(&1 != nil))
@@ -441,12 +443,18 @@ defmodule Ragex.Analysis.Duplication do
     locations = result.locations || []
 
     snippets =
-      Enum.map(locations, fn loc ->
-        # Location format varies by clone detector
-        case loc do
-          # If Metastatic provided code directly
-          %{file: file, code: code, line_start: line_start, line_end: line_end}
-          when is_binary(code) ->
+      locations
+      |> Enum.with_index()
+      |> Enum.map(fn {loc, idx} ->
+        fallback_file = if idx == 0, do: path1, else: path2
+        file = Map.get(loc, :file) || fallback_file
+        code = Map.get(loc, :code)
+        line_start = Map.get(loc, :start_line) || Map.get(loc, :line_start)
+        line_end = Map.get(loc, :end_line) || Map.get(loc, :line_end)
+        line = Map.get(loc, :line) || line_start
+
+        cond do
+          is_binary(code) and is_integer(line_start) and is_integer(line_end) ->
             %{
               file: file,
               location: "#{file}:#{line_start}-#{line_end}",
@@ -455,17 +463,24 @@ defmodule Ragex.Analysis.Duplication do
               code: code
             }
 
-          # If we have line numbers but no code, extract from file
-          %{file: file, line_start: line_start, line_end: line_end}
-          when is_integer(line_start) and is_integer(line_end) ->
+          is_binary(code) ->
+            %{
+              file: file,
+              location: file,
+              line_start: line_start,
+              line_end: line_end,
+              code: code
+            }
+
+          is_integer(line_start) and is_integer(line_end) ->
             case LocationEnricher.extract_snippet(file, line_start, line_end) do
-              {:ok, code} ->
+              {:ok, extracted_code} ->
                 %{
                   file: file,
                   location: "#{file}:#{line_start}-#{line_end}",
                   line_start: line_start,
                   line_end: line_end,
-                  code: code
+                  code: extracted_code
                 }
 
               {:error, _} ->
@@ -478,16 +493,15 @@ defmodule Ragex.Analysis.Duplication do
                 }
             end
 
-          # Fallback with just line number
-          %{file: file, line: line} when is_integer(line) ->
+          is_integer(line) ->
             case LocationEnricher.extract_snippet(file, line, line + 5) do
-              {:ok, code} ->
+              {:ok, extracted_code} ->
                 %{
                   file: file,
                   location: "#{file}:#{line}",
                   line_start: line,
                   line_end: line + 5,
-                  code: code
+                  code: extracted_code
                 }
 
               {:error, _} ->
@@ -500,8 +514,7 @@ defmodule Ragex.Analysis.Duplication do
                 }
             end
 
-          # Just file, try to get function from graph
-          %{file: file} ->
+          file != nil ->
             %{
               file: file,
               location: file,
@@ -510,7 +523,7 @@ defmodule Ragex.Analysis.Duplication do
               code: "(no line information available)"
             }
 
-          _ ->
+          true ->
             nil
         end
       end)
@@ -532,7 +545,6 @@ defmodule Ragex.Analysis.Duplication do
     # Try to find first function in file and extract its snippet
     case LocationEnricher.find_function_at_location(file_path, line: 1) do
       {:ok, func_info} when func_info.line != nil ->
-        # Extract ~10 lines starting from function
         case LocationEnricher.extract_snippet(file_path, func_info.line, func_info.line + 9) do
           {:ok, code} ->
             %{
@@ -544,16 +556,26 @@ defmodule Ragex.Analysis.Duplication do
             }
 
           {:error, _} ->
-            %{
-              file: file_path,
-              location: file_path,
-              line_start: nil,
-              line_end: nil,
-              code: "(code snippet not available)"
-            }
+            fallback_snippet_from_file(file_path)
         end
 
       _ ->
+        fallback_snippet_from_file(file_path)
+    end
+  end
+
+  defp fallback_snippet_from_file(file_path) do
+    case LocationEnricher.extract_snippet(file_path, 1, 10) do
+      {:ok, code} ->
+        %{
+          file: file_path,
+          location: "#{file_path}:1-10",
+          line_start: 1,
+          line_end: 10,
+          code: code
+        }
+
+      {:error, _} ->
         %{
           file: file_path,
           location: file_path,

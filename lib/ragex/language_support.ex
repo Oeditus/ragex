@@ -32,6 +32,7 @@ defmodule Ragex.LanguageSupport do
   """
 
   alias Metastatic.{Adapter, Document}
+  alias Ragex.Cure.Loader, as: CureLoader
 
   @type language ::
           :elixir
@@ -134,9 +135,28 @@ defmodule Ragex.LanguageSupport do
   """
   @spec parse_document(String.t(), language(), keyword()) ::
           {:ok, Document.t()} | {:error, term()}
-  def parse_document(content, language, _opts \\ []) when is_binary(content) do
+  def parse_document(content, language, opts \\ [])
+
+  def parse_document(content, :cure, opts) when is_binary(content) do
+    _ = CureLoader.ensure_loaded()
+    do_parse_document(content, :cure, Keyword.put_new(opts, :preserve_comments, false))
+  end
+
+  def parse_document(content, language, opts) when is_binary(content) do
+    do_parse_document(content, language, opts)
+  end
+
+  defp do_parse_document(content, language, opts) do
     with {:ok, adapter} <- get_adapter(language) do
-      case Adapter.abstract(adapter, content, language) do
+      res =
+        if function_exported?(adapter, :abstract, 3) do
+          # credo:disable-for-next-line Credo.Check.Refactor.Apply
+          apply(adapter, :abstract, [content, language, opts])
+        else
+          Adapter.abstract(adapter, content, language)
+        end
+
+      case res do
         {:ok, %Document{} = doc} -> {:ok, doc}
         {:error, _} = error -> error
       end

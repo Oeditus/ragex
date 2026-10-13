@@ -99,6 +99,24 @@ defmodule Ragex.LanguageSupportTest do
                LanguageSupport.parse_document(source, :cure)
     end
 
+    @tag :cure
+    test "parses modern Cure source with macros and atom identifiers" do
+      source = """
+      mod MacroTest
+        fn slice(start: Int, end: Int) -> Int =
+          end
+
+        macro Value
+          syntax value becomes 42
+        end
+      """
+
+      assert {:ok, %Metastatic.Document{language: :cure, ast: ast}} =
+               LanguageSupport.parse_document(source, :cure)
+
+      assert Metastatic.AST.conforms?(ast)
+    end
+
     test "returns error for unsupported language" do
       assert {:error, {:unsupported_language, :lua}} =
                LanguageSupport.parse_document("x = 1", :lua)

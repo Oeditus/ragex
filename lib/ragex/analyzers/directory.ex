@@ -487,9 +487,11 @@ defmodule Ragex.Analyzers.Directory do
 
     call_edges =
       Enum.map(calls, fn call ->
+        to_module = call.to_module || call.from_module
+
         {
           {:function, call.from_module, call.from_function, call.from_arity},
-          {:function, call.to_module, call.to_function, call.to_arity},
+          {:function, to_module, call.to_function, call.to_arity},
           :calls,
           []
         }

@@ -279,5 +279,34 @@ defmodule Ragex.Analysis.MetastaticBridgeTest do
         end
       end)
     end
+
+    @tag :cure
+    test "analyzes Cure file and calculates per-function metrics" do
+      tmp_dir = System.tmp_dir!()
+      cure_file = Path.join(tmp_dir, "calc_#{:erlang.unique_integer([:positive])}.cure")
+
+      code = """
+      mod Calc
+        fn complex_calc(list: List(Int)) -> Int =
+          match list
+            [] -> 0
+            _ -> 42
+      """
+
+      File.write!(cure_file, code)
+      on_exit(fn -> File.rm(cure_file) end)
+
+      {:ok, analysis} = MetastaticBridge.analyze_file(cure_file)
+      assert analysis.language == :cure
+      assert is_map(analysis.complexity)
+      per_func = analysis.complexity[:per_function]
+      assert is_map(per_func)
+
+      # Should have per-function metrics keyed by function name
+      func_metrics = per_func["complex_calc"] || per_func["Calc.complex_calc/2"]
+      assert is_map(func_metrics)
+      assert func_metrics.cyclomatic > 1
+      assert func_metrics.cognitive > 0
+    end
   end
 end

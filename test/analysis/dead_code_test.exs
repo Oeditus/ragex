@@ -494,4 +494,61 @@ defmodule Ragex.Analysis.DeadCodeTest do
       refute %{type: :function, module: :Popular, name: :popular_func, arity: 0} in unused_funcs
     end
   end
+
+  describe "Cure dead code analysis" do
+    @tag :cure
+    test "analyzes intraprocedural dead code in Cure file" do
+      tmp_dir = System.tmp_dir!()
+      cure_file = Path.join(tmp_dir, "dead_test_#{:erlang.unique_integer([:positive])}.cure")
+
+      code = """
+      mod DeadCheck
+        fn test_func(x: Int) -> Int =
+          match true
+            true -> 42
+            false -> 0
+      """
+
+      File.write!(cure_file, code)
+      on_exit(fn -> File.rm(cure_file) end)
+
+      {:ok, result} = DeadCode.analyze_file(cure_file)
+      assert is_struct(result, MetaCredo.Analysis.DeadCode.Result)
+    end
+
+    test "handles string function names in confidence_score without crashing" do
+      func_ref = {:function, "Std.Math", "main", 0}
+      metadata = %{visibility: :public}
+
+      score = DeadCode.confidence_score(func_ref, metadata)
+      assert is_float(score)
+      assert score < 0.7
+
+      # Regular function with string name
+      regular_ref = {:function, "Std.Math", "calculate", 2}
+      reg_score = DeadCode.confidence_score(regular_ref, metadata)
+      assert is_float(reg_score)
+      assert reg_score >= 0.5
+    end
+
+    test "detects unused functions with string module names in graph store" do
+      Store.clear()
+      Store.sync()
+
+      Store.add_node(:module, "CureModule", %{file: "cure_module.cure", line: 1})
+
+      Store.add_node(:function, {"CureModule", "dead_func", 1}, %{
+        module: "CureModule",
+        name: "dead_func",
+        arity: 1,
+        visibility: :public
+      })
+
+      Store.sync()
+
+      {:ok, dead} = DeadCode.find_unused_exports(min_confidence: 0.5)
+      names = Enum.map(dead, fn d -> d.function.name end)
+      assert "dead_func" in names
+    end
+  end
 end

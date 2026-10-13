@@ -281,6 +281,7 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   defp extract_param_names(params) do
     Enum.map(params, fn
       {:param, _meta, name} when is_binary(name) -> name
+      {:param, _meta, name} when is_atom(name) -> Atom.to_string(name)
       _ -> "_"
     end)
   end

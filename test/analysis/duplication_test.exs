@@ -424,4 +424,79 @@ defmodule Ragex.Analysis.DuplicationTest do
       refute Enum.any?(clones, &String.contains?(&1.file1, "_build"))
     end
   end
+
+  describe "Cure language duplication support" do
+    @describetag :cure
+
+    test "detects identical Cure files (Type I clone)", %{test_dir: test_dir} do
+      file1 = Path.join(test_dir, "math1.cure")
+      file2 = Path.join(test_dir, "math2.cure")
+
+      code = """
+      mod Math
+        fn add(a: Int, b: Int) -> Int =
+          a + b
+      """
+
+      File.write!(file1, code)
+      File.write!(file2, code)
+
+      {:ok, result} = Duplication.detect_between_files(file1, file2)
+
+      assert result.duplicate?
+      assert result.clone_type in [:type_i, :type_ii]
+      assert result.similarity_score >= 0.9
+    end
+
+    test "detects duplicates in modern Cure files with macros and atom identifiers", %{
+      test_dir: test_dir
+    } do
+      file1 = Path.join(test_dir, "macro1.cure")
+      file2 = Path.join(test_dir, "macro2.cure")
+
+      code = """
+      mod SyntaxModule
+        fn slice(start: Int, end: Int) -> Int =
+          end
+
+        macro Value
+          syntax value becomes 42
+        end
+      """
+
+      File.write!(file1, code)
+      File.write!(file2, code)
+
+      {:ok, result} = Duplication.detect_between_files(file1, file2)
+
+      assert result.duplicate?
+      assert result.clone_type in [:type_i, :type_ii]
+      assert result.similarity_score >= 0.9
+    end
+
+    test "detects duplicates in directory with Cure files", %{test_dir: test_dir} do
+      cure_dir = Path.join(test_dir, "cure_project")
+      File.mkdir_p!(cure_dir)
+
+      file1 = Path.join(cure_dir, "calc_a.cure")
+      file2 = Path.join(cure_dir, "calc_b.cure")
+
+      code = """
+      mod Calculator
+        fn multiply(x: Int, y: Int) -> Int =
+          x * y
+      """
+
+      File.write!(file1, code)
+      File.write!(file2, code)
+
+      {:ok, clones} = Duplication.detect_in_directory(cure_dir)
+
+      assert [_ | _] = clones
+      clone = hd(clones)
+      assert clone.similarity >= 0.9
+      assert clone.clone_type in [:type_i, :type_ii]
+      assert length(clone.snippets) >= 2
+    end
+  end
 end

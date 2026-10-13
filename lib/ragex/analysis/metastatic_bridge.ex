@@ -33,7 +33,7 @@ defmodule Ragex.Analysis.MetastaticBridge do
   """
 
   alias MetaCredo.Analysis.{Complexity, Purity}
-  alias Metastatic.{Adapter, Document}
+  alias Metastatic.Document
   alias Metastatic.Semantic.{Enricher, OpKind}
   require Logger
 
@@ -205,7 +205,7 @@ defmodule Ragex.Analysis.MetastaticBridge do
            {:ok, doc} <- parse_document(adapter, content, language),
            {:ok, complexity_result} <- analyze_complexity(doc, metrics, thresholds),
            {:ok, purity_result} <- analyze_purity(doc, metrics) do
-        {:ok, build_result(path, language, complexity_result, purity_result)}
+        {:ok, build_result(path, language, complexity_result, purity_result, doc)}
       else
         {:error, reason} = error ->
           Logger.warning("Analysis failed for #{path}: #{inspect(reason)}")
@@ -271,11 +271,8 @@ defmodule Ragex.Analysis.MetastaticBridge do
   defp detect_language(path), do: Ragex.LanguageSupport.detect_language(path)
   defp get_adapter(lang), do: Ragex.LanguageSupport.get_adapter(lang)
 
-  defp parse_document(adapter, content, language) do
-    case Adapter.abstract(adapter, content, language) do
-      {:ok, %Document{} = doc} -> {:ok, doc}
-      {:error, _} = error -> error
-    end
+  defp parse_document(_adapter, content, language) do
+    Ragex.LanguageSupport.parse_document(content, language)
   end
 
   defp analyze_complexity(_doc, metrics, _thresholds) when is_list(metrics) and metrics == [] do
@@ -318,20 +315,20 @@ defmodule Ragex.Analysis.MetastaticBridge do
     end)
   end
 
-  defp build_result(path, language, complexity_result, purity_result) do
+  defp build_result(path, language, complexity_result, purity_result, doc) do
     %{
       path: path,
       language: language,
-      complexity: format_complexity(complexity_result),
+      complexity: format_complexity(complexity_result, doc),
       purity: format_purity(purity_result),
       warnings: collect_warnings(complexity_result, purity_result),
       timestamp: DateTime.utc_now()
     }
   end
 
-  defp format_complexity(nil), do: %{}
+  defp format_complexity(nil, _doc), do: %{}
 
-  defp format_complexity(result) do
+  defp format_complexity(result, doc) do
     %{
       cyclomatic: result.cyclomatic,
       cognitive: result.cognitive,
@@ -339,10 +336,107 @@ defmodule Ragex.Analysis.MetastaticBridge do
       halstead: result.halstead,
       loc: result.loc,
       function_metrics: result.function_metrics,
-      per_function: result.per_function || %{},
+      per_function: normalize_per_function(result.per_function, doc),
       summary: result.summary
     }
   end
+
+  defp normalize_per_function(per_func, _doc) when is_map(per_func), do: per_func
+
+  # credo:disable-for-lines:61 Credo.Check.Refactor.CyclomaticComplexity
+  defp normalize_per_function(per_func, doc) when is_list(per_func) do
+    ast_funcs = if doc, do: extract_ast_functions(doc.ast, doc.language), else: []
+
+    Enum.reduce(per_func, %{}, fn func, acc ->
+      name = func[:name] || func["name"]
+      name_str = if is_binary(name), do: name, else: to_string(name)
+
+      name_atom =
+        try do
+          String.to_existing_atom(name_str)
+        rescue
+          _ -> String.to_atom(name_str)
+        end
+
+      matched_ast_func = Enum.find(ast_funcs, fn {_mod, f_name, _arity} -> f_name == name_str end)
+
+      {mod_name, arity} =
+        case matched_ast_func do
+          {m, _n, a} -> {m, a}
+          nil -> {nil, func[:arity] || 0}
+        end
+
+      metrics = %{
+        name: name,
+        line: func[:line] || func["line"],
+        cyclomatic: func[:cyclomatic] || func["cyclomatic"] || 0,
+        cognitive: func[:cognitive] || func["cognitive"] || 0,
+        max_nesting: func[:max_nesting] || func["max_nesting"] || 0,
+        nesting: func[:max_nesting] || func[:nesting] || func["nesting"] || 0,
+        variables: func[:variables] || func["variables"] || 0,
+        statements: func[:statements] || func["statements"] || 0,
+        halstead: func[:halstead] || func["halstead"] || %{},
+        loc: func[:loc] || func["loc"] || %{}
+      }
+
+      acc =
+        acc
+        |> Map.put(name_str, metrics)
+        |> Map.put(name_atom, metrics)
+        |> Map.put("#{name_str}/#{arity}", metrics)
+        |> Map.put({name_atom, arity}, metrics)
+
+      if mod_name do
+        mod_str = to_string(mod_name)
+
+        mod_atom =
+          try do
+            String.to_existing_atom(mod_str)
+          rescue
+            _ -> String.to_atom(mod_str)
+          end
+
+        acc
+        |> Map.put("#{mod_str}.#{name_str}/#{arity}", metrics)
+        |> Map.put("#{mod_str}.#{name_str}", metrics)
+        |> Map.put({mod_atom, name_atom, arity}, metrics)
+        |> Map.put({mod_str, name_atom, arity}, metrics)
+      else
+        acc
+      end
+    end)
+  end
+
+  defp extract_ast_functions(ast, language, current_mod \\ nil) do
+    case ast do
+      {:container, meta, body} when is_list(body) ->
+        name = Keyword.get(meta, :name)
+        mod_name = normalize_container_name(name, language)
+        Enum.flat_map(body, &extract_ast_functions(&1, language, mod_name || current_mod))
+
+      {:function_def, meta, _body} ->
+        name = Keyword.get(meta, :name)
+        params = Keyword.get(meta, :params, [])
+        arity = if is_list(params), do: length(params), else: 0
+        [{current_mod, to_string(name), arity}]
+
+      {:block, _, stmts} when is_list(stmts) ->
+        Enum.flat_map(stmts, &extract_ast_functions(&1, language, current_mod))
+
+      list when is_list(list) ->
+        Enum.flat_map(list, &extract_ast_functions(&1, language, current_mod))
+
+      _ ->
+        []
+    end
+  end
+
+  defp normalize_container_name(name, _lang) when is_binary(name), do: name
+
+  defp normalize_container_name(name, _lang) when is_atom(name) and not is_nil(name),
+    do: Atom.to_string(name)
+
+  defp normalize_container_name(_, _), do: nil
 
   defp format_purity(nil), do: %{}
 
