@@ -1,5 +1,5 @@
 defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Metastatic.Adapters.JavaScript, as: JSAdapter
   alias Metastatic.Adapters.TypeScript, as: TSAdapter
@@ -235,6 +235,32 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
 
     test ".ts extension is in metastatic_extensions list" do
       assert ".ts" in LanguageSupport.metastatic_extensions()
+    end
+
+    test "parse_document/3 parses JavaScript when cwd has no priv/parsers/javascript/parser.js" do
+      tmp_dir = System.tmp_dir!()
+      source = "const greeting = (name) => `Hello, ${name}!`;"
+
+      File.cd!(tmp_dir, fn ->
+        assert {:ok, %Metastatic.Document{} = doc} =
+                 LanguageSupport.parse_document(source, :javascript)
+
+        assert doc.language == :javascript
+      end)
+    end
+
+    test "parse_document/3 parses TypeScript when cwd has no priv/parsers/javascript/parser.js" do
+      tmp_dir = System.tmp_dir!()
+
+      source =
+        "interface User { id: number; name: string; }\nconst getUser = (id: number): User => ({ id, name: 'Alice' });"
+
+      File.cd!(tmp_dir, fn ->
+        assert {:ok, %Metastatic.Document{} = doc} =
+                 LanguageSupport.parse_document(source, :typescript)
+
+        assert doc.language == :typescript
+      end)
     end
   end
 

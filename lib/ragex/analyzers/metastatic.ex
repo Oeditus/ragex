@@ -254,7 +254,11 @@ defmodule Ragex.Analyzers.Metastatic do
   end
 
   defp fallback_analyze(source, file_path, language) do
-    if Application.get_env(:ragex, :features)[:fallback_to_native_analyzers] do
+    fallback? =
+      Application.get_env(:ragex, :features, [])
+      |> Keyword.get(:fallback_to_native_analyzers, true)
+
+    if fallback? do
       case language do
         :elixir -> ExAnalyzer.analyze(source, file_path)
         :erlang -> ErlAnalyzer.analyze(source, file_path)

@@ -142,6 +142,17 @@ defmodule Ragex.LanguageSupport do
     do_parse_document(content, :cure, Keyword.put_new(opts, :preserve_comments, false))
   end
 
+  def parse_document(content, language, opts)
+      when is_binary(content) and language in [:javascript, :typescript] do
+    case parse_vendored_js(content, language, opts) do
+      {:ok, %Document{} = doc} ->
+        {:ok, doc}
+
+      _ ->
+        do_parse_document(content, language, opts)
+    end
+  end
+
   def parse_document(content, language, opts) when is_binary(content) do
     do_parse_document(content, language, opts)
   end
@@ -294,4 +305,81 @@ defmodule Ragex.LanguageSupport do
   """
   @spec has_adapter?(language()) :: boolean()
   def has_adapter?(language), do: Map.has_key?(@adapter_map, language)
+
+  defp parse_vendored_js(content, language, _opts) do
+    parser_script = vendored_js_parser_path()
+
+    if parser_script && File.exists?(parser_script) && System.find_executable("node") != nil do
+      temp_path =
+        Path.join(
+          System.tmp_dir!(),
+          "ragex_js_#{System.unique_integer([:positive, :monotonic])}.js"
+        )
+
+      File.write!(temp_path, content)
+
+      try do
+        case System.cmd("node", [parser_script, temp_path],
+               cd: Path.dirname(parser_script),
+               stderr_to_stdout: true
+             ) do
+          {output, 0} ->
+            case Jason.decode(output) do
+              {:ok, %{"ok" => true, "ast" => ast}} ->
+                adapter =
+                  if language == :typescript,
+                    do: Metastatic.Adapters.TypeScript,
+                    else: Metastatic.Adapters.JavaScript
+
+                case adapter.to_meta(ast) do
+                  {:ok, meta_ast, metadata} ->
+                    {:ok, Document.new(meta_ast, language, metadata, content)}
+
+                  error ->
+                    error
+                end
+
+              {:ok, %{"ok" => false, "error" => error}} ->
+                {:error, format_js_error(error)}
+
+              {:error, reason} ->
+                {:error, {:json_decode_error, reason}}
+            end
+
+          {err_output, exit_code} ->
+            {:error, {:node_error, exit_code, err_output}}
+        end
+      rescue
+        e -> {:error, {:exception, Exception.message(e)}}
+      after
+        File.rm(temp_path)
+      end
+    else
+      {:error, :vendored_parser_unavailable}
+    end
+  end
+
+  defp vendored_js_parser_path do
+    priv_dir =
+      try do
+        Application.app_dir(:ragex, "priv")
+      rescue
+        _ -> "priv"
+      end
+
+    candidate = Path.join([priv_dir, "parsers", "javascript", "parser.js"])
+
+    if File.exists?(candidate) do
+      candidate
+    else
+      alt = Path.join([priv_dir, "js_parser", "parser.js"])
+      if File.exists?(alt), do: alt, else: nil
+    end
+  end
+
+  defp format_js_error(%{"msg" => msg, "lineno" => line, "col" => col}) do
+    "SyntaxError at line #{line}: #{msg} (#{line}:#{col})"
+  end
+
+  defp format_js_error(error), do: inspect(error)
 end

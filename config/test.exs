@@ -24,4 +24,6 @@ config :ragex, :cache,
 
 config :ragex, :features,
   suggestions: true,
-  dead_code: true
+  dead_code: true,
+  use_metastatic: true,
+  fallback_to_native_analyzers: true
