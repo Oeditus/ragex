@@ -67,7 +67,13 @@ defmodule Ragex.Analyzers.Metastatic do
   defp analyze_via_meta_ast(%Document{} = doc, file_path) do
     case MetaASTExtractor.extract(doc, file_path) do
       {:ok, analysis} ->
-        {:ok, enrich_analysis(analysis, doc)}
+        try do
+          {:ok, enrich_analysis(analysis, doc)}
+        rescue
+          e ->
+            Logger.warning("MetaAST enrichment failed for #{file_path}: #{Exception.message(e)}")
+            {:ok, analysis}
+        end
 
       {:error, reason} ->
         Logger.warning("MetaAST extraction failed for #{file_path}: #{inspect(reason)}")
@@ -90,7 +96,7 @@ defmodule Ragex.Analyzers.Metastatic do
 
           {func_node, _body, _meta} ->
             metrics = calculate_function_metrics(func_node, language)
-            ast_serialized = Dllb.MetaAST.to_json_string(func_node)
+            ast_serialized = safe_meta_ast_to_json(func_node)
             metadata = Map.merge(func.metadata, %{metastatic: metrics})
 
             func
@@ -108,7 +114,7 @@ defmodule Ragex.Analyzers.Metastatic do
             mod
 
           container_node ->
-            ast_serialized = Dllb.MetaAST.to_json_string(container_node)
+            ast_serialized = safe_meta_ast_to_json(container_node)
             Map.put(mod, :ast_serialized, ast_serialized)
         end
       end)
@@ -261,5 +267,53 @@ defmodule Ragex.Analyzers.Metastatic do
     else
       {:error, :metastatic_failed_no_fallback}
     end
+  end
+
+  defp safe_meta_ast_to_json(node) do
+    node
+    |> sanitize_ast_node()
+    |> Dllb.MetaAST.to_json_string()
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
+  end
+
+  defp sanitize_ast_node(binary) when is_binary(binary) do
+    if String.valid?(binary) do
+      binary
+    else
+      sanitize_utf8_bytes(binary, <<>>)
+    end
+  end
+
+  defp sanitize_ast_node(tuple) when is_tuple(tuple) do
+    tuple
+    |> Tuple.to_list()
+    |> Enum.map(&sanitize_ast_node/1)
+    |> List.to_tuple()
+  end
+
+  defp sanitize_ast_node(list) when is_list(list) do
+    Enum.map(list, &sanitize_ast_node/1)
+  end
+
+  defp sanitize_ast_node(map) when is_map(map) do
+    Map.new(map, fn {k, v} ->
+      {sanitize_ast_node(k), sanitize_ast_node(v)}
+    end)
+  end
+
+  defp sanitize_ast_node(other), do: other
+
+  defp sanitize_utf8_bytes(<<>>, acc), do: acc
+
+  defp sanitize_utf8_bytes(<<c::utf8, rest::binary>>, acc) do
+    sanitize_utf8_bytes(rest, <<acc::binary, c::utf8>>)
+  end
+
+  defp sanitize_utf8_bytes(<<_byte, rest::binary>>, acc) do
+    # Replace invalid byte with U+FFFD REPLACEMENT CHARACTER
+    sanitize_utf8_bytes(rest, <<acc::binary, 0xEF, 0xBF, 0xBD>>)
   end
 end

@@ -252,7 +252,13 @@ defmodule Ragex.MCP.Server do
             {:ok, r} ->
               formatted = Formatter.format(r, tool_name, format_opts)
               json_safe = result_to_json(formatted)
-              text = :json.encode(json_safe) |> IO.iodata_to_binary()
+
+              text =
+                case safe_json_encode(json_safe) do
+                  {:ok, encoded} -> encoded
+                  {:error, _} -> inspect(json_safe)
+                end
+
               Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
 
             {:error, reason} ->
@@ -269,7 +275,13 @@ defmodule Ragex.MCP.Server do
         {:ok, result} ->
           formatted = Formatter.format(result, tool_name, format_opts)
           json_safe_result = result_to_json(formatted)
-          text = :json.encode(json_safe_result) |> IO.iodata_to_binary()
+
+          text =
+            case safe_json_encode(json_safe_result) do
+              {:ok, encoded} -> encoded
+              {:error, _} -> inspect(json_safe_result)
+            end
+
           Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
 
         {:error, reason} ->
@@ -291,7 +303,13 @@ defmodule Ragex.MCP.Server do
     case Resources.read_resource(uri) do
       {:ok, contents} ->
         # Convert contents to JSON and wrap in MCP resource format
-        json_text = :json.encode(contents) |> IO.iodata_to_binary()
+        json_safe = result_to_json(contents)
+
+        json_text =
+          case safe_json_encode(json_safe) do
+            {:ok, encoded} -> encoded
+            {:error, _} -> inspect(json_safe)
+          end
 
         Protocol.success_response(
           %{
@@ -334,10 +352,39 @@ defmodule Ragex.MCP.Server do
   defp result_to_json(value) when is_list(value), do: Enum.map(value, &result_to_json/1)
 
   defp result_to_json(value) when is_map(value) do
-    Map.new(value, fn {k, v} -> {k, result_to_json(v)} end)
+    Map.new(value, fn {k, v} -> {result_to_json_key(k), result_to_json(v)} end)
+  end
+
+  defp result_to_json(value) when is_binary(value) do
+    if String.valid?(value) do
+      value
+    else
+      sanitize_utf8_binary(value)
+    end
   end
 
   defp result_to_json(value), do: value
+
+  defp result_to_json_key(key) when is_binary(key) do
+    if String.valid?(key), do: key, else: sanitize_utf8_binary(key)
+  end
+
+  defp result_to_json_key(key) when is_atom(key), do: key
+  defp result_to_json_key(key), do: result_to_json(key) |> to_string()
+
+  defp sanitize_utf8_binary(binary) do
+    for <<c <- binary>>, into: "" do
+      if c < 128, do: <<c>>, else: "\uFFFD"
+    end
+  end
+
+  defp safe_json_encode(value) do
+    {:ok, :json.encode(value) |> IO.iodata_to_binary()}
+  rescue
+    e -> {:error, e}
+  catch
+    _, reason -> {:error, reason}
+  end
 
   defp send_response(response) do
     case Protocol.encode(response) do

@@ -96,5 +96,23 @@ defmodule Ragex.Analyzers.MetastaticEnrichmentTest do
       # Should get an error (either from Metastatic or native analyzer)
       assert {:error, _reason} = Metastatic.analyze(source, "test.ex")
     end
+
+    test "handles code with invalid UTF-8 bytes in string literals safely" do
+      # Byte 255 (\xff\xfe) in string literal
+      source = ~S"""
+      defmodule NonUtf8Module do
+        def test_fn do
+          "\xff\xfe garbage\n"
+        end
+      end
+      """
+
+      assert {:ok, result} = Metastatic.analyze(source, "non_utf8_test.ex")
+      assert length(result.functions) == 1
+      func = hd(result.functions)
+      assert func.name == :test_fn
+      assert is_binary(func.ast_serialized)
+      assert String.valid?(func.ast_serialized)
+    end
   end
 end

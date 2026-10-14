@@ -146,14 +146,15 @@ defmodule Ragex.Analyzers.Directory do
 
     total_to_analyze = length(files_to_analyze)
     t0 = System.monotonic_time(:millisecond)
+    generate_embeddings = Keyword.get(opts, :generate_embeddings, true)
 
     Logger.info("Analyzing #{total_to_analyze} files (concurrency=#{max_concurrency})")
 
     results =
-      Task.Supervisor.async_stream(
+      Task.Supervisor.async_stream_nolink(
         Ragex.TaskSupervisor,
         files_to_analyze,
-        &analyze_and_store_file/1,
+        fn file -> analyze_and_store_file(file, generate_embeddings: generate_embeddings) end,
         max_concurrency: max_concurrency,
         timeout: timeout,
         on_timeout: :kill_task
@@ -195,14 +196,20 @@ defmodule Ragex.Analyzers.Directory do
 
         {{:exit, reason}, index} ->
           elapsed = div(System.monotonic_time(:millisecond) - t0, 1000)
+          file = Enum.at(files_to_analyze, index - 1, "unknown")
+          basename = Path.basename(file)
+          label = if reason == :timeout, do: "TIMEOUT", else: "CRASH"
 
           Progress.bar(index, total_to_analyze,
-            label: "TIMEOUT (#{elapsed}s)",
+            label: "#{label} #{basename} (#{elapsed}s)",
             width: 30
           )
 
-          Logger.warning("[#{index}/#{total_to_analyze}] TIMEOUT: #{inspect(reason)}")
-          {:error, {:task_exit, reason}}
+          Logger.warning(
+            "[#{index}/#{total_to_analyze}] #{label} #{basename}: #{inspect(reason)}"
+          )
+
+          {:error, {file, {:task_exit, reason}}}
       end)
 
     success_count = Enum.count(results, &match?({:ok, _}, &1))
@@ -213,8 +220,8 @@ defmodule Ragex.Analyzers.Directory do
       results
       |> Enum.filter(&match?({:error, _}, &1))
       |> Enum.map(fn
-        {:error, {:task_exit, reason}} -> %{file: "unknown", reason: {:task_exit, reason}}
         {:error, {file, reason}} -> %{file: file, reason: reason}
+        {:error, reason} -> %{file: "unknown", reason: reason}
       end)
 
     if notify do
@@ -360,7 +367,7 @@ defmodule Ragex.Analyzers.Directory do
     end)
   end
 
-  defp analyze_and_store_file(file_path) do
+  defp analyze_and_store_file(file_path, opts) do
     case analyze_file(file_path) do
       {:ok, analysis} ->
         store_analysis(analysis)
@@ -379,13 +386,15 @@ defmodule Ragex.Analyzers.Directory do
             [only: stale]
           end
 
-        case Helper.generate_and_store_embeddings(analysis, embed_opts) do
-          :ok ->
-            # Persist the new hashes so unchanged functions are skipped next time
-            FileTracker.record_entity_hashes(file_path, entity_pairs)
+        if Keyword.get(opts, :generate_embeddings, true) do
+          case Helper.generate_and_store_embeddings(analysis, embed_opts) do
+            :ok ->
+              # Persist the new hashes so unchanged functions are skipped next time
+              FileTracker.record_entity_hashes(file_path, entity_pairs)
 
-          {:error, _reason} ->
-            :ok
+            {:error, _reason} ->
+              :ok
+          end
         end
 
         FileTracker.track_file(file_path, analysis)
@@ -394,6 +403,14 @@ defmodule Ragex.Analyzers.Directory do
       {:error, reason} ->
         {:error, {file_path, reason}}
     end
+  rescue
+    e ->
+      Logger.warning("Error analyzing #{file_path}: #{Exception.message(e)}")
+      {:error, {file_path, {:exception, e}}}
+  catch
+    kind, reason ->
+      Logger.warning("Caught #{kind} analyzing #{file_path}: #{inspect(reason)}")
+      {:error, {file_path, {kind, reason}}}
   end
 
   # Build {entity_id, body_text} pairs for all modules and functions so we can
