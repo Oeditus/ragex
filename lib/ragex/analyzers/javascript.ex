@@ -27,7 +27,7 @@ defmodule Ragex.Analyzers.JavaScript do
   end
 
   @impl true
-  def supported_extensions, do: [".js", ".jsx", ".ts", ".tsx", ".mjs"]
+  def supported_extensions, do: [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"]
 
   # Private functions
 
@@ -40,6 +40,9 @@ defmodule Ragex.Analyzers.JavaScript do
       end
 
     parser_script = Path.join([priv_dir, "js_parser", "parser.js"])
+    parser_dir = Path.dirname(parser_script)
+    _ = Ragex.LanguageSupport.ensure_js_dependencies(parser_dir)
+    node_bin = Ragex.LanguageSupport.find_executable("node") || "node"
 
     source_file =
       System.tmp_dir!() |> Path.join("ragex_source_#{:erlang.unique_integer([:positive])}.js")
@@ -47,7 +50,9 @@ defmodule Ragex.Analyzers.JavaScript do
     try do
       File.write!(source_file, source)
 
-      case System.cmd("sh", ["-c", "node #{parser_script} < #{source_file}"],
+      case System.cmd(node_bin, [parser_script, source_file],
+             cd: parser_dir,
+             env: Ragex.LanguageSupport.subprocess_env(parser_dir),
              stderr_to_stdout: true
            ) do
         {output, 0} ->

@@ -1,7 +1,14 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require 'bundler/setup'
+$VERBOSE = nil
+
+begin
+  require 'bundler/setup'
+rescue LoadError, StandardError
+  # Fall back to global/mise Ruby gems when running outside a bundle context
+end
+
 require 'parser/current'
 require 'unparser'
 require 'json'
@@ -56,13 +63,13 @@ module Metastatic
   end
 end
 
-# CLI interface: read JSON from STDIN or file, write source to STDOUT
+# CLI interface: read JSON from file (if passed) or STDIN, write source to STDOUT
 if __FILE__ == $PROGRAM_NAME
-  ast_json = if ARGV.any?
-               File.read(ARGV[0])
-             else
-               $stdin.read
-             end
+  if ARGV[0] && File.exist?(ARGV[0])
+    ast_json = File.read(ARGV[0])
+  else
+    ast_json = $stdin.read
+  end
   result = Metastatic::RubyUnparser.unparse(ast_json)
   
   if result[:status] == 'ok'

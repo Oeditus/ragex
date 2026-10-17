@@ -83,7 +83,8 @@ def unparse_ast(ast_dict: Dict[str, Any]) -> str:
 
 def main():
     """Main entry point - read AST JSON from stdin or file, output source to stdout."""
-    if len(sys.argv) > 1:
+    import os
+    if len(sys.argv) > 1 and os.path.exists(sys.argv[1]):
         with open(sys.argv[1], 'r', encoding='utf-8') as f:
             data = json.load(f)
     else:

@@ -1,5 +1,31 @@
 const fs = require('fs');
-const parser = require('@babel/parser');
+const path = require('path');
+const os = require('os');
+
+function requirePkg(name) {
+  try {
+    return require(name);
+  } catch (err) {
+    const candidates = [
+      process.env.NODE_PATH,
+      path.join(os.homedir(), '.local', 'share', 'mise', 'installs', 'node', 'latest', 'lib', 'node_modules'),
+      path.resolve(__dirname, 'node_modules'),
+      path.resolve(__dirname, '..', 'parsers', 'javascript', 'node_modules')
+    ].filter(Boolean);
+
+    for (const entry of candidates) {
+      for (const dir of entry.split(path.delimiter)) {
+        if (!dir) continue;
+        try {
+          return require(path.join(dir, name));
+        } catch (_) {}
+      }
+    }
+    throw err;
+  }
+}
+
+const parser = requirePkg('@babel/parser');
 
 function walk(node, callback, parent = null, currentClass = null) {
   if (!node) return;
@@ -28,7 +54,23 @@ function analyze(code) {
   try {
     const ast = parser.parse(code, {
       sourceType: 'module',
-      plugins: ['typescript', 'jsx', 'classProperties', 'decorators-legacy', 'dynamicImport']
+      allowImportExportEverywhere: true,
+      allowReturnOutsideFunction: true,
+      allowSuperOutsideMethod: true,
+      allowUndeclaredExports: true,
+      errorRecovery: true,
+      plugins: [
+        'typescript',
+        'jsx',
+        'classProperties',
+        'classPrivateProperties',
+        'classPrivateMethods',
+        'decorators-legacy',
+        'dynamicImport',
+        'asyncGenerators',
+        'exportDefaultFrom',
+        'topLevelAwait'
+      ]
     });
 
     const result = {
@@ -147,7 +189,10 @@ function extractDocstring(node) {
   return null;
 }
 
-// Read stdin
-const code = fs.readFileSync(0, 'utf-8');
+// Read file argument or stdin
+const code =
+  process.argv.length > 2 && fs.existsSync(process.argv[2])
+    ? fs.readFileSync(process.argv[2], 'utf-8')
+    : fs.readFileSync(0, 'utf-8');
 const result = analyze(code);
 console.log(JSON.stringify(result));

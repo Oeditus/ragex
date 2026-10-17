@@ -1,0 +1,4 @@
+opam-version: "2.0"
+name: "march_parser"
+version: "0.1.0"
+synopsis: "March AST Parser in OCaml"

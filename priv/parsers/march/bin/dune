@@ -1,0 +1,9 @@
+(executable
+ (name parser)
+ (public_name march-parser)
+ (libraries march_ast))
+
+(executable
+ (name unparser)
+ (public_name march-unparser)
+ (libraries march_ast))

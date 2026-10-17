@@ -6,7 +6,32 @@
  */
 
 const fs = require('fs');
-const parser = require('@babel/parser');
+const path = require('path');
+const os = require('os');
+
+function requirePkg(name) {
+  try {
+    return require(name);
+  } catch (err) {
+    const candidates = [
+      process.env.NODE_PATH,
+      path.join(os.homedir(), '.local', 'share', 'mise', 'installs', 'node', 'latest', 'lib', 'node_modules'),
+      path.resolve(__dirname, 'node_modules')
+    ].filter(Boolean);
+
+    for (const entry of candidates) {
+      for (const dir of entry.split(path.delimiter)) {
+        if (!dir) continue;
+        try {
+          return require(path.join(dir, name));
+        } catch (_) {}
+      }
+    }
+    throw err;
+  }
+}
+
+const parser = requirePkg('@babel/parser');
 
 function parseSource(source) {
   try {

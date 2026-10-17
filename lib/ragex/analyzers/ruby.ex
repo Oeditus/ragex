@@ -209,7 +209,9 @@ defmodule Ragex.Analyzers.Ruby do
       File.write!(source_file, source)
 
       # Redirect stderr to /dev/null to avoid parser warnings breaking JSON
-      case System.cmd("sh", ["-c", "ruby #{script_file} < #{source_file} 2>/dev/null"]) do
+      case System.cmd("sh", ["-c", "ruby #{script_file} < #{source_file} 2>/dev/null"],
+             env: Ragex.LanguageSupport.subprocess_env()
+           ) do
         {output, 0} ->
           try do
             data = :json.decode(output)

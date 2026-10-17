@@ -133,6 +133,7 @@ defmodule Ragex.Analyzers.Python do
 
       # Run Python with stdin redirected from source file
       case System.cmd("sh", ["-c", "python3 #{script_file} < #{source_file}"],
+             env: Ragex.LanguageSupport.subprocess_env(),
              stderr_to_stdout: true
            ) do
         {output, 0} ->

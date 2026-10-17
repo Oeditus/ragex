@@ -44,6 +44,7 @@ defmodule Ragex.LanguageSupport do
           | :typescript
           | :cure
           | :agda
+          | :march
           | :unknown
 
   @extension_map %{
@@ -54,6 +55,7 @@ defmodule Ragex.LanguageSupport do
     ".py" => :python,
     ".rb" => :ruby,
     ".hs" => :haskell,
+    ".lhs" => :haskell,
     ".js" => :javascript,
     ".jsx" => :javascript,
     ".ts" => :typescript,
@@ -62,7 +64,9 @@ defmodule Ragex.LanguageSupport do
     ".cjs" => :javascript,
     ".cure" => :cure,
     ".agda" => :agda,
-    ".lagda" => :agda
+    ".lagda" => :agda,
+    ".march" => :march,
+    ".mch" => :march
   }
 
   @adapter_map %{
@@ -74,10 +78,11 @@ defmodule Ragex.LanguageSupport do
     javascript: Metastatic.Adapters.JavaScript,
     typescript: Metastatic.Adapters.TypeScript,
     cure: Metastatic.Adapters.Cure,
-    agda: Metastatic.Adapters.Agda
+    agda: Metastatic.Adapters.Agda,
+    march: Metastatic.Adapters.March
   }
 
-  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .js .jsx .ts .tsx .mjs .cjs .cure .agda .lagda)
+  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .lhs .js .jsx .ts .tsx .mjs .cjs .cure .agda .lagda .march .mch)
 
   @all_extensions Map.keys(@extension_map)
 
@@ -308,8 +313,12 @@ defmodule Ragex.LanguageSupport do
 
   defp parse_vendored_js(content, language, _opts) do
     parser_script = vendored_js_parser_path()
+    node_bin = find_executable("node")
 
-    if parser_script && File.exists?(parser_script) && System.find_executable("node") != nil do
+    if parser_script && File.exists?(parser_script) && node_bin != nil do
+      parser_dir = Path.dirname(parser_script)
+      _ = ensure_js_dependencies(parser_dir)
+
       temp_path =
         Path.join(
           System.tmp_dir!(),
@@ -319,32 +328,13 @@ defmodule Ragex.LanguageSupport do
       File.write!(temp_path, content)
 
       try do
-        case System.cmd("node", [parser_script, temp_path],
-               cd: Path.dirname(parser_script),
+        case System.cmd(node_bin, [parser_script, temp_path],
+               cd: parser_dir,
+               env: subprocess_env(parser_dir),
                stderr_to_stdout: true
              ) do
           {output, 0} ->
-            case Jason.decode(output) do
-              {:ok, %{"ok" => true, "ast" => ast}} ->
-                adapter =
-                  if language == :typescript,
-                    do: Metastatic.Adapters.TypeScript,
-                    else: Metastatic.Adapters.JavaScript
-
-                case adapter.to_meta(ast) do
-                  {:ok, meta_ast, metadata} ->
-                    {:ok, Document.new(meta_ast, language, metadata, content)}
-
-                  error ->
-                    error
-                end
-
-              {:ok, %{"ok" => false, "error" => error}} ->
-                {:error, format_js_error(error)}
-
-              {:error, reason} ->
-                {:error, {:json_decode_error, reason}}
-            end
+            decode_vendored_js_output(output, language, content)
 
           {err_output, exit_code} ->
             {:error, {:node_error, exit_code, err_output}}
@@ -357,6 +347,128 @@ defmodule Ragex.LanguageSupport do
     else
       {:error, :vendored_parser_unavailable}
     end
+  end
+
+  defp decode_vendored_js_output(output, language, content) do
+    case Jason.decode(output) do
+      {:ok, %{"ok" => true, "ast" => ast}} ->
+        adapter =
+          if language == :typescript,
+            do: Metastatic.Adapters.TypeScript,
+            else: Metastatic.Adapters.JavaScript
+
+        case adapter.to_meta(ast) do
+          {:ok, meta_ast, metadata} ->
+            {:ok, Document.new(meta_ast, language, metadata, content)}
+
+          error ->
+            error
+        end
+
+      {:ok, %{"ok" => false, "error" => error}} ->
+        {:error, format_js_error(error)}
+
+      {:error, reason} ->
+        {:error, {:json_decode_error, reason}}
+    end
+  end
+
+  @doc false
+  @spec ensure_js_dependencies(String.t()) :: :ok | {:error, term()}
+  def ensure_js_dependencies(parser_dir) when is_binary(parser_dir) do
+    local_babel = Path.join([parser_dir, "node_modules", "@babel", "parser"])
+    home = System.user_home() || ""
+
+    global_babel =
+      Path.join([
+        home,
+        ".local",
+        "share",
+        "mise",
+        "installs",
+        "node",
+        "latest",
+        "lib",
+        "node_modules",
+        "@babel",
+        "parser"
+      ])
+
+    npm_bin = find_executable("npm")
+
+    cond do
+      File.exists?(local_babel) or File.exists?(global_babel) ->
+        :ok
+
+      npm_bin != nil and File.dir?(parser_dir) ->
+        case System.cmd(npm_bin, ["install", "--no-audit", "--no-fund"],
+               cd: parser_dir,
+               env: subprocess_env(parser_dir),
+               stderr_to_stdout: true
+             ) do
+          {_, 0} -> :ok
+          {err, code} -> {:error, {:npm_install_failed, code, err}}
+        end
+
+      true ->
+        {:error, :npm_unavailable}
+    end
+  end
+
+  @doc false
+  @spec find_executable(String.t()) :: String.t() | nil
+  def find_executable(name) when is_binary(name) do
+    case System.find_executable(name) do
+      path when is_binary(path) ->
+        path
+
+      nil ->
+        home = System.user_home() || ""
+
+        [
+          Path.join([home, ".local", "share", "mise", "shims", name]),
+          Path.join([home, ".local", "bin", name]),
+          Path.join(["/usr", "local", "bin", name]),
+          Path.join(["/usr", "bin", name])
+        ]
+        |> Enum.find(&(File.exists?(&1) and not File.dir?(&1)))
+    end
+  end
+
+  @doc false
+  @spec subprocess_env(String.t() | nil) :: [{String.t(), String.t()}]
+  def subprocess_env(parser_dir \\ nil) do
+    home = System.user_home() || ""
+    mise_shims = Path.join([home, ".local", "share", "mise", "shims"])
+    local_bin = Path.join([home, ".local", "bin"])
+    current_path = System.get_env("PATH") || "/usr/local/bin:/usr/bin:/bin"
+
+    augmented_path =
+      [mise_shims, local_bin, current_path]
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join(":")
+
+    local_node_modules = if parser_dir, do: Path.join(parser_dir, "node_modules"), else: nil
+
+    mise_node_modules =
+      Path.join([
+        home,
+        ".local",
+        "share",
+        "mise",
+        "installs",
+        "node",
+        "latest",
+        "lib",
+        "node_modules"
+      ])
+
+    node_path =
+      [local_node_modules, System.get_env("NODE_PATH"), mise_node_modules]
+      |> Enum.reject(&(is_nil(&1) or &1 == ""))
+      |> Enum.join(":")
+
+    [{"PATH", augmented_path}, {"NODE_PATH", node_path}]
   end
 
   defp vendored_js_parser_path do

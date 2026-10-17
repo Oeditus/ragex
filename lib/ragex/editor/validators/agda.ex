@@ -12,13 +12,17 @@ defmodule Ragex.Editor.Validators.Agda do
 
   alias Metastatic.Adapters.Agda, as: AgdaParser
   alias Ragex.Editor.Types
+  alias Ragex.LanguageSupport
   require Logger
 
   @impl true
   def validate(content, opts \\ []) do
     case AgdaParser.parse(content) do
       {:ok, _ast} ->
-        {:ok, :valid}
+        case LanguageSupport.find_executable("agda") do
+          nil -> {:ok, :valid}
+          agda_path -> run_agda_cli(agda_path, content, opts)
+        end
 
       {:error, "Agda parser unavailable"} ->
         validate_via_cli(content, opts)
@@ -50,13 +54,25 @@ defmodule Ragex.Editor.Validators.Agda do
   # Private functions
 
   # `Metastatic.Adapters.Agda.parse/1` always reports failures as `String.t()`
-  # reasons, possibly prefixed with "Parse error: ".
+  # reasons, possibly prefixed with "Parse error: " or containing Haskell ParseError position info.
   defp format_metastatic_error(reason) when is_binary(reason) do
-    Types.validation_error(reason, severity: :error)
+    line =
+      case Regex.run(~r/posLine\s*=\s*(\d+)/, reason) do
+        [_, line_str] -> parse_int(line_str)
+        _ -> nil
+      end
+
+    col =
+      case Regex.run(~r/posCol\s*=\s*(\d+)/, reason) do
+        [_, col_str] -> parse_int(col_str)
+        _ -> nil
+      end
+
+    Types.validation_error(reason, line: line, column: col, severity: :error)
   end
 
   defp validate_via_cli(content, opts) do
-    case System.find_executable("agda") do
+    case LanguageSupport.find_executable("agda") do
       nil ->
         error =
           Types.validation_error(
@@ -100,7 +116,10 @@ defmodule Ragex.Editor.Validators.Agda do
         file_path
       ]
 
-      case System.cmd(agda_path, cmd_args, stderr_to_stdout: true) do
+      case System.cmd(agda_path, cmd_args,
+             stderr_to_stdout: true,
+             env: LanguageSupport.subprocess_env()
+           ) do
         {_output, 0} ->
           {:ok, :valid}
 

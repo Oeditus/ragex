@@ -9,9 +9,9 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import GHC.Generics
 import Language.Haskell.Exts
-import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
+import System.Environment (getArgs)
 
 -- | Response wrapper for JSON output
 data Response = Response
@@ -74,97 +74,119 @@ main = do
                 }
           exitFailure
 
+-- | Convert SrcSpanInfo to a JSON location object
+srcSpanToJson :: SrcSpanInfo -> Aeson.Value
+srcSpanToJson (SrcSpanInfo (SrcSpan _ sl sc el ec) _) = Aeson.object
+  [ "startLine" Aeson..= sl
+  , "startCol" Aeson..= sc
+  , "endLine" Aeson..= el
+  , "endCol" Aeson..= ec
+  ]
+
 -- | Convert Haskell expression to JSON
 exprToJson :: Exp SrcSpanInfo -> Aeson.Value
 exprToJson expr = case expr of
   -- Literals
-  Lit _ lit -> Aeson.object
+  Lit l lit -> Aeson.object
     [ "type" Aeson..= ("literal" :: String)
     , "value" Aeson..= literalToJson lit
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Variables
-  Var _ qname -> Aeson.object
+  Var l qname -> Aeson.object
     [ "type" Aeson..= ("var" :: String)
     , "name" Aeson..= qnameToString qname
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Constructor
-  Con _ qname -> Aeson.object
+  Con l qname -> Aeson.object
     [ "type" Aeson..= ("con" :: String)
     , "name" Aeson..= qnameToString qname
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Application (function call)
-  App _ func arg -> Aeson.object
+  App l func arg -> Aeson.object
     [ "type" Aeson..= ("app" :: String)
     , "function" Aeson..= exprToJson func
     , "argument" Aeson..= exprToJson arg
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Infix application (operators)
-  InfixApp _ left op right -> Aeson.object
+  InfixApp l left op right -> Aeson.object
     [ "type" Aeson..= ("infix" :: String)
     , "left" Aeson..= exprToJson left
     , "operator" Aeson..= qopToString op
     , "right" Aeson..= exprToJson right
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Lambda
-  Lambda _ pats body -> Aeson.object
+  Lambda l pats body -> Aeson.object
     [ "type" Aeson..= ("lambda" :: String)
     , "patterns" Aeson..= map patToJson pats
     , "body" Aeson..= exprToJson body
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Let binding
-  Let _ binds body -> Aeson.object
+  Let l binds body -> Aeson.object
     [ "type" Aeson..= ("let" :: String)
     , "bindings" Aeson..= bindsToJson binds
     , "body" Aeson..= exprToJson body
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- If-then-else
-  If _ cond thenExp elseExp -> Aeson.object
+  If l cond thenExp elseExp -> Aeson.object
     [ "type" Aeson..= ("if" :: String)
     , "condition" Aeson..= exprToJson cond
     , "then" Aeson..= exprToJson thenExp
     , "else" Aeson..= exprToJson elseExp
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Case expression
-  Case _ scrut alts -> Aeson.object
+  Case l scrut alts -> Aeson.object
     [ "type" Aeson..= ("case" :: String)
     , "scrutinee" Aeson..= exprToJson scrut
     , "alternatives" Aeson..= map altToJson alts
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- List
-  List _ exprs -> Aeson.object
+  List l exprs -> Aeson.object
     [ "type" Aeson..= ("list" :: String)
     , "elements" Aeson..= map exprToJson exprs
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Tuple
-  Tuple _ Boxed exprs -> Aeson.object
+  Tuple l Boxed exprs -> Aeson.object
     [ "type" Aeson..= ("tuple" :: String)
     , "elements" Aeson..= map exprToJson exprs
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Parenthesized expression
   Paren _ expr' -> exprToJson expr'
   
   -- List comprehension
-  ListComp _ expr quals -> Aeson.object
+  ListComp l expr quals -> Aeson.object
     [ "type" Aeson..= ("list_comp" :: String)
     , "expression" Aeson..= exprToJson expr
     , "qualifiers" Aeson..= map qualStmtToJson quals
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Do notation
-  Do _ stmts -> Aeson.object
+  Do l stmts -> Aeson.object
     [ "type" Aeson..= ("do" :: String)
     , "statements" Aeson..= map stmtToJson stmts
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Fallback for unsupported constructs
@@ -251,52 +273,59 @@ moduleToJson _ = Aeson.object
 declToJsonFull :: Decl SrcSpanInfo -> Aeson.Value
 declToJsonFull decl = case decl of
   -- Type signature
-  TypeSig _ names ty -> Aeson.object
+  TypeSig l names ty -> Aeson.object
     [ "type" Aeson..= ("type_sig" :: String)
     , "names" Aeson..= map nameToString names
     , "signature" Aeson..= typeToJson ty
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Data type declaration
-  DataDecl _ dataOrNew _ declHead qualConDecls _ -> Aeson.object
+  DataDecl l dataOrNew _ declHead qualConDecls _ -> Aeson.object
     [ "type" Aeson..= ("data_decl" :: String)
     , "data_or_new" Aeson..= dataOrNewToString dataOrNew
     , "name" Aeson..= declHeadToString declHead
     , "constructors" Aeson..= map qualConDeclToJson qualConDecls
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Type class declaration
-  ClassDecl _ _ declHead _ classDecls -> Aeson.object
+  ClassDecl l _ declHead _ classDecls -> Aeson.object
     [ "type" Aeson..= ("class_decl" :: String)
     , "name" Aeson..= declHeadToString declHead
     , "methods" Aeson..= maybe [] (map classDeclToJson) classDecls
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Instance declaration
-  InstDecl _ _ instRule instDecls -> Aeson.object
+  InstDecl l _ instRule instDecls -> Aeson.object
     [ "type" Aeson..= ("instance_decl" :: String)
     , "rule" Aeson..= instRuleToJson instRule
     , "methods" Aeson..= maybe [] (map instDeclToJson) instDecls
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Function binding
-  FunBind _ matches -> Aeson.object
+  FunBind l matches -> Aeson.object
     [ "type" Aeson..= ("fun_bind" :: String)
     , "matches" Aeson..= map matchToJson matches
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Pattern binding
-  PatBind _ pat rhs _ -> Aeson.object
+  PatBind l pat rhs _ -> Aeson.object
     [ "type" Aeson..= ("pat_bind" :: String)
     , "pattern" Aeson..= patToJson pat
     , "rhs" Aeson..= rhsToJson rhs
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   -- Type alias
-  TypeDecl _ declHead ty -> Aeson.object
+  TypeDecl l declHead ty -> Aeson.object
     [ "type" Aeson..= ("type_alias" :: String)
     , "name" Aeson..= declHeadToString declHead
     , "definition" Aeson..= typeToJson ty
+    , "location" Aeson..= srcSpanToJson l
     ]
   
   _ -> Aeson.object
@@ -323,9 +352,10 @@ rhsToJson _ = Aeson.Null
 
 -- | Convert case alternative to JSON
 altToJson :: Alt SrcSpanInfo -> Aeson.Value
-altToJson (Alt _ pat rhs _) = Aeson.object
+altToJson (Alt l pat rhs _) = Aeson.object
   [ "pattern" Aeson..= patToJson pat
   , "rhs" Aeson..= rhsToJson rhs
+  , "location" Aeson..= srcSpanToJson l
   ]
 
 -- | Convert qualifier statement to JSON
@@ -336,18 +366,21 @@ qualStmtToJson _ = Aeson.Null
 -- | Convert statement to JSON
 stmtToJson :: Stmt SrcSpanInfo -> Aeson.Value
 stmtToJson stmt = case stmt of
-  Generator _ pat expr -> Aeson.object
+  Generator l pat expr -> Aeson.object
     [ "type" Aeson..= ("generator" :: String)
     , "pattern" Aeson..= patToJson pat
     , "expression" Aeson..= exprToJson expr
+    , "location" Aeson..= srcSpanToJson l
     ]
-  Qualifier _ expr -> Aeson.object
+  Qualifier l expr -> Aeson.object
     [ "type" Aeson..= ("qualifier" :: String)
     , "expression" Aeson..= exprToJson expr
+    , "location" Aeson..= srcSpanToJson l
     ]
-  LetStmt _ binds -> Aeson.object
+  LetStmt l binds -> Aeson.object
     [ "type" Aeson..= ("let_stmt" :: String)
     , "bindings" Aeson..= bindsToJson binds
+    , "location" Aeson..= srcSpanToJson l
     ]
   _ -> Aeson.object
     [ "type" Aeson..= ("unsupported_stmt" :: String)
@@ -447,10 +480,11 @@ instHeadToJson _ = Aeson.Null
 
 -- | Convert match to JSON
 matchToJson :: Match SrcSpanInfo -> Aeson.Value
-matchToJson (Match _ name pats rhs _) = Aeson.object
+matchToJson (Match l name pats rhs _) = Aeson.object
   [ "name" Aeson..= nameToString name
   , "patterns" Aeson..= map patToJson pats
   , "rhs" Aeson..= rhsToJson rhs
+  , "location" Aeson..= srcSpanToJson l
   ]
 matchToJson _ = Aeson.Null
 

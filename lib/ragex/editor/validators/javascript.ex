@@ -46,28 +46,69 @@ defmodule Ragex.Editor.Validators.Javascript do
   end
 
   defp run_node_validation(path) do
-    # Use Node.js to parse the file and report syntax errors
-    # We use a JavaScript script that tries to parse the code
+    # Use Node.js to parse the file and report syntax errors.
+    # Tries @babel/parser (supporting TypeScript, JSX, and ES Modules) first,
+    # falling back to vm.Script when @babel/parser is unavailable.
     node_script = """
     const fs = require('fs');
     const vm = require('vm');
+    const path = require('path');
+    const os = require('os');
+
+    function loadBabel() {
+      const candidates = [
+        process.env.NODE_PATH,
+        path.join(os.homedir(), '.local', 'share', 'mise', 'installs', 'node', 'latest', 'lib', 'node_modules')
+      ].filter(Boolean);
+      try { return require('@babel/parser'); } catch (_) {}
+      for (const entry of candidates) {
+        for (const dir of entry.split(path.delimiter)) {
+          if (!dir) continue;
+          try { return require(path.join(dir, '@babel/parser')); } catch (_) {}
+        }
+      }
+      return null;
+    }
 
     try {
         const code = fs.readFileSync('#{escape_path(path)}', 'utf8');
-        // Try to compile the code (checks syntax without executing)
-        new vm.Script(code);
+        const babel = loadBabel();
+        if (babel) {
+            babel.parse(code, {
+                sourceType: 'module',
+                allowImportExportEverywhere: true,
+                allowReturnOutsideFunction: true,
+                allowSuperOutsideMethod: true,
+                allowUndeclaredExports: true,
+                plugins: [
+                    'typescript',
+                    'jsx',
+                    'classProperties',
+                    'classPrivateProperties',
+                    'classPrivateMethods',
+                    'decorators-legacy',
+                    'dynamicImport',
+                    'asyncGenerators',
+                    'exportDefaultFrom',
+                    'topLevelAwait'
+                ]
+            });
+        } else {
+            new vm.Script(code);
+        }
         console.log('VALID');
         process.exit(0);
     } catch (e) {
-        if (e instanceof SyntaxError) {
-            // Extract line and column from stack trace if available
-            const match = e.stack.match(/:([0-9]+):([0-9]+)/);
-            if (match) {
-                const line = match[1];
-                const column = match[2];
-                console.log(`SYNTAX_ERROR:${line}:${column}:${e.message}`);
+        if (e instanceof SyntaxError || (e && e.loc)) {
+            if (e.loc) {
+                console.log(`SYNTAX_ERROR:${e.loc.line}:${e.loc.column}:${e.message}`);
             } else {
-                console.log(`SYNTAX_ERROR:1:0:${e.message}`);
+                const match = e.stack && e.stack.match(/:([0-9]+):([0-9]+)/);
+                if (match) {
+                    console.log(`SYNTAX_ERROR:${match[1]}:${match[2]}:${e.message}`);
+                } else {
+                    console.log(`SYNTAX_ERROR:1:0:${e.message}`);
+                }
             }
             process.exit(1);
         } else {
@@ -77,7 +118,12 @@ defmodule Ragex.Editor.Validators.Javascript do
     }
     """
 
-    case System.cmd("node", ["-e", node_script], stderr_to_stdout: true) do
+    node_bin = Ragex.LanguageSupport.find_executable("node") || "node"
+
+    case System.cmd(node_bin, ["-e", node_script],
+           env: Ragex.LanguageSupport.subprocess_env(),
+           stderr_to_stdout: true
+         ) do
       {"VALID\n", 0} ->
         {:ok, :valid}
 

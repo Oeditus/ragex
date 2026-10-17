@@ -65,7 +65,12 @@ defmodule Ragex.Editor.Validators.Python do
         sys.exit(1)
     """
 
-    case System.cmd("python3", ["-c", python_script], stderr_to_stdout: true) do
+    py_bin = Ragex.LanguageSupport.find_executable("python3") || "python3"
+
+    case System.cmd(py_bin, ["-c", python_script],
+           env: Ragex.LanguageSupport.subprocess_env(),
+           stderr_to_stdout: true
+         ) do
       {"VALID\n", 0} ->
         {:ok, :valid}
 

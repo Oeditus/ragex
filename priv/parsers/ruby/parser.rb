@@ -1,7 +1,14 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require 'bundler/setup'
+$VERBOSE = nil
+
+begin
+  require 'bundler/setup'
+rescue LoadError, StandardError
+  # Fall back to global/mise Ruby gems when running outside a bundle context
+end
+
 require 'parser/current'
 require 'json'
 
@@ -62,11 +69,14 @@ module Metastatic
     def self.serialize_location(loc)
       return nil unless loc && loc.expression
 
+      expr = loc.expression
       {
-        begin_pos: loc.expression.begin_pos,
-        end_pos: loc.expression.end_pos,
-        begin_line: loc.expression.line,
-        begin_column: loc.expression.column
+        begin_pos: expr.begin_pos,
+        end_pos: expr.end_pos,
+        begin_line: expr.line,
+        begin_column: expr.column,
+        end_line: expr.last_line,
+        end_column: expr.last_column
       }
     rescue StandardError
       nil
@@ -74,13 +84,13 @@ module Metastatic
   end
 end
 
-# CLI interface: read from STDIN, write JSON to STDOUT
+# CLI interface: read from file (if passed) or STDIN, write JSON to STDOUT
 if __FILE__ == $PROGRAM_NAME
-  source = if ARGV.any?
-             File.read(ARGV[0])
-           else
-             $stdin.read
-           end
+  if ARGV[0] && File.exist?(ARGV[0])
+    source = File.read(ARGV[0])
+  else
+    source = $stdin.read
+  end
   result = Metastatic::RubyParser.parse(source)
   puts JSON.generate(result)
 end

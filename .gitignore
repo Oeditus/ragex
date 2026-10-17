@@ -37,6 +37,11 @@ ragex-*.tar
 /dllb.redb.search/
 
 /priv/parsers/haskell/.stack-work/
+/priv/parsers/haskell/bin/
+/priv/parsers/agda/bin/
+/priv/parsers/march/_build/
+*.hi
+*.o
 
 /ragex.log*
 oeditus.json

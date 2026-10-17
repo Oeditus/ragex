@@ -44,7 +44,12 @@ defmodule Ragex.Editor.Validators.Ruby do
   end
 
   defp run_ruby_validation(path) do
-    case System.cmd("ruby", ["-c", path], stderr_to_stdout: true) do
+    ruby_bin = Ragex.LanguageSupport.find_executable("ruby") || "ruby"
+
+    case System.cmd(ruby_bin, ["-c", path],
+           env: Ragex.LanguageSupport.subprocess_env(),
+           stderr_to_stdout: true
+         ) do
       {output, 0} ->
         if String.contains?(output, "Syntax OK") do
           {:ok, :valid}
