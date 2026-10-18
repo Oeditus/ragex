@@ -136,7 +136,7 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
     visibility = Keyword.get(meta, :visibility, :public)
     line = Keyword.get(meta, :line, 0)
     arity = length(params)
-    func_atom = String.to_atom(name_str)
+    func_atom = safe_to_atom(name_str)
 
     func_entry = %{
       name: func_atom,
@@ -252,12 +252,12 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   defp split_call_name(name, language) when is_binary(name) do
     case String.split(name, ".") do
       [single] ->
-        {nil, String.to_atom(single)}
+        {nil, safe_to_atom(single)}
 
       parts ->
         func = List.last(parts)
         mod = parts |> Enum.drop(-1) |> Enum.join(".")
-        {normalize_module_name(mod, language), String.to_atom(func)}
+        {normalize_module_name(mod, language), safe_to_atom(func)}
     end
   end
 
@@ -268,12 +268,12 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   defp normalize_module_name(name, :elixir) when is_binary(name) do
     name
     |> String.split(".")
-    |> Enum.map(&String.to_atom/1)
+    |> Enum.map(&safe_to_atom/1)
     |> Module.concat()
   end
 
   defp normalize_module_name(name, :erlang) when is_binary(name) do
-    String.to_atom(name)
+    safe_to_atom(name)
   end
 
   defp normalize_module_name(name, _language), do: name
@@ -282,6 +282,8 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
     Enum.map(params, fn
       {:param, _meta, name} when is_binary(name) -> name
       {:param, _meta, name} when is_atom(name) -> Atom.to_string(name)
+      name when is_binary(name) -> name
+      name when is_atom(name) -> Atom.to_string(name)
       _ -> "_"
     end)
   end
@@ -292,4 +294,16 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   defp coerce_name(name) when is_binary(name), do: name
   defp coerce_name(name) when is_atom(name), do: Atom.to_string(name)
   defp coerce_name(name), do: inspect(name)
+
+  @max_atom_length 255
+
+  defp safe_to_atom(atom) when is_atom(atom), do: atom
+
+  defp safe_to_atom(str) when is_binary(str) do
+    if String.length(str) > @max_atom_length do
+      str |> String.slice(0, @max_atom_length) |> String.to_atom()
+    else
+      String.to_atom(str)
+    end
+  end
 end

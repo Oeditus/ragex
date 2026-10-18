@@ -327,6 +327,27 @@ defmodule Ragex.Analyzers.MetaASTExtractorTest do
       assert [%{to_function: :plus, from_module: "Data.Nat", from_function: :add}] = result.calls
       assert [%{to_module: "Agda.Primitive"}] = result.imports
     end
+
+    test "safely truncates function and call names exceeding 255-character atom limit" do
+      long_name = String.duplicate("a", 300)
+
+      ast =
+        {:container, [container_type: :module, name: "Proof.Substitution", language: :agda],
+         [
+           {:function_def, [name: long_name, params: ["σ", "ρ", "k"]],
+            [
+              {:function_call, [name: long_name], [{:variable, [], "k"}]}
+            ]}
+         ]}
+
+      doc = Document.new(ast, :agda)
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "Proof/Substitution.agda")
+      assert [func] = result.functions
+      assert String.length(Atom.to_string(func.name)) == 255
+      assert func.metadata.params == ["σ", "ρ", "k"]
+      assert [call] = result.calls
+      assert String.length(Atom.to_string(call.to_function)) == 255
+    end
   end
 
   describe "extract_file/2" do

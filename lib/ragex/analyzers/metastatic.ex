@@ -137,7 +137,7 @@ defmodule Ragex.Analyzers.Metastatic do
       {:function_def, meta, body} when is_list(meta) ->
         case Keyword.get(meta, :name) do
           name when is_binary(name) or is_atom(name) ->
-            func_name = if is_atom(name), do: name, else: String.to_atom(to_string(name))
+            func_name = safe_to_atom(name)
             params = Keyword.get(meta, :params, [])
             arity = length(params)
 
@@ -217,15 +217,27 @@ defmodule Ragex.Analyzers.Metastatic do
   defp normalize_module_name(name, :elixir) when is_binary(name) do
     name
     |> String.split(".")
-    |> Enum.map(&String.to_atom/1)
+    |> Enum.map(&safe_to_atom/1)
     |> Module.concat()
   end
 
   defp normalize_module_name(name, :erlang) when is_binary(name) do
-    String.to_atom(name)
+    safe_to_atom(name)
   end
 
   defp normalize_module_name(name, _language), do: name
+
+  @max_atom_length 255
+
+  defp safe_to_atom(atom) when is_atom(atom), do: atom
+
+  defp safe_to_atom(str) when is_binary(str) do
+    if String.length(str) > @max_atom_length do
+      str |> String.slice(0, @max_atom_length) |> String.to_atom()
+    else
+      String.to_atom(str)
+    end
+  end
 
   defp calculate_function_metrics(ast_node, language) do
     doc = Document.new(ast_node, language)
