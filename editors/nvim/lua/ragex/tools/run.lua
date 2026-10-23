@@ -106,6 +106,17 @@ function M.run(name, args, opts)
         return
       end
 
+      -- The server reports tool-level failures as a JSON-RPC error, but a
+      -- tool that returns `{:error, reason}` may also surface through the
+      -- payload. Treat it as a failure rather than rendering it as a result.
+      if type(data) == "table" and type(data.error) == "string" then
+        ui.notify(name .. " failed: " .. data.error, vim.log.levels.ERROR)
+        if opts.on_result then
+          opts.on_result(nil, { kind = "tool", message = data.error })
+        end
+        return
+      end
+
       if opts.on_result then
         opts.on_result(data, nil)
       elseif not opts.silent then

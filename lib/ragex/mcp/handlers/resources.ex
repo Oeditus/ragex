@@ -8,6 +8,7 @@ defmodule Ragex.MCP.Handlers.Resources do
 
   alias Ragex.Embeddings.{Bumblebee, FileTracker, Persistence}
   alias Ragex.Graph.{Algorithms, Store}
+  alias Ragex.NodeFormatter
 
   @doc """
   Lists all available resources.
@@ -431,15 +432,7 @@ defmodule Ragex.MCP.Handlers.Resources do
 
   # Helper functions
 
-  defp format_node_id(id) when is_atom(id), do: Atom.to_string(id)
-
-  defp format_node_id({module, name, arity}) when is_atom(module) and is_atom(name) do
-    "#{Atom.to_string(module)}.#{Atom.to_string(name)}/#{arity}"
-  end
-
-  defp format_node_id({:module, id}), do: "module:#{format_node_id(id)}"
-  defp format_node_id({:function, mod, name, arity}), do: format_node_id({mod, name, arity})
-  defp format_node_id(id), do: inspect(id)
+  defp format_node_id(id), do: NodeFormatter.format_node_id(id)
 
   defp estimate_memory_usage(model_info) do
     # Rough estimate: ~400MB for all-MiniLM-L6-v2

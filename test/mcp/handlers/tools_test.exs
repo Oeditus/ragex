@@ -198,6 +198,36 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
              "agent_chat description should mention session"
     end
 
+    test "every advertised tool is routed by the dispatcher", %{tools: tools} do
+      # Regression guard: `betweenness_centrality` was advertised by a plugin
+      # but had no working dispatch path, so callers got
+      # "Unknown tool: betweenness_centrality". Anything `tools/list`
+      # advertises must be callable -- catalogue and dispatcher may never
+      # drift apart.
+      advertised = MapSet.new(tools, & &1.name)
+
+      # `known_tool?/1` must agree with `tools/list` exactly.
+      assert Tools.known_tool_names() == advertised
+
+      # And each advertised name must resolve to a known tool.
+      for tool <- tools do
+        assert Tools.known_tool?(tool.name),
+               "Tool #{tool.name} is advertised but not known to the dispatcher"
+      end
+    end
+
+    test "undescribed tool names are reported as unknown, not silently dropped" do
+      refute Tools.known_tool?("definitely_not_a_tool")
+
+      assert {:error, message} = Tools.call_tool("definitely_not_a_tool", %{})
+      assert message =~ "Unknown tool"
+    end
+
+    test "betweenness_centrality is advertised exactly once" do
+      names = Enum.map(Tools.list_tools().tools, & &1.name)
+      assert Enum.count(names, &(&1 == "betweenness_centrality")) == 1
+    end
+
     test "complementary security tools describe their scope differences", %{tools: tools} do
       by_name = Map.new(tools, &{&1.name, &1.description})
 

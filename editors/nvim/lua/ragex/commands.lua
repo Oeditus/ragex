@@ -204,7 +204,7 @@ function M.setup()
         "auto",
         "stop_daemon",
       }
-      for _, tool in ipairs(catalog.tools) do
+      for _, tool in ipairs(catalog.all()) do
         table.insert(candidates, tool.name)
       end
 

@@ -97,6 +97,12 @@ defmodule Ragex.Plugins.CodeQuality do
   # mode) rather than reimplementing a single-file stub here that would
   # silently shadow the real logic -- see the Ragex Codebase Health &
   # Architecture Improvement Plan.
+  #
+  # The catch-all below must NOT report "Unknown tool" for a name this plugin
+  # actually advertises: `find_duplicates`/`find_dead_code` have argument
+  # shapes the tool functions reject (e.g. a missing or non-binary `path`),
+  # and returning "Unknown tool" for those made a bad-argument error look
+  # like a typo'd tool name. Delegate by name and let the tool validate.
   @impl true
   def execute("detect_smells", args), do: Tools.detect_smells_tool(args)
   def execute("find_dead_code", args), do: Tools.find_dead_code_tool(args)

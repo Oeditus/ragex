@@ -8,7 +8,7 @@ defmodule Ragex.MCP.Server do
   use GenServer
   require Logger
 
-  alias Ragex.MCP.Formatter
+  alias Ragex.MCP.{Formatter, JSON, Protocol}
   alias Ragex.MCP.Handlers.{Prompts, Resources, Tools}
   alias Ragex.MCP.Protocol
   alias Ragex.MCP.Telemetry, as: MCPTelemetry
@@ -251,13 +251,7 @@ defmodule Ragex.MCP.Server do
           case result do
             {:ok, r} ->
               formatted = Formatter.format(r, tool_name, format_opts)
-              json_safe = result_to_json(formatted)
-
-              text =
-                case safe_json_encode(json_safe) do
-                  {:ok, encoded} -> encoded
-                  {:error, _} -> inspect(json_safe)
-                end
+              text = formatted |> JSON.result_to_json() |> JSON.encode_or_inspect()
 
               Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
 
@@ -274,13 +268,7 @@ defmodule Ragex.MCP.Server do
       case MCPTelemetry.execute(tool_name, fn -> Tools.call_tool(tool_name, arguments) end) do
         {:ok, result} ->
           formatted = Formatter.format(result, tool_name, format_opts)
-          json_safe_result = result_to_json(formatted)
-
-          text =
-            case safe_json_encode(json_safe_result) do
-              {:ok, encoded} -> encoded
-              {:error, _} -> inspect(json_safe_result)
-            end
+          text = formatted |> JSON.result_to_json() |> JSON.encode_or_inspect()
 
           Protocol.success_response(%{content: [%{type: "text", text: text}]}, id)
 
@@ -303,13 +291,7 @@ defmodule Ragex.MCP.Server do
     case Resources.read_resource(uri) do
       {:ok, contents} ->
         # Convert contents to JSON and wrap in MCP resource format
-        json_safe = result_to_json(contents)
-
-        json_text =
-          case safe_json_encode(json_safe) do
-            {:ok, encoded} -> encoded
-            {:error, _} -> inspect(json_safe)
-          end
+        json_text = contents |> JSON.result_to_json() |> JSON.encode_or_inspect()
 
         Protocol.success_response(
           %{
@@ -345,45 +327,6 @@ defmodule Ragex.MCP.Server do
       {:error, reason} ->
         Protocol.internal_error(reason, id)
     end
-  end
-
-  # Convert Elixir terms to JSON-safe format
-  defp result_to_json(value) when is_tuple(value), do: inspect(value)
-  defp result_to_json(value) when is_list(value), do: Enum.map(value, &result_to_json/1)
-
-  defp result_to_json(value) when is_map(value) do
-    Map.new(value, fn {k, v} -> {result_to_json_key(k), result_to_json(v)} end)
-  end
-
-  defp result_to_json(value) when is_binary(value) do
-    if String.valid?(value) do
-      value
-    else
-      sanitize_utf8_binary(value)
-    end
-  end
-
-  defp result_to_json(value), do: value
-
-  defp result_to_json_key(key) when is_binary(key) do
-    if String.valid?(key), do: key, else: sanitize_utf8_binary(key)
-  end
-
-  defp result_to_json_key(key) when is_atom(key), do: key
-  defp result_to_json_key(key), do: result_to_json(key) |> to_string()
-
-  defp sanitize_utf8_binary(binary) do
-    for <<c <- binary>>, into: "" do
-      if c < 128, do: <<c>>, else: "\uFFFD"
-    end
-  end
-
-  defp safe_json_encode(value) do
-    {:ok, :json.encode(value) |> IO.iodata_to_binary()}
-  rescue
-    e -> {:error, e}
-  catch
-    _, reason -> {:error, reason}
   end
 
   defp send_response(response) do

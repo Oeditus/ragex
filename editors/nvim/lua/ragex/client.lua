@@ -519,6 +519,11 @@ local function ensure_connected(cb)
       -- A fresh, non-stale connection just succeeded, so we're clearly not
       -- mid editor-shutdown. Safe to let future failures notify again.
       state.exiting = false
+
+      -- Learn what this server actually exposes before the caller's own
+      -- request lands, so tools the plugin's static catalog does not know
+      -- about are still reachable.
+      M.discover_tools()
     end
 
     cb(ok, err)
@@ -656,6 +661,42 @@ end
 ---@param opts table|nil
 function M.list_tools(opts)
   return M.request("tools/list", {}, opts)
+end
+
+--- Discover the server's tool catalogue and merge it into `ragex.tools.catalog`.
+---
+--- The plugin's static catalog can only describe tools it was written
+--- against; the server is the authority on what actually exists. Calling
+--- this once after connecting means a tool added to the server (e.g.
+--- `betweenness_centrality`) is immediately reachable from the editor
+--- instead of failing with "Unknown tool".
+---@param opts table|nil  { callback: fun(added: string[], err: table|nil) }
+function M.discover_tools(opts)
+  opts = opts or {}
+  local callback = opts.callback
+
+  M.list_tools({
+    timeout = opts.timeout or 15000,
+    callback = function(result, err)
+      if err then
+        if callback then
+          callback({}, err)
+        end
+        return
+      end
+
+      local definitions = (result and result.tools) or {}
+      local added = require("ragex.tools.catalog").merge_server_tools(definitions)
+
+      if config.debug and #added > 0 then
+        log(string.format("discovered %d server tool(s): %s", #added, table.concat(added, ", ")))
+      end
+
+      if callback then
+        callback(added, nil)
+      end
+    end,
+  })
 end
 
 --- Convenience: list resources.

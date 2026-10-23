@@ -108,8 +108,8 @@ require("ragex").setup({
   auto_analyze = false,
 
   -- Automatically analyze the project on startup. Shows live progress
-  -- updates (`Ȝ ragex [X/Y: file]`) on the statusline, and transitions
-  -- to `Ȝ ragex` when finished.
+  -- updates (`ȜRagex [X/Y: file]`) on the statusline, and transitions
+  -- from `ȜRagex: idle` to `ȜRagex` once the index is ready.
   auto_analyze_on_start = true,
 
   -- Extra directories to analyze on startup.
@@ -121,7 +121,7 @@ require("ragex").setup({
   -- Install default <leader>r* keymaps.
   keymaps = true,
 
-  -- Show "Ȝ ragex" (and live indexing progress) in the statusline when connected.
+  -- Show "ȜRagex" (and live indexing progress) in the statusline when connected.
   statusline = true,
 
   search = {

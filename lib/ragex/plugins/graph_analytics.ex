@@ -70,14 +70,19 @@ defmodule Ragex.Plugins.GraphAnalytics do
   # centrality) rather than reimplementing a stripped-down subset here that
   # would silently shadow the real logic -- see the Ragex Codebase Health &
   # Architecture Improvement Plan.
+  #
+  # Every tool this plugin advertises must also have an `execute/2` clause
+  # here: the plugin registry takes precedence over the built-in catalogue in
+  # `tools/list`, so a name listed in `tools/0` without a matching clause
+  # would be advertised but unroutable. Both tools below delegate, so the
+  # built-in `betweenness_centrality` schema (max_nodes/normalize) stays the
+  # one the tool functions actually honour.
   @impl true
   def execute("query_graph", %{"query_type" => _qtype, "params" => _params} = args) do
     Tools.query_graph(args)
   end
 
-  def execute("betweenness_centrality", args) do
-    Tools.betweenness_centrality_tool(args)
-  end
+  def execute("betweenness_centrality", args), do: Tools.betweenness_centrality_tool(args)
 
   def execute(tool_name, _args) do
     {:error, "Unknown tool '#{tool_name}' for GraphAnalytics plugin"}

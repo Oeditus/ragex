@@ -51,6 +51,41 @@ M.config = vim.deepcopy(defaults)
 ---@type string|nil
 M._status_text = nil
 
+--- The yoke glyph prefixed to the statusline component.
+--- It is deliberately glued to "Ragex" (no separating space) so the
+--- component reads as a single token: `ȜRagex`.
+M.SYMBOL = "Ȝ"
+
+--- Statusline label shown when idle / not yet connected.
+M.LABEL_IDLE = M.SYMBOL .. "Ragex: idle"
+
+--- Statusline label shown once the project has been indexed and the graph
+--- is ready to answer queries.
+M.LABEL_READY = M.SYMBOL .. "Ragex"
+
+--- Build a statusline string from a bracketed detail, e.g.
+--- `M.status("Indexing...")` -> `"ȜRagex [Indexing...]"`.
+---@param detail string|nil
+---@return string
+function M.status(detail)
+  if detail == nil or detail == "" then
+    return M.LABEL_READY
+  end
+  return M.SYMBOL .. "Ragex [" .. detail .. "]"
+end
+
+--- Whether the project index is known to be ready (set by
+--- `analyze_directory` once it completes successfully).
+---@type boolean
+M._ready = false
+
+--- Mark the index ready/idle and refresh the statusline.
+---@param ready boolean
+function M.set_ready(ready)
+  M._ready = ready and true or false
+  M.update_statusline(M._ready and M.LABEL_READY or M.LABEL_IDLE)
+end
+
 --- Update statusline text dynamically and force statusline redraw.
 ---@param text string|nil
 function M.update_statusline(text)
@@ -201,8 +236,14 @@ function M.setup(opts)
   M._startup_timers = {}
 
   if M.config.auto_analyze_on_start then
+    -- Show the idle state immediately so the user can tell Ragex is
+    -- attached and warming up, then kick off the project-root analysis.
+    -- `analyze_directory` flips this to the ready glyph once indexing
+    -- completes (see `M.set_ready/1`).
+    M.set_ready(false)
+
     local timer = vim.defer_fn(function()
-      M.analyze_directory()
+      M.analyze_directory(M.config.project)
     end, 1000)
     table.insert(M._startup_timers, timer)
   end
@@ -304,9 +345,9 @@ function M.analyze_directory(path, opts)
   -- mistaken for a hang if the statusline just says "Indexing..." the
   -- whole time. Say so explicitly while we're not connected yet.
   if require("ragex.client").is_connected() then
-    M.update_statusline("Ȝ ragex [Scanning directory...]")
+    M.update_statusline(M.status("Scanning directory..."))
   else
-    M.update_statusline("Ȝ ragex [Starting server...]")
+    M.update_statusline(M.status("Starting server..."))
   end
 
   require("ragex.tools.run").run("analyze_directory", {
@@ -325,31 +366,31 @@ function M.analyze_directory(path, opts)
         local stage = params.stage or event
 
         if event == "analysis_scanning" or stage == "scanning_directory" then
-          M.update_statusline("Ȝ ragex [Scanning directory...]")
+          M.update_statusline(M.status("Scanning directory..."))
         elseif event == "analysis_scip" or stage == "scip_indexing" then
-          M.update_statusline("Ȝ ragex [SCIP indexing...]")
+          M.update_statusline(M.status("SCIP indexing..."))
         elseif event == "analysis_start" or (to_analyze and not current) then
           if to_analyze and to_analyze == 0 then
-            M.update_statusline("Ȝ ragex [Up to date]")
+            M.update_statusline(M.status("Up to date"))
           elseif to_analyze then
-            M.update_statusline(string.format("Ȝ ragex [0/%d (0%%): starting...]", to_analyze))
+            M.update_statusline(M.status(string.format("0/%d (0%%): starting...", to_analyze)))
           else
-            M.update_statusline("Ȝ ragex [Indexing...]")
+            M.update_statusline(M.status("Indexing..."))
           end
         elseif current and total and total > 0 then
           local pct = math.floor((current / total) * 100)
           local short = file and vim.fn.fnamemodify(file, ":t") or ""
           if short ~= "" then
-            M.update_statusline(string.format("Ȝ ragex [%d/%d (%d%%): %s]", current, total, pct, short))
+            M.update_statusline(M.status(string.format("%d/%d (%d%%): %s", current, total, pct, short)))
           else
-            M.update_statusline(string.format("Ȝ ragex [%d/%d (%d%%)]", current, total, pct))
+            M.update_statusline(M.status(string.format("%d/%d (%d%%)", current, total, pct)))
           end
         elseif file then
           local short = vim.fn.fnamemodify(file, ":t")
-          M.update_statusline(string.format("Ȝ ragex [%s/%s: %s]", current or "?", total or "?", short))
+          M.update_statusline(M.status(string.format("%s/%s: %s", current or "?", total or "?", short)))
         elseif event == "analysis_complete" then
           local count = params.analyzed or params.total or 0
-          M.update_statusline(string.format("Ȝ ragex [Indexed %d files]", count))
+          M.update_statusline(M.status(string.format("Indexed %d files", count)))
         end
       end
     end,
@@ -361,7 +402,7 @@ function M.analyze_directory(path, opts)
         -- crash is wedged and holding the port/db lock, not that this
         -- request is simply slow.
         local label = (err.kind == "timeout") and "Timed out" or "Error"
-        M.update_statusline(string.format("Ȝ ragex [%s]", label))
+        M.update_statusline(M.status(label))
         if err.kind == "timeout" then
           vim.schedule(function()
             require("ragex.ui").notify(
@@ -373,7 +414,9 @@ function M.analyze_directory(path, opts)
           end)
         end
       else
-        M.update_statusline("Ȝ ragex")
+        -- Indexing finished successfully: flip the statusline from the
+        -- in-progress detail to the ready glyph (③).
+        M.set_ready(true)
         local count = data and (data.success or data.analyzed or data.total) or 0
         vim.schedule(function()
           require("ragex.ui").notify(string.format("Indexed %d files for %s", count, vim.fn.fnamemodify(path, ":t")))
@@ -493,7 +536,7 @@ function M.code_review(base_branch)
       end
 
       require("ragex.ui").notify(string.format("Analyzing %d changed files against %s...", #files, base))
-      M.update_statusline("Ȝ ragex [PR Review...]")
+      M.update_statusline(M.status("PR Review..."))
 
       -- Analyze changed files first to ensure graph and embeddings are fresh
       for _, file in ipairs(files) do
@@ -520,7 +563,7 @@ function M.code_review(base_branch)
       })
 
       vim.defer_fn(function()
-        M.update_statusline("Ȝ ragex")
+        M.update_statusline(M._ready and M.LABEL_READY or M.LABEL_IDLE)
       end, 2000)
     end)
   end)
@@ -593,7 +636,11 @@ function M.toggle_auto_analyze()
   end
 end
 
---- Statusline component (returns dynamic progress log while indexing, or 'Ȝ ragex' when finished/connected).
+--- Statusline component.
+---
+--- Returns the live progress log while indexing, the ready glyph
+--- (`ȜRagex`) once the project index is up to date, or an idle label
+--- (`ȜRagex: idle`) while connected but not yet indexed.
 ---@return string
 function M.statusline()
   if not M.config.enabled or not M.config.statusline then
@@ -602,9 +649,12 @@ function M.statusline()
   if M._status_text and M._status_text ~= "" then
     return M._status_text
   end
+  if M._ready then
+    return M.LABEL_READY
+  end
   local client = require("ragex.client")
   if client.is_connected() then
-    return "Ȝ ragex"
+    return M.LABEL_IDLE
   end
   return ""
 end

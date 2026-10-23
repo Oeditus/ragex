@@ -805,14 +805,123 @@ function M.get(name)
       return tool
     end
   end
-  return nil
+  return M._discovered and M._discovered[name] or nil
+end
+
+--- Tools advertised by the server that this catalog has no hand-written
+--- spec for, keyed by name.
+---
+--- The static `M.tools` table above is a *convenience* layer: it knows how to
+--- prompt for arguments and which timeout class a tool belongs to. It must
+--- never be the thing that decides whether a tool is reachable -- the server's
+--- `tools/list` is the source of truth. Anything the server advertises but
+--- this file has not been taught about yet is still callable via
+--- `:Ragex <tool>` (arguments are prompted for generically).
+---@type table<string, RagexToolSpec>|nil
+M._discovered = nil
+
+--- Build a fallback spec for a tool the server advertises but the static
+--- catalog does not describe.
+---
+--- Arguments are gathered generically from the tool's `inputSchema` so that
+--- even a brand-new server tool is usable from the editor without a plugin
+--- release.
+---@param definition table  a `tools/list` entry: { name, description, inputSchema }
+---@return RagexToolSpec
+function M.spec_from_definition(definition)
+  local schema = definition.inputSchema or {}
+  local properties = schema.properties or {}
+  local required = schema.required or {}
+
+  -- Stable ordering so the prompt sequence is deterministic.
+  local keys = vim.tbl_keys(properties)
+  table.sort(keys)
+
+  return {
+    name = definition.name,
+    category = "Discovered",
+    desc = definition.description or "(server-provided tool)",
+    timeout = "default",
+    discovered = true,
+    args = function(ctx)
+      local args = {}
+      for _, key in ipairs(keys) do
+        local prop = properties[key] or {}
+        local is_required = vim.tbl_contains(required, key)
+
+        -- Enum-constrained properties are picked from a list.
+        if prop.enum then
+          local choice = ctx.select(key .. ": ", prop.enum)
+          if choice == nil then
+            if is_required then
+              return nil
+            end
+          else
+            args[key] = choice
+          end
+        else
+          local label = string.format(
+            "%s%s (%s): ",
+            key,
+            is_required and " *" or "",
+            prop.type or "string"
+          )
+          local value = ctx.input(label, prop.default and tostring(prop.default) or "")
+          if value == nil then
+            if is_required then
+              return nil
+            end
+          elseif value ~= "" then
+            args[key] = value
+          end
+        end
+      end
+      return args
+    end,
+  }
+end
+
+--- Merge the server's advertised tool list into the catalog.
+---
+--- Existing hand-written specs always win (they know how to prompt and
+--- which timeout to use); tools the catalog has never heard of are added to
+--- `M._discovered` so `M.get/1`, `:Ragex <tool>` and completion can find them.
+---@param definitions table[]  `tools/list` entries
+---@return string[] added  names that were not previously known
+function M.merge_server_tools(definitions)
+  M._discovered = M._discovered or {}
+  local added = {}
+
+  for _, definition in ipairs(definitions or {}) do
+    local name = definition and definition.name
+    if type(name) == "string" and name ~= "" and M.get(name) == nil then
+      M._discovered[name] = M.spec_from_definition(definition)
+      table.insert(added, name)
+    end
+  end
+
+  return added
+end
+
+--- Every known spec: hand-written first, then discovered.
+---@return RagexToolSpec[]
+function M.all()
+  local all = vim.deepcopy(M.tools)
+  if M._discovered then
+    local names = vim.tbl_keys(M._discovered)
+    table.sort(names)
+    for _, name in ipairs(names) do
+      table.insert(all, M._discovered[name])
+    end
+  end
+  return all
 end
 
 --- Group tools by category, preserving declaration order.
 ---@return table<string, RagexToolSpec[]>
 function M.by_category()
   local categories = {}
-  for _, tool in ipairs(M.tools) do
+  for _, tool in ipairs(M.all()) do
     categories[tool.category] = categories[tool.category] or {}
     table.insert(categories[tool.category], tool)
   end

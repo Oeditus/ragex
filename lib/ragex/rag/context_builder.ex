@@ -264,16 +264,7 @@ defmodule Ragex.RAG.ContextBuilder do
 
   defp truncate_if_needed(context, _max_length), do: context
 
-  defp format_node_id(nil), do: nil
-  defp format_node_id(id) when is_binary(id), do: id
-  defp format_node_id(id) when is_atom(id), do: Atom.to_string(id)
-
-  defp format_node_id({module, name, arity}) do
-    "#{inspect(module)}.#{name}/#{arity}"
-  end
-
-  defp format_node_id(id), do: inspect(id)
-
+  defp format_node_id(id), do: Ragex.NodeFormatter.format_node_id(id, :prompt)
   defp safe_round(nil), do: 0.0
   defp safe_round(f) when is_float(f), do: Float.round(f, 3)
   defp safe_round(n), do: n

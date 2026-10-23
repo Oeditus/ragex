@@ -12,8 +12,7 @@ defmodule Ragex.MCP.SocketServer do
   require Logger
 
   alias Ragex.MCP.Handlers.{Prompts, Resources, Tools}
-  alias Ragex.MCP.Protocol
-  alias Ragex.MCP.SocketPath
+  alias Ragex.MCP.{JSON, Protocol, SocketPath}
 
   # How long to wait when probing whether an existing socket file has a live
   # server behind it, before deciding it's safe to steal.
@@ -301,13 +300,7 @@ defmodule Ragex.MCP.SocketServer do
         Logger.info("[HANDLER] Tool returned: #{inspect(result) |> String.slice(0, 200)}")
 
         # Convert result to JSON-safe format (handling tuples, etc.)
-        json_safe_result = result_to_json(result)
-
-        text =
-          case safe_json_encode(json_safe_result) do
-            {:ok, encoded} -> encoded
-            {:error, _} -> inspect(json_safe_result)
-          end
+        text = result |> JSON.result_to_json() |> JSON.encode_or_inspect()
 
         formatted = %{
           content: [
@@ -324,9 +317,16 @@ defmodule Ragex.MCP.SocketServer do
 
       {:error, reason} ->
         Logger.error("[HANDLER] Tool error: #{inspect(reason)}")
-        Protocol.internal_error(inspect(reason), id)
+        # `inspect/1` on a binary adds literal quotes, so clients rendered
+        # errors as `"Unknown tool: foo"` -- with the quotes as part of the
+        # message. Pass plain binaries through untouched and only inspect
+        # genuinely structured reasons.
+        Protocol.internal_error(error_message(reason), id)
     end
   end
+
+  defp error_message(reason) when is_binary(reason), do: reason
+  defp error_message(reason), do: inspect(reason)
 
   defp handle_resources_list(id) do
     result = Resources.list_resources()
@@ -339,13 +339,7 @@ defmodule Ragex.MCP.SocketServer do
     case Resources.read_resource(uri) do
       {:ok, contents} ->
         # Convert contents to JSON and wrap in MCP resource format
-        json_safe = result_to_json(contents)
-
-        json_text =
-          case safe_json_encode(json_safe) do
-            {:ok, encoded} -> encoded
-            {:error, _} -> inspect(json_safe)
-          end
+        json_text = contents |> JSON.result_to_json() |> JSON.encode_or_inspect()
 
         Protocol.success_response(
           %{
@@ -381,50 +375,5 @@ defmodule Ragex.MCP.SocketServer do
       {:error, reason} ->
         Protocol.internal_error(reason, id)
     end
-  end
-
-  # Convert Elixir terms to JSON-safe format
-  # Tuples are converted to strings since JSON doesn't support them
-  defp result_to_json(value) when is_tuple(value) do
-    inspect(value)
-  end
-
-  defp result_to_json(value) when is_list(value) do
-    Enum.map(value, &result_to_json/1)
-  end
-
-  defp result_to_json(value) when is_map(value) do
-    Map.new(value, fn {k, v} -> {to_json_key(k), result_to_json(v)} end)
-  end
-
-  defp result_to_json(value) when is_binary(value) do
-    if String.valid?(value) do
-      value
-    else
-      sanitize_utf8_binary(value)
-    end
-  end
-
-  defp result_to_json(value), do: value
-
-  defp to_json_key(key) when is_binary(key) do
-    if String.valid?(key), do: key, else: sanitize_utf8_binary(key)
-  end
-
-  defp to_json_key(key) when is_atom(key), do: key
-  defp to_json_key(key), do: result_to_json(key) |> to_string()
-
-  defp sanitize_utf8_binary(binary) do
-    for <<c <- binary>>, into: "" do
-      if c < 128, do: <<c>>, else: "\uFFFD"
-    end
-  end
-
-  defp safe_json_encode(value) do
-    {:ok, :json.encode(value) |> IO.iodata_to_binary()}
-  rescue
-    e -> {:error, e}
-  catch
-    _, reason -> {:error, reason}
   end
 end
