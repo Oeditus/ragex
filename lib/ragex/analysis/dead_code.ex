@@ -330,7 +330,7 @@ defmodule Ragex.Analysis.DeadCode do
     - `:min_confidence` - Minimum confidence level (`:high`, `:medium`, `:low`, default: `:low`)
 
   ## Returns
-  - `{:ok, result}` - Metastatic.Analysis.DeadCode.Result struct
+  - `{:ok, result}` - `MetaCredo.Analysis.DeadCode.Result` struct
   - `{:error, reason}` - Error if analysis fails
 
   ## Examples
@@ -346,7 +346,8 @@ defmodule Ragex.Analysis.DeadCode do
 
     case MetastaticBridge.parse_file(file_path) do
       {:ok, document} ->
-        # Use Metastatic's dead code analysis
+        # Delegate to MetaCredo's dead code analysis (analysis lives in
+        # MetaCredo since Metastatic 0.31; `Metastatic.Analysis.*` is gone).
         MetaDeadCode.analyze(document, min_confidence: min_confidence)
 
       {:error, reason} ->

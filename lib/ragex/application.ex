@@ -37,6 +37,16 @@ defmodule Ragex.Application do
       end
     end
 
+    # Metastatic populates its semantic `OpKind` pattern tables from a
+    # module-level side effect that Elixir only evaluates at compile time. In
+    # any build that loads the beams from disk (releases, clean `_build`,
+    # precompiled deps) those tables are empty, and semantic enrichment then
+    # silently attaches no `op_kind` metadata -- `analyze_semantic_operations`
+    # reports zero operations and `semantic_operations`/`extract_operations`
+    # return empty lists with no error. Register them explicitly, once, before
+    # any analysis child can run.
+    _ = Ragex.LanguageSupport.ensure_semantic_patterns()
+
     # When :skip_bumblebee is set (e.g. mix tasks while a server is already
     # running on the GPU), skip the heavyweight ML children to avoid
     # allocating GPU memory a second time. Also skip automatically when the

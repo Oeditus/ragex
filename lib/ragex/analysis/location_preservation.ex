@@ -18,48 +18,16 @@ defmodule Ragex.Analysis.LocationPreservation do
 
       alias Ragex.Analysis.LocationPreservation
 
-      # Wrap Metastatic analysis with location preservation
-      {:ok, result} = LocationPreservation.with_locations(path, fn ->
-        # Your Metastatic analysis here
-        Metastatic.Analysis.Security.analyze(doc)
-      end)
+      # Enrich a list of analysis issues with location data
+      issues = LocationPreservation.merge_locations(issues, %{}, "lib/my_module.ex")
 
-      # Result now includes native AST locations merged with analysis data
+  MetaAST nodes carry `:line`/`:column` metadata natively, so there is no
+  separate "extract locations from the native AST" step any more. Callers that
+  have a pre-built location map can pass it as the second argument; otherwise
+  pass `%{}` and `LocationEnricher` resolves locations from the knowledge graph.
   """
 
   alias Ragex.Analysis.LocationEnricher
-
-  @doc """
-  Executes analysis function with location preservation.
-
-  Extracts native AST locations, runs analysis, then merges locations into results.
-
-  ## Parameters
-  - `path` - Source file path
-  - `analysis_fn` - Function that performs analysis (receives Document)
-  - `opts` - Keyword options
-    - `:language` - Override language detection
-    - `:fallback_enricher` - Use LocationEnricher as fallback (default: true)
-
-  ## Returns
-  - `{:ok, result_with_locations}` - Analysis result with merged locations
-  - `{:error, reason}` - Analysis or extraction failed
-
-  ## Examples
-
-      {:ok, result} = LocationPreservation.with_locations("lib/my_module.ex", fn doc ->
-        Metastatic.Analysis.Security.analyze(doc)
-      end)
-  """
-  @spec with_locations(String.t(), (Metastatic.Document.t() -> any()), keyword()) ::
-          {:ok, any()} | {:error, term()}
-  def with_locations(_path, _analysis_fn, _opts \\ []) do
-    # MetaAST nodes carry :line/:col metadata natively; native AST location
-    # extraction (ASTLocationExtractor) is no longer needed.
-    # Returns an empty location map. Callers should read location data
-    # directly from MetaAST node metadata or use LocationEnricher.
-    {:ok, %{}}
-  end
 
   @doc """
   Merges native AST locations into analysis issues/results.

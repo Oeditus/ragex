@@ -235,15 +235,32 @@ defmodule Ragex.Analysis.MetaCredoBridge do
 
   # -- Helpers --
 
-  # Validates that file content is valid UTF-8. Files with other encodings
-  # (e.g. Latin-1) will crash Code.string_to_quoted via String.to_charlist.
+  # Ensures the binary is valid UTF-8. Files saved with legacy encodings
+  # (e.g. Latin-1) contain bytes that are invalid UTF-8 and crash
+  # `Code.string_to_quoted/2` via `String.to_charlist/1`.
+  #
+  # Invalid sequences are replaced with U+FFFD (the Unicode replacement
+  # character) rather than skipping the file, matching `MetastaticBridge` and
+  # `Analyzers.Directory`. Skipping here meant the same file was analysed by
+  # one code path and silently ignored by another.
   defp ensure_utf8(content, path) when is_binary(content) do
     if String.valid?(content) do
       {:ok, content}
     else
-      Logger.warning("Skipping #{path}: file contains invalid UTF-8 encoding")
-      {:error, {:invalid_utf8, path}}
+      Logger.debug("Sanitizing non-UTF-8 content in #{path} (replacing invalid bytes)")
+      {:ok, sanitize_utf8_bytes(content, <<>>)}
     end
+  end
+
+  defp sanitize_utf8_bytes(<<>>, acc), do: acc
+
+  defp sanitize_utf8_bytes(<<c::utf8, rest::binary>>, acc) do
+    sanitize_utf8_bytes(rest, <<acc::binary, c::utf8>>)
+  end
+
+  defp sanitize_utf8_bytes(<<_byte, rest::binary>>, acc) do
+    # Replace invalid byte with U+FFFD REPLACEMENT CHARACTER
+    sanitize_utf8_bytes(rest, <<acc::binary, 0xEF, 0xBF, 0xBD>>)
   end
 
   # Map MetaCredo check module to Ragex analyzer atom

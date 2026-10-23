@@ -1,6 +1,8 @@
 defmodule Ragex.LanguageSupportTest do
   use ExUnit.Case, async: true
 
+  alias Metastatic.AST
+  alias Metastatic.Semantic.Patterns
   alias Ragex.LanguageSupport
 
   describe "detect_language/1" do
@@ -267,6 +269,57 @@ defmodule Ragex.LanguageSupportTest do
 
     test "true for JavaScript (now supported via Metastatic)" do
       assert LanguageSupport.has_adapter?(:javascript)
+    end
+  end
+
+  describe "ensure_semantic_patterns/0" do
+    setup do
+      # Force the next call to re-register, so each test starts from the same
+      # state regardless of what ran before it.
+      LanguageSupport.reset_semantic_patterns()
+      on_exit(&LanguageSupport.reset_semantic_patterns/0)
+      :ok
+    end
+
+    test "registers Metastatic's semantic OpKind pattern tables" do
+      assert LanguageSupport.ensure_semantic_patterns() == :ok
+
+      # Every domain registers at least one pattern for Elixir except
+      # :external_api, which is intentionally language-agnostic (`:all`).
+      for domain <- [:db, :http, :auth, :cache, :queue, :file] do
+        assert Patterns.get_patterns(domain, :elixir) != [],
+               "expected #{inspect(domain)} patterns to be registered for :elixir"
+      end
+    end
+
+    test "is idempotent and does not grow the pattern tables" do
+      assert LanguageSupport.ensure_semantic_patterns() == :ok
+      first = length(Patterns.get_patterns(:db, :elixir))
+
+      assert LanguageSupport.ensure_semantic_patterns() == :ok
+      assert length(Patterns.get_patterns(:db, :elixir)) == first
+    end
+
+    test "parse_document/2 produces op_kind metadata for known operations" do
+      # Regression test: Metastatic registers its patterns from a module-level
+      # side effect that only runs at compile time, so in any build loading
+      # beams from disk the tables are empty and enrichment silently attaches
+      # no op_kind. Ragex compensates in parse_document/3.
+      {:ok, doc} = LanguageSupport.parse_document("def f(id), do: Repo.get(User, id)", :elixir)
+
+      # The call may be nested (e.g. inside a `:function_def` body), so find it
+      # rather than assuming a particular root shape.
+      call =
+        doc.ast
+        |> AST.prewalker()
+        |> Enum.find(&match?({:function_call, _meta, _args}, &1))
+
+      assert {:function_call, meta, _args} = call
+      op_kind = Keyword.get(meta, :op_kind)
+
+      assert op_kind[:domain] == :db
+      assert op_kind[:operation] == :retrieve
+      assert op_kind[:target] == "User"
     end
   end
 end

@@ -164,6 +164,13 @@ defmodule Ragex.LanguageSupport do
 
   defp do_parse_document(content, language, opts) do
     with {:ok, adapter} <- get_adapter(language) do
+      # Metastatic's semantic pattern tables are populated by a module-level
+      # side effect that only fires at compile time, so they can be empty in
+      # any build that loads the beams from disk. Without this the adapter's
+      # `Enricher.enrich_tree/2` pass attaches no `:op_kind` metadata and every
+      # semantic-analysis feature silently reports zero operations.
+      _ = ensure_semantic_patterns()
+
       res =
         if function_exported?(adapter, :abstract, 3) do
           # credo:disable-for-next-line Credo.Check.Refactor.Apply
@@ -310,6 +317,76 @@ defmodule Ragex.LanguageSupport do
   """
   @spec has_adapter?(language()) :: boolean()
   def has_adapter?(language), do: Map.has_key?(@adapter_map, language)
+
+  @semantic_domain_modules [
+    Metastatic.Semantic.Domains.Database,
+    Metastatic.Semantic.Domains.Http,
+    Metastatic.Semantic.Domains.Auth,
+    Metastatic.Semantic.Domains.Cache,
+    Metastatic.Semantic.Domains.Queue,
+    Metastatic.Semantic.Domains.File,
+    Metastatic.Semantic.Domains.ExternalApi
+  ]
+
+  @semantic_ready_key {__MODULE__, :semantic_ready}
+
+  @doc """
+  Ensures Metastatic's semantic operation patterns are registered.
+
+  Metastatic registers its `OpKind` pattern tables from module-level
+  `register_all/0` calls at the bottom of each `Metastatic.Semantic.Domains.*`
+  module. Elixir only evaluates that kind of top-level side effect while the
+  module is being **compiled**, so in any build where the beams are loaded from
+  disk (a release, a `mix compile` from a clean `_build`, a dependency compiled
+  ahead of time, ...) the tables stay empty and `Enricher.enrich_tree/2`
+  silently attaches no `op_kind` metadata at all.
+
+  Empty pattern tables mean semantic analysis degrades to "no operations
+  detected" with no error anywhere, so Ragex calls this once during
+  application start (see `Ragex.Application`) and again from every code path
+  that reads `op_kind`.
+
+  The call is idempotent -- `Metastatic.Semantic.Patterns.register/3` appends
+  to the existing list -- so it is guarded by a `:persistent_term` flag to keep
+  repeated calls cheap and to avoid growing the tables on every invocation.
+
+  Returns `:ok` even when the domain modules are unavailable, so a Metastatic
+  version that reorganises them cannot break startup.
+  """
+  @spec ensure_semantic_patterns() :: :ok
+  def ensure_semantic_patterns do
+    if :persistent_term.get(@semantic_ready_key, false) do
+      :ok
+    else
+      Enum.each(@semantic_domain_modules, fn domain ->
+        try do
+          Code.ensure_loaded(domain)
+
+          if function_exported?(domain, :register_all, 0) do
+            domain.register_all()
+          end
+        rescue
+          _ -> :ok
+        catch
+          _, _ -> :ok
+        end
+      end)
+
+      :persistent_term.put(@semantic_ready_key, true)
+      :ok
+    end
+  end
+
+  @doc """
+  Clears the `ensure_semantic_patterns/0` guard so the next call re-registers.
+
+  Intended for tests that clear Metastatic's pattern tables.
+  """
+  @spec reset_semantic_patterns() :: :ok
+  def reset_semantic_patterns do
+    :persistent_term.erase(@semantic_ready_key)
+    :ok
+  end
 
   defp parse_vendored_js(content, language, _opts) do
     parser_script = vendored_js_parser_path()

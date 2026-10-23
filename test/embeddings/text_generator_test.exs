@@ -73,6 +73,68 @@ defmodule Ragex.Embeddings.TextGeneratorTest do
       assert text =~ "Function: _helper/1"
       assert text =~ "Visibility: private"
     end
+
+    test "includes complexity metrics from MetaAST enrichment" do
+      # `Ragex.Analyzers.Metastatic` writes these keys under `:metastatic`.
+      function_data = %{
+        name: :complex_fn,
+        arity: 2,
+        module: :Demo,
+        file: "lib/demo.ex",
+        line: 10,
+        visibility: :public,
+        metadata: %{
+          metastatic: %{
+            cyclomatic: 4,
+            cognitive: 6,
+            max_nesting: 2,
+            function_metrics: %{statement_count: 9},
+            loc: %{logical: 12, physical: 15}
+          }
+        }
+      }
+
+      text = TextGenerator.function_text(function_data)
+
+      assert text =~ "Complexity:"
+      assert text =~ "cyclomatic complexity 4"
+      assert text =~ "cognitive complexity 6"
+      assert text =~ "max nesting 2"
+      assert text =~ "statements 9"
+      assert text =~ "logical lines 12"
+    end
+
+    test "omits complexity hint when there is no enrichment" do
+      function_data = %{
+        name: :plain,
+        arity: 1,
+        module: :Demo,
+        file: "lib/demo.ex",
+        line: 3,
+        visibility: :public,
+        metadata: %{}
+      }
+
+      refute TextGenerator.function_text(function_data) =~ "Complexity:"
+    end
+
+    test "omits zero-valued metrics from the complexity hint" do
+      function_data = %{
+        name: :trivial,
+        arity: 0,
+        module: :Demo,
+        file: "lib/demo.ex",
+        line: 1,
+        visibility: :public,
+        metadata: %{metastatic: %{cyclomatic: 1, cognitive: 0, max_nesting: 0}}
+      }
+
+      text = TextGenerator.function_text(function_data)
+
+      assert text =~ "cyclomatic complexity 1"
+      refute text =~ "cognitive complexity"
+      refute text =~ "max nesting"
+    end
   end
 
   describe "function_with_code_text/2" do

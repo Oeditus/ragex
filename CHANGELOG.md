@@ -7,8 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Semantic pattern bootstrap** -- `Ragex.LanguageSupport.ensure_semantic_patterns/0`
+  registers Metastatic's `OpKind` pattern tables explicitly, and
+  `reset_semantic_patterns/0` clears the guard for tests.
+
 ### Fixed
 
+- **Semantic operation analysis silently returned zero operations.**
+  Metastatic registers its `OpKind` pattern tables from a bare
+  `Metastatic.Semantic.Domains.*.register_all()` call at the bottom of each
+  domain module. Elixir only evaluates that side effect while the module is
+  being compiled, so in any build that loads beams from disk (releases, a
+  clean `_build`, precompiled deps) the tables were empty:
+  `Enricher.enrich_tree/2` attached no `:op_kind` metadata, and
+  `analyze_semantic_operations`, `semantic_operations`, `extract_operations`
+  and `MetastaticBridge.parse_file(enrich: true)` all reported nothing, with
+  no error surfaced anywhere. `ensure_semantic_patterns/0` is now called from
+  `Ragex.Application.start/2` and from `LanguageSupport.parse_document/3`, so
+  every parse path is covered.
+- **`Ragex.Editor.Formatter` ran `mix format` from the wrong directory.**
+  `mix format` resolves `.formatter.exs` relative to the working directory and
+  refuses to run outside a Mix project, but the formatter was invoked with
+  whatever cwd the editor happened to have. `detect_formatter/2` now returns
+  `{command, args, cmd_opts}` and passes `:cd` pointing at the project root
+  (falling back to the file's directory), with the path made relative to it.
+- **`Ragex.Analysis.MetaCredoBridge` skipped files with invalid UTF-8**,
+  returning `{:error, {:invalid_utf8, path}}`, while `MetastaticBridge` and
+  `Analyzers.Directory` sanitise the same input by substituting U+FFFD. The
+  same file was therefore analysed by one code path and silently ignored by
+  another. `MetaCredoBridge` now sanitises too.
+- **`Ragex.Embeddings.TextGenerator` emitted no enrichment hint.**
+  `metastatic_hint/1` looked for `:async`, `:is_macro`, `:guards`,
+  `:decorators` and `:multi_clause`, none of which
+  `Ragex.Analyzers.Metastatic` ever produces, so the hint was always `nil`. It
+  now summarises the metrics that are actually written (`:cyclomatic`,
+  `:cognitive`, `:max_nesting`, `:function_metrics.statement_count`,
+  `:loc.logical`).
+- **`Ragex.Retrieval.MetaASTRanker` applied a uniform, meaningless boost.**
+  It read `:level`, `:purity` and `:complexity` from `meta_ast_metadata`, which
+  in practice holds the adapter's per-document map
+  (`%{arity:, function:, module:, visibility:}`). `get_meta_level/1` therefore
+  always returned `:core`, multiplying every result by the same factor and
+  changing no ordering. The accessors now accept the keys that can actually
+  appear (including `:cyclomatic`) and treat unknown metadata as neutral.
+- **Stale `Metastatic.Analysis.*` references.** That namespace was removed in
+  Metastatic 0.31 (analysis moved to MetaCredo); docs in `dead_code.ex`,
+  `smells.ex`, `duplication.ex`, `metastatic_bridge.ex` and
+  `location_preservation.ex` still pointed at it.
 - **Editor startup and `ragex-prime` indexing timeouts on large projects**:
   - `Ragex.Graph.Store.init/1` no longer loads the on-disk graph/embedding
     cache (and bootstraps the per-project `dllb` backend) synchronously
@@ -34,6 +81,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     daemon-delegated `analyze_directory` call; a first-time full index of a
     large project now runs to completion regardless of how long it
     legitimately takes.
+
+### Removed
+
+- `Ragex.Analysis.LocationPreservation.with_locations/3` -- a stub that ignored
+  its `analysis_fn` argument entirely and always returned `{:ok, %{}}`. It had
+  no callers. `merge_locations/4` and `merge_location_into_issue/4` remain.
 
 ## [0.30.0]
 

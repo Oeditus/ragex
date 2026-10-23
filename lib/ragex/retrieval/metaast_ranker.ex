@@ -57,7 +57,6 @@ defmodule Ragex.Retrieval.MetaASTRanker do
             :core -> boost * boost_core
             :extended -> boost * 1.1
             :native -> boost * native_penalty
-            _ -> boost
           end
 
         # Boost for pure functions
@@ -284,6 +283,13 @@ defmodule Ragex.Retrieval.MetaASTRanker do
 
   defp adjust_boosts_for_intent(_, opts), do: adjust_boosts_for_intent(:general, opts)
 
+  # `meta_ast_metadata` is whatever the adapter's `to_meta/1` returned for the
+  # document. For the Elixir adapter that is a per-document map such as
+  # `%{arity: 1, function: "plain", module: "Demo", visibility: :public}` -- it
+  # does **not** carry `:level`, `:purity` or `:complexity`. The accessors below
+  # therefore read the keys that can actually appear and fall back to a neutral
+  # value otherwise, so the boost stays a no-op rather than applying a uniform
+  # multiplier to every result (which changes no ordering).
   defp get_meta_ast_metadata(%{meta_ast_metadata: metadata}) when is_map(metadata),
     do: metadata
 
@@ -292,15 +298,20 @@ defmodule Ragex.Retrieval.MetaASTRanker do
   defp get_meta_ast(%{meta_ast: ast}), do: ast
   defp get_meta_ast(_), do: nil
 
-  defp get_meta_level(%{level: level}), do: level
-  defp get_meta_level(%{native_constructs: count}) when count > 0, do: :native
+  defp get_meta_level(%{level: level}) when level in [:core, :extended, :native], do: level
+
+  defp get_meta_level(%{native_constructs: count}) when is_integer(count) and count > 0,
+    do: :native
+
   defp get_meta_level(_), do: :core
 
   defp pure_function?(%{purity: :pure}), do: true
+  defp pure_function?(%{purity: purity}) when is_boolean(purity), do: purity
   defp pure_function?(%{side_effects: false}), do: true
   defp pure_function?(_), do: false
 
   defp get_complexity(%{complexity: complexity}) when is_number(complexity), do: complexity
+  defp get_complexity(%{cyclomatic: cyclomatic}) when is_number(cyclomatic), do: cyclomatic
   defp get_complexity(%{depth: depth}) when is_number(depth), do: depth
   defp get_complexity(_), do: 0
 

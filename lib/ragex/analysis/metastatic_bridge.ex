@@ -100,7 +100,7 @@ defmodule Ragex.Analysis.MetastaticBridge do
 
       # With semantic enrichment
       {:ok, doc} = MetastaticBridge.parse_file("lib/my_module.ex", enrich: true)
-      Metastatic.Analysis.DeadCode.analyze(doc)
+      MetaCredo.Analysis.DeadCode.analyze(doc)
   """
   @spec parse_file(path :: String.t(), opts :: keyword()) ::
           {:ok, Document.t()} | {:error, term()}

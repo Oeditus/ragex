@@ -6,12 +6,12 @@ defmodule Ragex.Embeddings.TextGenerator do
   descriptions suitable for embedding generation and semantic search.
 
   Functions enriched with MetaAST metadata (from `Ragex.Analyzers.Metastatic`)
-  include additional semantic context in their text:
-  - `async: true` -- annotated as "async function"
-  - `is_macro: true` -- annotated as "macro"
-  - `decorators: [...]` -- decorator names listed
-  - `guards: ...` -- annotated as "with guards"
-  - `type_annotations: [...]` -- type information listed
+  include a complexity summary in their text, derived from the per-function
+  metrics that analyzer actually produces:
+  - `:cyclomatic` / `:cognitive` -- complexity scores
+  - `:max_nesting` -- deepest nesting level
+  - `:function_metrics.statement_count` -- number of statements
+  - `:loc.logical` -- logical lines of code
   """
 
   @doc """
@@ -71,58 +71,36 @@ defmodule Ragex.Embeddings.TextGenerator do
 
   # Build a short semantic hint string from MetaAST enrichment data.
   # Returns nil when there is no enrichment to describe.
+  #
+  # `Ragex.Analyzers.Metastatic` enriches each function's `:metastatic` map with
+  # exactly these keys: `:cyclomatic`, `:cognitive`, `:max_nesting`, `:halstead`,
+  # `:loc`, `:function_metrics`. Read only those -- earlier versions of this
+  # function looked for `:async`, `:is_macro`, `:guards`, `:decorators` and
+  # `:multi_clause`, none of which are ever produced, so the hint was always
+  # `nil`.
   defp metastatic_hint(metastatic) when is_map(metastatic) and map_size(metastatic) > 0 do
-    hints = []
-
     hints =
-      if Map.get(metastatic, :async) == true do
-        ["async" | hints]
-      else
-        hints
-      end
-
-    hints =
-      if Map.get(metastatic, :is_macro) == true do
-        ["macro" | hints]
-      else
-        hints
-      end
-
-    hints =
-      case Map.get(metastatic, :guards) do
-        nil -> hints
-        _guard -> ["with guards" | hints]
-      end
-
-    hints =
-      case Map.get(metastatic, :decorators) do
-        nil ->
-          hints
-
-        [] ->
-          hints
-
-        decorators when is_list(decorators) ->
-          ["decorators: #{Enum.join(decorators, ", ")}" | hints]
-      end
-
-    hints =
-      case Map.get(metastatic, :multi_clause) do
-        true ->
-          clauses = Map.get(metastatic, :clauses, [])
-          ["#{length(clauses)} clauses" | hints]
-
-        _ ->
-          hints
-      end
+      []
+      |> add_count_hint("cyclomatic complexity", Map.get(metastatic, :cyclomatic))
+      |> add_count_hint("cognitive complexity", Map.get(metastatic, :cognitive))
+      |> add_count_hint("max nesting", Map.get(metastatic, :max_nesting))
+      |> add_count_hint("statements", get_in(metastatic, [:function_metrics, :statement_count]))
+      |> add_count_hint("logical lines", get_in(metastatic, [:loc, :logical]))
 
     case hints do
       [] -> nil
-      _ -> "Attributes: #{Enum.join(Enum.reverse(hints), ", ")}"
+      _ -> "Complexity: #{Enum.join(Enum.reverse(hints), ", ")}"
     end
   end
 
   defp metastatic_hint(_), do: nil
+
+  # Appends a "<label> <n>" hint when the metric is a positive integer.
+  defp add_count_hint(hints, label, value) when is_integer(value) and value > 0 do
+    ["#{label} #{value}" | hints]
+  end
+
+  defp add_count_hint(hints, _label, _value), do: hints
 
   # Build a hint from string literals found in the function body.
   defp strings_hint(meta) when is_map(meta) do

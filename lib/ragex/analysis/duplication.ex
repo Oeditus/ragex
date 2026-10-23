@@ -4,11 +4,14 @@ defmodule Ragex.Analysis.Duplication do
 
   ## Primary: AST-Based Detection (via Metastatic)
 
-  Delegates to Metastatic.Analysis.Duplication for precise clone detection:
+  Delegates to `MetaCredo.Analysis.Duplication` for precise clone detection:
   - **Type I**: Exact clones (identical AST)
   - **Type II**: Renamed clones (same structure, different identifiers)
   - **Type III**: Near-miss clones (similar structure with modifications)
   - **Type IV**: Semantic clones (different syntax, same behavior)
+
+  (AST analysis lives in MetaCredo since Metastatic 0.31 -- the older
+  `Metastatic.Analysis.Duplication` module no longer exists.)
 
   Works across different programming languages by comparing MetaAST representations.
 

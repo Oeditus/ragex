@@ -39,19 +39,24 @@ defmodule Ragex.Editor.Formatter do
         Logger.debug("No formatter available for #{path}")
         :ok
 
-      {command, args} ->
-        run_formatter(command, args, path)
+      {command, args, cmd_opts} ->
+        run_formatter(command, args, path, cmd_opts)
     end
   end
 
   @doc """
   Checks if a formatter is available for the given file or language.
 
+  Returns `false` when the language has no known formatter or when the
+  formatter's executable is not on `PATH`.
+
   ## Examples
 
+      # true only when `mix` is installed and the file is Elixir
       iex> Formatter.available?("lib/module.ex")
       true
-      
+
+      # unsupported extension
       iex> Formatter.available?("file.txt")
       false
   """
@@ -62,7 +67,7 @@ defmodule Ragex.Editor.Formatter do
 
     case formatter do
       nil -> false
-      {command, _args} -> command_exists?(command)
+      {command, _args, _cmd_opts} -> command_exists?(command)
     end
   end
 
@@ -75,26 +80,27 @@ defmodule Ragex.Editor.Formatter do
     end
   end
 
-  defp detect_formatter(:elixir, path) do
-    # Check if we're in a Mix project
-    project_root = find_project_root(path, "mix.exs")
+  # Every `detect_formatter/2` clause returns `{command, args, cmd_opts}` or
+  # `nil`. `cmd_opts` is passed straight to `System.cmd/3`.
 
-    if project_root do
-      # Use mix format with project context
-      {"mix", ["format", path]}
-    else
-      # Standalone file formatting
-      {"mix", ["format", path]}
-    end
+  defp detect_formatter(:elixir, path) do
+    # `mix format` must run from the Mix project root: outside a Mix project it
+    # fails outright, and inside one it resolves `.formatter.exs` relative to
+    # the working directory.
+    project_root = find_project_root(path, "mix.exs")
+    abs_path = Path.expand(path)
+    cwd = project_root || Path.dirname(abs_path)
+
+    {"mix", ["format", Path.relative_to(abs_path, cwd)], [cd: cwd]}
   end
 
   defp detect_formatter(:erlang, path) do
     cond do
       command_exists?("erlfmt") ->
-        {"erlfmt", ["-w"]}
+        {"erlfmt", ["-w"], []}
 
       find_project_root(path, "rebar.config") && command_exists?("rebar3") ->
-        {"rebar3", ["fmt", "-w"]}
+        {"rebar3", ["fmt", "-w"], []}
 
       true ->
         nil
@@ -105,10 +111,10 @@ defmodule Ragex.Editor.Formatter do
     # Try black first, then autopep8
     cond do
       command_exists?("black") ->
-        {"black", ["--quiet", "--"]}
+        {"black", ["--quiet", "--"], []}
 
       command_exists?("autopep8") ->
-        {"autopep8", ["--in-place", "--"]}
+        {"autopep8", ["--in-place", "--"], []}
 
       true ->
         nil
@@ -118,10 +124,10 @@ defmodule Ragex.Editor.Formatter do
   defp detect_formatter(:javascript, _path) do
     cond do
       command_exists?("prettier") ->
-        {"prettier", ["--write", "--"]}
+        {"prettier", ["--write", "--"], []}
 
       command_exists?("eslint") ->
-        {"eslint", ["--fix", "--"]}
+        {"eslint", ["--fix", "--"], []}
 
       true ->
         nil
@@ -131,13 +137,13 @@ defmodule Ragex.Editor.Formatter do
   defp detect_formatter(:ruby, _path) do
     cond do
       command_exists?("rubocop") ->
-        {"rubocop", ["--autocorrect", "--"]}
+        {"rubocop", ["--autocorrect", "--"], []}
 
       command_exists?("standardrb") ->
-        {"standardrb", ["--fix", "--"]}
+        {"standardrb", ["--fix", "--"], []}
 
       command_exists?("rufo") ->
-        {"rufo", []}
+        {"rufo", [], []}
 
       true ->
         nil
@@ -152,10 +158,10 @@ defmodule Ragex.Editor.Formatter do
   defp detect_formatter(:cure, path) do
     cond do
       command_exists?("cure") ->
-        {"cure", ["fmt"]}
+        {"cure", ["fmt"], []}
 
       File.exists?(Path.expand("../../Cure/cure/cure", File.cwd!())) ->
-        {Path.expand("../../Cure/cure/cure", File.cwd!()), ["fmt"]}
+        {Path.expand("../../Cure/cure/cure", File.cwd!()), ["fmt"], []}
 
       true ->
         case find_project_root(path, "cure") do
@@ -164,20 +170,22 @@ defmodule Ragex.Editor.Formatter do
 
           root ->
             bin = Path.join(root, "cure")
-            if File.exists?(bin), do: {bin, ["fmt"]}, else: nil
+            if File.exists?(bin), do: {bin, ["fmt"], []}, else: nil
         end
     end
   end
 
   defp detect_formatter(_language, _path), do: nil
 
-  defp run_formatter(command, args, path) do
+  defp run_formatter(command, args, path, opts) do
     # Build full argument list
     full_args = args ++ [path]
 
     Logger.debug("Running formatter: #{command} #{Enum.join(full_args, " ")}")
 
-    case System.cmd(command, full_args, stderr_to_stdout: true) do
+    cmd_opts = [stderr_to_stdout: true] ++ opts
+
+    case System.cmd(command, full_args, cmd_opts) do
       {_output, 0} ->
         Logger.debug("Successfully formatted #{path}")
         :ok

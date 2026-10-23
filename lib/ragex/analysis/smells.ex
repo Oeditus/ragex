@@ -1,6 +1,6 @@
 defmodule Ragex.Analysis.Smells do
   @moduledoc """
-  Code smell detection using Metastatic.Analysis.Smells.
+  Code smell detection via MetaCredo's readability checks.
 
   Provides file and directory-level code smell detection with configurable
   thresholds, parallel processing, and detailed reporting.

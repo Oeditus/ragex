@@ -70,6 +70,37 @@ defmodule Ragex.Retrieval.MetaASTRankerTest do
       # 1.0 * 1.2 (core) * 1.3 (pure) * (1.0 - 0.04) = 1.4976
       assert_in_delta boost, 1.4976, 0.001
     end
+
+    test "real adapter metadata is neutral and preserves ordering" do
+      # This is the shape `Metastatic.Adapters.Elixir.to_meta/1` actually
+      # returns: a per-document map with no :level, :purity or :complexity.
+      # Applying a uniform boost to every result changes no ordering, so the
+      # ranker must stay a no-op rather than pretend to discriminate.
+      a = %{
+        node_id: "a",
+        score: 0.9,
+        meta_ast_metadata: %{arity: 1, function: "a", module: "M", visibility: :public}
+      }
+
+      b = %{
+        node_id: "b",
+        score: 0.5,
+        meta_ast_metadata: %{arity: 2, function: "b", module: "N", visibility: :private}
+      }
+
+      assert MetaASTRanker.calculate_boost(a) == MetaASTRanker.calculate_boost(b)
+    end
+
+    test "reads :cyclomatic as a complexity source" do
+      result = %{
+        node_id: "test",
+        score: 0.8,
+        meta_ast_metadata: %{cyclomatic: 10}
+      }
+
+      # 1.0 * 1.2 (default core level) * (1.0 - (10 * 0.02)) = 0.96
+      assert_in_delta MetaASTRanker.calculate_boost(result), 0.96, 0.001
+    end
   end
 
   describe "apply_ranking/2" do
