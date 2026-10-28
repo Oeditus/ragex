@@ -29,6 +29,14 @@ The persistence layer integrates seamlessly with the Graph Store:
    - Only on normal/graceful shutdown (not crashes)
    - Overwrites existing cache for the project
 
+### Repeated project loads and branch changes
+
+The graph store records the successfully loaded project and backend explicitly, including projects with no tracked files. Loading the same project does not recompute file statistics or restore its caches again. Changing projects or backends still reloads the appropriate state.
+
+In per-project Dllb mode, schema initialization runs when an instance is attached, not on every subsequent load. Initialization failures are returned rather than caching an unusable instance. Use a Dllb server with idempotent index definitions to avoid whole-database backfills when reopening persisted databases; vector search structures then restore lazily on first use.
+
+This does not bypass incremental analysis. Directory analysis still compares content hashes after branch switches, and callers that already loaded the store can pass `load_project: false` to avoid redundant project loading.
+
 ### Cache Location
 
 Embeddings are cached at:

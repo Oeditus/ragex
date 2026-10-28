@@ -15,6 +15,7 @@ defmodule Ragex.Graph.Store do
   require Logger
 
   alias Ragex.Analysis.Cache, as: AnalysisCache
+  alias Ragex.Dllb.ProjectManager
   alias Ragex.Embeddings.{FileTracker, Persistence}
   alias Ragex.Git.Repo, as: GitRepo
   alias Ragex.Graph.Persistence, as: GraphPersistence
@@ -353,7 +354,7 @@ defmodule Ragex.Graph.Store do
 
   - `:ok`
   """
-  @spec load_project(String.t()) :: :ok
+  @spec load_project(String.t()) :: :ok | {:error, term()}
   def load_project(project_path) do
     GenServer.call(__MODULE__, {:load_project, project_path}, :infinity)
   end
@@ -482,13 +483,20 @@ defmodule Ragex.Graph.Store do
     # observable behavior for callers is unchanged.
     cwd = canonical_project_root(nil)
 
-    {:ok, %{project_path: cwd, cache_loaded: false}, {:continue, {:load_initial_cache, cwd}}}
+    {:ok, %{project_path: cwd, cache_loaded: false, loaded_backend: nil},
+     {:continue, {:load_initial_cache, cwd}}}
   end
 
   @impl true
   def handle_continue({:load_initial_cache, project_path}, state) do
-    do_load_project_cache(project_path)
-    {:noreply, %{state | cache_loaded: true}}
+    case do_load_project_cache(project_path) do
+      :ok ->
+        {:noreply, %{state | cache_loaded: true, loaded_backend: backend()}}
+
+      {:error, reason} ->
+        Logger.warning("Failed to load initial project cache: #{inspect(reason)}")
+        {:noreply, state}
+    end
   end
 
   @impl true
@@ -513,16 +521,19 @@ defmodule Ragex.Graph.Store do
     target_root = canonical_project_root(project_path)
     current_root = canonical_project_root(state.project_path)
 
-    tracked_count = FileTracker.stats().total_files
-
-    if target_root == current_root and state.project_path != nil and tracked_count > 0 do
+    if target_root == current_root and state.cache_loaded and
+         state.loaded_backend == backend() do
       Logger.info(
         "Store already loaded for project: #{target_root}, preserving graph and file tracker"
       )
 
-      backend().load_project(target_root)
+      case activate_loaded_project(target_root) do
+        :ok ->
+          {:reply, :ok, %{state | project_path: target_root}}
 
-      {:reply, :ok, %{state | project_path: target_root}}
+        {:error, _reason} = error ->
+          {:reply, error, %{state | cache_loaded: false, loaded_backend: nil}}
+      end
     else
       # Clear all tables when switching projects or initial empty load
       :ets.delete_all_objects(@nodes_table)
@@ -531,9 +542,14 @@ defmodule Ragex.Graph.Store do
       FileTracker.clear_all()
 
       # Load caches for the target project path
-      do_load_project_cache(target_root)
+      case do_load_project_cache(target_root) do
+        :ok ->
+          {:reply, :ok,
+           %{state | project_path: target_root, cache_loaded: true, loaded_backend: backend()}}
 
-      {:reply, :ok, %{state | project_path: target_root}}
+        {:error, _reason} = error ->
+          {:reply, error, %{state | cache_loaded: false, loaded_backend: nil}}
+      end
     end
   end
 
@@ -582,13 +598,13 @@ defmodule Ragex.Graph.Store do
   @impl true
   def handle_cast(:clear, state) do
     backend().clear()
-    {:noreply, state}
+    {:noreply, %{state | cache_loaded: false, loaded_backend: nil}}
   end
 
   @impl true
   def terminate(reason, state) do
     # Save to disk on normal shutdown, using the stored project path
-    if reason == :shutdown or reason == :normal do
+    if reason in [:shutdown, :normal] and state.cache_loaded do
       pp = state[:project_path]
 
       case Persistence.save(@embeddings_table, pp) do
@@ -607,7 +623,9 @@ defmodule Ragex.Graph.Store do
           Logger.error("Failed to save graph: #{inspect(err)}")
       end
     else
-      Logger.warning("Graph store terminating abnormally: #{inspect(reason)}, skipping save")
+      Logger.debug(
+        "Skipping graph cache save (reason: #{inspect(reason)}, loaded: #{state.cache_loaded})"
+      )
     end
 
     # ETS tables are automatically cleaned up
@@ -616,6 +634,12 @@ defmodule Ragex.Graph.Store do
 
   # Loads graph and embedding caches for a given project path (nil = CWD).
   defp do_load_project_cache(project_path) do
+    with :ok <- backend().load_project(project_path) do
+      restore_project_cache(project_path)
+    end
+  end
+
+  defp restore_project_cache(project_path) do
     target_path = project_path
 
     # Hydrate FileTracker state from AnalysisCache if available
@@ -649,9 +673,8 @@ defmodule Ragex.Graph.Store do
       end
     end
 
-    # Bootstrap backend (loads project for dllb, no-op for ETS)
-    backend().load_project(target_path)
     Logger.info("Store backend loaded project #{target_path} (#{Backend.module()})")
+    :ok
   end
 
   defp canonical_project_root(nil), do: canonical_project_root(File.cwd!())
@@ -668,6 +691,17 @@ defmodule Ragex.Graph.Store do
   end
 
   defp canonical_project_root(other), do: Path.expand(to_string(other))
+
+  # Reactivation is cheap for managed instances and also recreates an instance
+  # explicitly stopped since the previous load. Global schemas stay loaded.
+  defp activate_loaded_project(project_path) do
+    if backend() == Ragex.Store.Backend.Dllb and
+         ProjectManager.per_project_enabled?() do
+      backend().load_project(project_path)
+    else
+      :ok
+    end
+  end
 
   defp backend, do: Backend.module()
 end

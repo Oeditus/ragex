@@ -29,7 +29,7 @@ defmodule Ragex.Store.Backend do
   @callback stats() :: map()
 
   @doc "Switch the store to a specific project path."
-  @callback load_project(project_path :: String.t() | nil) :: :ok
+  @callback load_project(project_path :: String.t() | nil) :: :ok | {:error, term()}
 
   # ---------------------------------------------------------------------------
   # Nodes

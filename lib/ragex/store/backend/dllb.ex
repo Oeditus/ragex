@@ -54,27 +54,33 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def bootstrap do
-    schema_statements()
-    |> Enum.reduce_while(:ok, fn stmt, :ok ->
-      case query(stmt) do
-        # The server replies {:ok, %Dllb.Result.Error{}} for statements the
-        # engine does not execute (e.g. DEFINE TABLE/FIELD) or for an index
-        # that already exists. These are tolerated so bootstrap stays
-        # idempotent; only a transport-level failure aborts.
-        {:ok, _} -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
-      end
-    end)
+    bootstrap_with(&query/1)
   end
 
   @doc "Bootstraps schema statements on a specific named pool connection."
   @spec bootstrap_instance(atom()) :: :ok | {:error, term()}
   def bootstrap_instance(pool_name) do
+    bootstrap_with(&Dllb.query(&1, pool: pool_name))
+  end
+
+  defp bootstrap_with(query_fn) do
     schema_statements()
     |> Enum.reduce_while(:ok, fn stmt, :ok ->
-      case Dllb.query(stmt, pool: pool_name) do
-        {:ok, _} -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, reason}}
+      case query_fn.(stmt) do
+        {:ok, %Dllb.Result.Error{} = error} ->
+          # TABLE/FIELD declarations are unsupported by the engine. Index
+          # errors, including conflicting definitions, must not be swallowed.
+          if String.starts_with?(stmt, ["DEFINE TABLE ", "DEFINE FIELD "]) do
+            {:cont, :ok}
+          else
+            {:halt, {:error, error}}
+          end
+
+        {:ok, _} ->
+          {:cont, :ok}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
       end
     end)
   end
@@ -148,11 +154,12 @@ defmodule Ragex.Store.Backend.Dllb do
   @impl true
   def load_project(project_path) do
     if ProjectManager.per_project_enabled?() and not is_nil(project_path) do
+      # Attachment initializes the schema once. Reactivation only selects the
+      # existing instance; it must not redefine every index.
       ProjectManager.set_active_project(project_path)
+    else
+      bootstrap()
     end
-
-    bootstrap()
-    :ok
   end
 
   # ---------------------------------------------------------------------------

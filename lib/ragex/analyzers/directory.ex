@@ -36,73 +36,8 @@ defmodule Ragex.Analyzers.Directory do
   """
   @spec analyze_directory(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
   def analyze_directory(path, opts \\ []) do
-    if Keyword.get(opts, :load_project, true) do
-      Store.load_project(path)
-    end
-
-    max_depth = Keyword.get(opts, :max_depth, 10)
-    user_exclude = Keyword.get(opts, :exclude_patterns, [])
-
-    exclude_patterns =
-      Enum.uniq(default_exclude_patterns() ++ load_gitignore_patterns(path) ++ user_exclude)
-
-    incremental = Keyword.get(opts, :incremental, true)
-    force_refresh = Keyword.get(opts, :force_refresh, false)
-    notify = Keyword.get(opts, :notify, true)
-    timeout = Keyword.get(opts, :timeout, 300_000)
-    max_concurrency = Keyword.get(opts, :max_concurrency, 4)
-    watch = Keyword.get(opts, :watch, true)
-
-    if watch and File.dir?(path) do
-      Ragex.Watcher.watch_directory(path)
-    end
-
-    result =
-      case File.stat(path) do
-        {:ok, %File.Stat{type: :directory}} ->
-          if notify do
-            notify_progress("analysis_scanning", %{stage: "scanning_directory", path: path})
-          end
-
-          if Application.get_env(:ragex, :enable_auto_scip, true) do
-            if notify do
-              notify_progress("analysis_scip", %{stage: "scip_indexing", path: path})
-            end
-
-            auto_index_scip(path)
-          end
-
-          files = find_supported_files(path, max_depth, exclude_patterns)
-
-          analyze_files(files,
-            incremental: incremental,
-            force_refresh: force_refresh,
-            notify: notify,
-            timeout: timeout,
-            max_concurrency: max_concurrency
-          )
-
-        {:ok, %File.Stat{type: :regular}} ->
-          # Single file provided
-          analyze_files([path],
-            incremental: incremental,
-            force_refresh: force_refresh,
-            notify: notify,
-            timeout: timeout,
-            max_concurrency: max_concurrency
-          )
-
-        {:error, reason} ->
-          {:error, {:file_error, reason}}
-      end
-
-    case result do
-      {:ok, _} ->
-        Store.save_cache(path)
-        result
-
-      _ ->
-        result
+    with :ok <- load_project(path, opts) do
+      do_analyze_directory(path, opts)
     end
   end
 
@@ -250,6 +185,76 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   # Private functions
+
+  defp load_project(path, opts) do
+    if Keyword.get(opts, :load_project, true), do: Store.load_project(path), else: :ok
+  end
+
+  defp do_analyze_directory(path, opts) do
+    max_depth = Keyword.get(opts, :max_depth, 10)
+    user_exclude = Keyword.get(opts, :exclude_patterns, [])
+
+    exclude_patterns =
+      Enum.uniq(default_exclude_patterns() ++ load_gitignore_patterns(path) ++ user_exclude)
+
+    incremental = Keyword.get(opts, :incremental, true)
+    force_refresh = Keyword.get(opts, :force_refresh, false)
+    notify = Keyword.get(opts, :notify, true)
+    timeout = Keyword.get(opts, :timeout, 300_000)
+    max_concurrency = Keyword.get(opts, :max_concurrency, 4)
+    watch = Keyword.get(opts, :watch, true)
+
+    if watch and File.dir?(path) do
+      Ragex.Watcher.watch_directory(path)
+    end
+
+    result =
+      case File.stat(path) do
+        {:ok, %File.Stat{type: :directory}} ->
+          if notify do
+            notify_progress("analysis_scanning", %{stage: "scanning_directory", path: path})
+          end
+
+          if Application.get_env(:ragex, :enable_auto_scip, true) do
+            if notify do
+              notify_progress("analysis_scip", %{stage: "scip_indexing", path: path})
+            end
+
+            auto_index_scip(path)
+          end
+
+          files = find_supported_files(path, max_depth, exclude_patterns)
+
+          analyze_files(files,
+            incremental: incremental,
+            force_refresh: force_refresh,
+            notify: notify,
+            timeout: timeout,
+            max_concurrency: max_concurrency
+          )
+
+        {:ok, %File.Stat{type: :regular}} ->
+          analyze_files([path],
+            incremental: incremental,
+            force_refresh: force_refresh,
+            notify: notify,
+            timeout: timeout,
+            max_concurrency: max_concurrency
+          )
+
+        {:error, reason} ->
+          {:error, {:file_error, reason}}
+      end
+
+    case result do
+      {:ok, _} ->
+        Store.save_cache(path)
+        result
+
+      _ ->
+        result
+    end
+  end
 
   defp find_supported_files(path, max_depth, exclude_patterns) do
     find_files_recursive(path, 0, max_depth, exclude_patterns, [], path)

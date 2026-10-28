@@ -423,6 +423,7 @@ defmodule Ragex.Dllb.ProjectManager do
 
     case adopt_if_alive(project_path, db_path, instance_file) do
       {:ok, info} -> {:ok, info}
+      {:error, _reason} = error -> error
       :none -> spawn_and_attach(project_path, port, db_path, instance_file)
     end
   end
@@ -450,7 +451,7 @@ defmodule Ragex.Dllb.ProjectManager do
                 "Failed to attach to existing dllb-server on port #{port}: #{inspect(reason)}"
               )
 
-              :none
+              {:error, reason}
           end
         else
           # `server_reachable?/1` performs a real protocol handshake, so
@@ -529,12 +530,12 @@ defmodule Ragex.Dllb.ProjectManager do
               {:ok, info}
 
             {:error, reason} ->
-              safe_close_port(port_proc)
+              stop_owned_port(port_proc)
               {:error, reason}
           end
 
         {:error, reason} ->
-          safe_close_port(port_proc)
+          stop_owned_port(port_proc)
           {:error, reason}
       end
     end
@@ -580,10 +581,6 @@ defmodule Ragex.Dllb.ProjectManager do
   end
 
   defp build_attach_info(project_path, port, db_path, pool_name, pool_pid, opts) do
-    # Bootstrap is idempotent -- safe to re-run against an adopted,
-    # already-bootstrapped instance.
-    DllbBackend.bootstrap_instance(pool_name)
-
     info = %{
       project_path: project_path,
       port: port,
@@ -594,7 +591,15 @@ defmodule Ragex.Dllb.ProjectManager do
       owned?: Keyword.get(opts, :owned?, true)
     }
 
-    {:ok, info}
+    # Only successfully initialized instances may be cached and reused.
+    case DllbBackend.bootstrap_instance(pool_name) do
+      :ok ->
+        {:ok, info}
+
+      {:error, _reason} = error ->
+        Process.exit(pool_pid, :shutdown)
+        error
+    end
   end
 
   defp safe_close_port(port_proc) do
@@ -605,6 +610,41 @@ defmodule Ragex.Dllb.ProjectManager do
     _, _ -> :ok
   end
 
+  # Closing stdin initiates shutdown, but the process can retain the redb lock
+  # briefly afterwards. Wait before allowing a retry against the same file.
+  defp stop_owned_port(port_proc) do
+    os_pid =
+      case Port.info(port_proc, :os_pid) do
+        {:os_pid, pid} -> pid
+        _ -> nil
+      end
+
+    safe_close_port(port_proc)
+
+    if os_pid do
+      System.cmd("kill", ["-15", to_string(os_pid)], stderr_to_stdout: true)
+      await_owned_process_exit(os_pid, 100)
+    end
+
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp await_owned_process_exit(os_pid, attempts) do
+    case System.cmd("kill", ["-0", to_string(os_pid)], stderr_to_stdout: true) do
+      {_output, 0} when attempts > 0 ->
+        Process.sleep(20)
+        await_owned_process_exit(os_pid, attempts - 1)
+
+      {_output, 0} ->
+        Logger.warning("Owned dllb-server #{os_pid} has not exited after shutdown")
+
+      _ ->
+        :ok
+    end
+  end
+
   defp do_stop_instance(info) do
     if info[:pool_pid] && Process.alive?(info[:pool_pid]) do
       Process.exit(info[:pool_pid], :shutdown)
@@ -613,20 +653,7 @@ defmodule Ragex.Dllb.ProjectManager do
     owned? = Map.get(info, :owned?, true)
 
     if owned? && info[:proc] do
-      try do
-        case Port.info(info[:proc], :os_pid) do
-          {:os_pid, os_pid} ->
-            Port.close(info[:proc])
-            System.cmd("kill", ["-15", to_string(os_pid)], stderr_to_stdout: true)
-
-          _ ->
-            Port.close(info[:proc])
-        end
-      rescue
-        _ -> :ok
-      catch
-        _, _ -> :ok
-      end
+      stop_owned_port(info[:proc])
     end
 
     # Only the owning instance may delete the state file: an adopted
