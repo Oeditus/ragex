@@ -14,6 +14,9 @@ jobs:
   analyze:
     name: Code Quality & Security Audit
     runs-on: ubuntu-latest
+    env:
+      # Static analysis needs a graph, not an external database daemon.
+      RAGEX_STORE_BACKEND: ets
     
     steps:
       - name: Checkout Code
@@ -55,9 +58,11 @@ jobs:
       - name: Dogfood full-codebase self-analysis (non-blocking)
         # Ragex analyzing itself, whole-tree (not diff-scoped), using its own
         # duplication/dead-code/quality/complexity/god-module tools. Runs
-        # without --ci/--strict so it always exits 0 and never blocks the
-        # build; it exists to surface pre-existing debt (like god modules no
-        # single diff ever touches at once) as GitHub annotations for triage.
+        # without --ci/--strict so findings do not fail the step. Runtime
+        # failures are also non-blocking via continue-on-error. It surfaces
+        # pre-existing debt (like god modules no single diff ever touches at
+        # once) as GitHub annotations for triage.
         # See the Ragex Codebase Health & Architecture Improvement Plan.
         if: always()
+        continue-on-error: true
         run: mix ragex.analyze --no-db --no-user --path lib --format github --verbose

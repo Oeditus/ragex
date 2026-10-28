@@ -97,6 +97,8 @@ jobs:
 
   analysis:
     name: Diff Analysis
+    env:
+      RAGEX_STORE_BACKEND: ets
     if: github.event_name == 'pull_request'
     needs: deps
     runs-on: ubuntu-latest
