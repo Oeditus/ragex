@@ -19,6 +19,7 @@ defmodule Ragex.Embeddings.Bumblebee do
 
   alias Bumblebee.Text.TextEmbedding
   alias Ragex.Embeddings.Registry
+  @readiness_table :ragex_embedding_readiness
 
   defmodule State do
     @moduledoc false
@@ -142,20 +143,24 @@ defmodule Ragex.Embeddings.Bumblebee do
   end
 
   @doc """
-  Returns true if the model is loaded and ready.
+  Returns true if the model is loaded and ready, without waiting for model
+  loading or an in-flight embedding request.
   """
   @spec ready?() :: boolean()
   def ready? do
-    GenServer.call(__MODULE__, :ready?, @timeout)
-  catch
-    :exit, {:noproc, _} -> false
-    :exit, {:timeout, _} -> false
+    :ets.lookup(@readiness_table, :ready) == [{:ready, true}]
+  rescue
+    ArgumentError -> false
   end
 
   # Server Callbacks
 
   @impl true
   def init(_opts) do
+    # The server owns this table, so readiness disappears automatically on
+    # crashes/restarts. A GenServer.call here would queue behind model loading.
+    :ets.new(@readiness_table, [:named_table, :set, :protected, read_concurrency: true])
+    :ets.insert(@readiness_table, {:ready, false})
     # Get configured model
     model_id = Application.get_env(:ragex, :embedding_model, Registry.default())
 
@@ -184,6 +189,7 @@ defmodule Ragex.Embeddings.Bumblebee do
   def handle_info({:load_model, model_info}, state) do
     case load_model(model_info) do
       {:ok, serving, tokenizer, model} ->
+        :ets.insert(@readiness_table, {:ready, true})
         Logger.info("Bumblebee embedding model loaded successfully")
 
         new_state = %State{

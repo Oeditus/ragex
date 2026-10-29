@@ -8,7 +8,7 @@ defmodule Ragex.Analyzers.Directory do
 
   alias Ragex.Analyzers.Metastatic, as: MetastaticAnalyzer
   alias Ragex.CLI.Progress
-  alias Ragex.Embeddings.{FileTracker, Helper}
+  alias Ragex.Embeddings.{Bumblebee, FileTracker, Helper}
   alias Ragex.Graph.Store
   alias Ragex.MCP.Server
 
@@ -28,6 +28,7 @@ defmodule Ragex.Analyzers.Directory do
   - `:notify` - Send MCP progress notifications (default: true)
   - `:timeout` - Per-file analysis timeout in ms (default: 300_000 = 5 min)
   - `:max_concurrency` - Max parallel file analyses (default: 4)
+  - `:generate_embeddings` - Generate embeddings when the model is ready (default: true)
   - `:load_project` - Switch the store to `path` as the active project,
     clearing previously loaded graph data first (default: true). Pass
     `false` when batch-analyzing several independent directories that
@@ -51,6 +52,8 @@ defmodule Ragex.Analyzers.Directory do
   - `:notify` - Send MCP progress notifications (default: true)
   - `:timeout` - Per-file analysis timeout in ms (default: 300_000 = 5 min)
   - `:max_concurrency` - Max parallel file analyses (default: 4)
+  - `:generate_embeddings` - Generate embeddings when the model is ready (default: true)
+  - `:persist` - Save successful analysis to the active project cache (default: true)
   """
   @spec analyze_files([String.t()], keyword()) :: {:ok, map()}
   def analyze_files(file_paths, opts \\ []) when is_list(file_paths) do
@@ -168,7 +171,7 @@ defmodule Ragex.Analyzers.Directory do
       })
     end
 
-    if success_count > 0 do
+    if success_count > 0 and Keyword.get(opts, :persist, true) do
       Store.save_cache()
     end
 
@@ -203,51 +206,65 @@ defmodule Ragex.Analyzers.Directory do
     timeout = Keyword.get(opts, :timeout, 300_000)
     max_concurrency = Keyword.get(opts, :max_concurrency, 4)
     watch = Keyword.get(opts, :watch, true)
+    generate_embeddings = Keyword.get(opts, :generate_embeddings, true)
 
     if watch and File.dir?(path) do
       Ragex.Watcher.watch_directory(path)
     end
 
-    result =
+    {result, scip_updated?} =
       case File.stat(path) do
         {:ok, %File.Stat{type: :directory}} ->
           if notify do
             notify_progress("analysis_scanning", %{stage: "scanning_directory", path: path})
           end
 
-          if Application.get_env(:ragex, :enable_auto_scip, true) do
-            if notify do
-              notify_progress("analysis_scip", %{stage: "scip_indexing", path: path})
-            end
+          scip_updated? =
+            if Application.get_env(:ragex, :enable_auto_scip, true) do
+              if notify do
+                notify_progress("analysis_scip", %{stage: "scip_indexing", path: path})
+              end
 
-            auto_index_scip(path)
-          end
+              auto_index_scip(path, generate_embeddings and Bumblebee.ready?())
+            else
+              false
+            end
 
           files = find_supported_files(path, max_depth, exclude_patterns)
 
-          analyze_files(files,
-            incremental: incremental,
-            force_refresh: force_refresh,
-            notify: notify,
-            timeout: timeout,
-            max_concurrency: max_concurrency
-          )
+          result =
+            analyze_files(files,
+              incremental: incremental,
+              force_refresh: force_refresh,
+              notify: notify,
+              timeout: timeout,
+              max_concurrency: max_concurrency,
+              generate_embeddings: generate_embeddings,
+              persist: false
+            )
+
+          {result, scip_updated?}
 
         {:ok, %File.Stat{type: :regular}} ->
-          analyze_files([path],
-            incremental: incremental,
-            force_refresh: force_refresh,
-            notify: notify,
-            timeout: timeout,
-            max_concurrency: max_concurrency
-          )
+          result =
+            analyze_files([path],
+              incremental: incremental,
+              force_refresh: force_refresh,
+              notify: notify,
+              timeout: timeout,
+              max_concurrency: max_concurrency,
+              generate_embeddings: generate_embeddings,
+              persist: false
+            )
+
+          {result, false}
 
         {:error, reason} ->
-          {:error, {:file_error, reason}}
+          {{:error, {:file_error, reason}}, false}
       end
 
     case result do
-      {:ok, _} ->
+      {:ok, %{success: success}} when success > 0 or scip_updated? ->
         Store.save_cache(path)
         result
 
@@ -377,21 +394,18 @@ defmodule Ragex.Analyzers.Directory do
       {:ok, analysis} ->
         store_analysis(analysis)
 
-        # Build entity-body pairs so we can diff against stored hashes.
-        entity_pairs = build_entity_pairs(analysis)
+        if Keyword.get(opts, :generate_embeddings, true) and Bumblebee.ready?() do
+          # Avoid per-entity database lookups when embeddings cannot be generated.
+          entity_pairs = build_entity_pairs(analysis)
+          stale = FileTracker.stale_entities_for_file(file_path, entity_pairs)
 
-        # Only re-embed entities whose body text has changed since last run.
-        stale = FileTracker.stale_entities_for_file(file_path, entity_pairs)
+          embed_opts =
+            if MapSet.size(stale) == length(entity_pairs) do
+              []
+            else
+              [only: stale]
+            end
 
-        embed_opts =
-          if MapSet.size(stale) == length(entity_pairs) do
-            # All entities are new/changed — skip the filter for a simpler path
-            []
-          else
-            [only: stale]
-          end
-
-        if Keyword.get(opts, :generate_embeddings, true) do
           case Helper.generate_and_store_embeddings(analysis, embed_opts) do
             :ok ->
               # Persist the new hashes so unchanged functions are skipped next time
@@ -599,26 +613,28 @@ defmodule Ragex.Analyzers.Directory do
     end
   end
 
-  defp auto_index_scip(project_dir) do
+  defp auto_index_scip(project_dir, generate_embeddings) do
     alias Ragex.Analyzers.SCIP.{Adapter, Indexer, Parser}
 
-    # credo:disable-for-lines:17
-    with {:ok, results} <- Indexer.index_all(project_dir) do
-      Enum.each(results, fn
-        {lang, {:ok, json}} ->
-          Logger.info("SCIP: Auto-indexing of #{lang} succeeded, ingesting...")
+    {:ok, results} = Indexer.index_all(project_dir)
 
-          case Parser.parse(json, project_dir) do
-            {:ok, analysis} ->
-              Adapter.ingest(analysis, generate_embeddings: true)
+    Enum.reduce(results, false, fn
+      {lang, {:ok, json}}, updated? ->
+        Logger.info("SCIP: Auto-indexing of #{lang} succeeded, ingesting...")
 
-            {:error, err} ->
-              Logger.warning("SCIP: Auto-parse failed for #{lang}: #{inspect(err)}")
-          end
+        case Parser.parse(json, project_dir) do
+          {:ok, analysis} ->
+            Adapter.ingest(analysis, generate_embeddings: generate_embeddings)
+            true
 
-        {lang, {:error, reason}} ->
-          Logger.debug("SCIP: Auto-indexing skipped/failed for #{lang}: #{inspect(reason)}")
-      end)
-    end
+          {:error, err} ->
+            Logger.warning("SCIP: Auto-parse failed for #{lang}: #{inspect(err)}")
+            updated?
+        end
+
+      {lang, {:error, reason}}, updated? ->
+        Logger.debug("SCIP: Auto-indexing skipped/failed for #{lang}: #{inspect(reason)}")
+        updated?
+    end)
   end
 end
