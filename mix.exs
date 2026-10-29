@@ -304,6 +304,7 @@ defmodule Ragex.MixProject do
         Ragex.MCP.Delegate,
         Ragex.MCP.Formattable,
         Ragex.MCP.Formatter,
+        Ragex.MCP.JSON,
         Ragex.MCP.SingleRequest,
         Ragex.MCP.SocketServer,
         Ragex.MCP.Server,
@@ -419,6 +420,8 @@ defmodule Ragex.MixProject do
         Ragex.Editor.Report,
         Ragex.Editor.Undo,
         Ragex.Editor.ValidationAI,
+        Ragex.Editor.Validators.Agda,
+        Ragex.Editor.Validators.Cure,
         Ragex.Editor.Validators.Elixir,
         Ragex.Editor.Validators.Erlang,
         Ragex.Editor.Validators.Javascript,
@@ -490,6 +493,8 @@ defmodule Ragex.MixProject do
         Ragex.CLI.Prompt
       ],
       Utilities: [
+        Ragex.Cure.Loader,
+        Ragex.NodeFormatter,
         Ragex.URLAnalyzer,
         Ragex.URLAnalyzer.Classifier,
         Ragex.URLAnalyzer.GitFetcher,
