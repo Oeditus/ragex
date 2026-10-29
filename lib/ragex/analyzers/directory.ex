@@ -43,6 +43,42 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   @doc """
+  Lists supported source files without analyzing them or accessing the graph.
+
+  In Git repositories, includes tracked files and non-ignored untracked files.
+  Git handles nested ignore files, negated patterns and repository-local/global
+  exclusions. Deleted tracked files are omitted. Outside Git repositories, or
+  when Git is unavailable, falls back to recursive filesystem discovery.
+
+  Supports `:max_depth` (default: 10) and `:exclude_patterns`, in addition to the
+  standard build/dependency directory exclusions. Returns absolute paths.
+  """
+  @spec discover_files(String.t(), keyword()) :: [String.t()]
+  def discover_files(path, opts \\ []) do
+    path = Path.expand(path)
+    max_depth = Keyword.get(opts, :max_depth, 10)
+    patterns = Enum.uniq(default_exclude_patterns() ++ Keyword.get(opts, :exclude_patterns, []))
+
+    case git_source_files(path) do
+      {:ok, paths} ->
+        paths
+        |> Enum.uniq()
+        |> Enum.filter(fn relative_path ->
+          full_path = Path.join(path, relative_path)
+
+          length(Path.split(relative_path)) - 1 <= max_depth and
+            supported_file?(full_path) and
+            not should_exclude?(full_path, patterns, path) and File.regular?(full_path)
+        end)
+        |> Enum.map(&Path.join(path, &1))
+
+      :error ->
+        patterns = Enum.uniq(patterns ++ load_gitignore_patterns(path))
+        find_files_recursive(path, 0, max_depth, patterns, [], path)
+    end
+  end
+
+  @doc """
   Analyzes multiple files and stores results in the graph.
 
   ## Options
@@ -194,12 +230,6 @@ defmodule Ragex.Analyzers.Directory do
   end
 
   defp do_analyze_directory(path, opts) do
-    max_depth = Keyword.get(opts, :max_depth, 10)
-    user_exclude = Keyword.get(opts, :exclude_patterns, [])
-
-    exclude_patterns =
-      Enum.uniq(default_exclude_patterns() ++ load_gitignore_patterns(path) ++ user_exclude)
-
     incremental = Keyword.get(opts, :incremental, true)
     force_refresh = Keyword.get(opts, :force_refresh, false)
     notify = Keyword.get(opts, :notify, true)
@@ -230,7 +260,7 @@ defmodule Ragex.Analyzers.Directory do
               false
             end
 
-          files = find_supported_files(path, max_depth, exclude_patterns)
+          files = discover_files(path, opts)
 
           result =
             analyze_files(files,
@@ -273,8 +303,30 @@ defmodule Ragex.Analyzers.Directory do
     end
   end
 
-  defp find_supported_files(path, max_depth, exclude_patterns) do
-    find_files_recursive(path, 0, max_depth, exclude_patterns, [], path)
+  defp git_source_files(path) do
+    with git when is_binary(git) <- System.find_executable("git"),
+         {output, 0} <-
+           System.cmd(
+             git,
+             [
+               "-C",
+               path,
+               "ls-files",
+               "--cached",
+               "--others",
+               "--exclude-standard",
+               "-z",
+               "--",
+               "."
+             ],
+             stderr_to_stdout: true
+           ) do
+      {:ok, String.split(output, <<0>>, trim: true)}
+    else
+      _ -> :error
+    end
+  rescue
+    ErlangError -> :error
   end
 
   # credo:disable-for-next-line
