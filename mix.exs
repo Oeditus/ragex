@@ -2,7 +2,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.38.4"
+  @version "0.38.5"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
