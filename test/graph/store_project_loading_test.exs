@@ -104,6 +104,36 @@ defmodule Ragex.Graph.StoreProjectLoadingTest do
     assert File.read!(path) == cached_graph
   end
 
+  test "save_cache skips the ETS snapshot when a non-ETS backend is active", %{
+    tmp_dir: tmp_dir
+  } do
+    # Under the dllb backend the :ragex_embeddings/:ragex_nodes/:ragex_edges
+    # tables are never populated (dllb persists itself), so snapshotting them
+    # would write a 0-entity cache and log misleading "Saved 0 embeddings" /
+    # "0 nodes, 0 edges" lines. save_cache must skip the snapshot instead.
+    #
+    # `Store.backend/0` resolves via `Backend.module/0`, which reads the
+    # `:ragex, :store_backend` application env -- so that is what we flip here.
+    original = Application.get_env(:ragex, :store_backend)
+    Application.put_env(:ragex, :store_backend, :dllb)
+
+    on_exit(fn ->
+      if original do
+        Application.put_env(:ragex, :store_backend, original)
+      else
+        Application.delete_env(:ragex, :store_backend)
+      end
+    end)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert :ok = Store.save_cache(tmp_dir)
+      end)
+
+    refute log =~ "Saved 0 embeddings"
+    refute log =~ "Saved graph to cache: 0 nodes, 0 edges"
+  end
+
   test "warm cache skips unchanged files and analyzes only branch-style changes", %{
     tmp_dir: tmp_dir
   } do

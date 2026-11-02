@@ -444,6 +444,47 @@ defmodule Ragex.Editor.ValidatorsTest do
       end
     end
 
+    test "resolves standard library imports" do
+      code = """
+      module TestStdlib where
+
+      open import Data.Nat using (ℕ; zero; suc)
+
+      data Foo : Set where
+        mkFoo : ℕ -> Foo
+      """
+
+      case System.find_executable("agda") do
+        nil ->
+          :ok
+
+        _ ->
+          assert {:ok, :valid} = Agda.validate(code, path: "TestStdlib.agda")
+      end
+    end
+
+    test "does not report FileNotFound for library modules" do
+      code = """
+      module TestNoFileNotFound where
+
+      open import Data.Bool using (Bool; true; false)
+      """
+
+      case System.find_executable("agda") do
+        nil ->
+          :ok
+
+        _ ->
+          case Agda.validate(code, path: "TestNoFileNotFound.agda") do
+            {:ok, :valid} ->
+              :ok
+
+            {:error, errors} ->
+              refute Enum.any?(errors, &(&1.message =~ "FileNotFound"))
+          end
+      end
+    end
+
     test "can_validate? returns true for .agda and .lagda files" do
       assert Agda.can_validate?("Test.agda")
       assert Agda.can_validate?("/path/to/Module.lagda")

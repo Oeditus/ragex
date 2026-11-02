@@ -508,8 +508,23 @@ defmodule Ragex.Graph.Store do
   def handle_call({:save_cache, target_path}, _from, state) do
     with <<_::utf8, _::binary>> = path <-
            canonical_project_root(target_path || state.project_path) do
-      Persistence.save(@embeddings_table, path)
-      GraphPersistence.save(path)
+      # The embeddings and graph snapshots read the `:ragex_embeddings`,
+      # `:ragex_nodes` and `:ragex_edges` ETS tables directly. Those tables are
+      # only populated by the ETS backend. When a different backend is active
+      # (e.g. `:dllb`, the default in config/config.exs), it owns its own
+      # persistence and leaves the ETS tables empty -- snapshotting them would
+      # write a 0-entity cache and log misleading "Saved 0 embeddings" /
+      # "0 nodes, 0 edges" lines after every re-analysis. Skip the snapshot in
+      # that case; the analysis cache is backend-independent and always saved.
+      if backend() == Ragex.Store.Backend.ETS do
+        Persistence.save(@embeddings_table, path)
+        GraphPersistence.save(path)
+      else
+        Logger.debug(
+          "Skipping ETS graph/embedding snapshot (active backend: #{inspect(backend())})"
+        )
+      end
+
       AnalysisCache.save(%{}, path)
     end
 
