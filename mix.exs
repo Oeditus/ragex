@@ -101,6 +101,14 @@ defmodule Ragex.MixProject do
         nil -> {:metacredo, "~> 0.1"}
         _ -> {:metacredo, path: "../metacredo"}
       end,
+      # Full macro expansion for the Elixir analyzer (Ragex.Analyzers.Elixir.MacroExpander).
+      # Already present transitively via metastatic, but declared explicitly
+      # because Ragex calls it directly -- an implicit transitive dep would
+      # break silently if metastatic ever dropped it. 0.3.0 is required: it
+      # expands `defdelegate` natively (0.2.x raised inside
+      # `:elixir_bootstrap.def/2`), which removed a manual rewrite from the
+      # analyzer.
+      {:ex_panda, "~> 0.3"},
       # Image processing library (optional -- native/NIF-backed via Vix/libvips,
       # degrades gracefully when absent, see Ragex.Image.available?/0)
       {:image, "~> 0.54", optional: true},

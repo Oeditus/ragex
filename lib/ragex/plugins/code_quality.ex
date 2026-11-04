@@ -88,6 +88,39 @@ defmodule Ragex.Plugins.CodeQuality do
           },
           required: ["path"]
         }
+      },
+      %{
+        name: "prisma_analyze",
+        description:
+          "Run Prisma, a hybrid success/gradual type analyzer, against a COMPILED project. Proves dead code from beams (unreachable clauses, impossible guards, unused private functions) and reports @spec-vs-inferred type discrepancies that source-level analysis cannot detect. Requires the prisma package in the target project and a prior `mix prisma.build`. Complements find_dead_code, which infers from a source call graph.",
+        inputSchema: %{
+          type: "object",
+          properties: %{
+            path: %{
+              type: "string",
+              description: "Project root containing mix.lock and _build",
+              default: "."
+            },
+            mode: %{
+              type: "string",
+              description:
+                "Analysis mode: hybrid (default), gradual (enforce @spec contracts), or discrepancy (success typing)",
+              enum: ["hybrid", "gradual", "discrepancy"],
+              default: "hybrid"
+            },
+            format: %{
+              type: "string",
+              description: "Output format",
+              enum: ["summary", "detailed", "suggestions"],
+              default: "summary"
+            },
+            include_oxbow: %{
+              type: "boolean",
+              description: "Include oxbow (dead/unreachable code) analysis",
+              default: true
+            }
+          }
+        }
       }
     ]
   end
@@ -107,6 +140,7 @@ defmodule Ragex.Plugins.CodeQuality do
   def execute("detect_smells", args), do: Tools.detect_smells_tool(args)
   def execute("find_dead_code", args), do: Tools.find_dead_code_tool(args)
   def execute("find_duplicates", args), do: Tools.find_duplicates_tool(args)
+  def execute("prisma_analyze", args), do: Tools.prisma_analyze_tool(args)
 
   def execute(tool_name, _args) do
     {:error, "Unknown tool '#{tool_name}' for CodeQuality plugin"}

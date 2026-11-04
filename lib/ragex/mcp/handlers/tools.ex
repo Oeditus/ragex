@@ -47,6 +47,7 @@ defmodule Ragex.MCP.Handlers.Tools do
     Duplication,
     Impact,
     MetastaticBridge,
+    Prisma,
     QualityStore,
     Runner,
     Security,
@@ -6161,6 +6162,79 @@ defmodule Ragex.MCP.Handlers.Tools do
       {:error, reason} ->
         {:error, "Failed to find dead code: #{inspect(reason)}"}
     end
+  end
+
+  @doc """
+  Runs [Prisma](https://prisma.hexdocs.pm) against a compiled project and
+  returns its hybrid type / oxbow findings.
+
+  Complements `find_dead_code`: Prisma proves dead code from **compiled beams**
+  (unreachable clauses, impossible guards, unused private functions) rather than
+  inferring it from a source-level call graph, and additionally reports
+  `@spec`-vs-inferred type discrepancies that no source-only analyzer can see.
+
+  Prisma is optional and shells out (`mix prisma`), so this degrades to a clear
+  error when it is not installed or the project has not been built.
+  """
+  @spec prisma_analyze_tool(map()) :: {:ok, map()} | {:error, term()}
+  def prisma_analyze_tool(params) do
+    path = Map.get(params, "path", ".")
+    mode = Map.get(params, "mode", "hybrid")
+    format = Map.get(params, "format", "summary")
+    include_oxbow = Map.get(params, "include_oxbow", true)
+
+    opts = [
+      mode: String.to_atom(mode),
+      oxbow: include_oxbow
+    ]
+
+    case Prisma.analyze(path, opts) do
+      {:ok, findings} ->
+        format_prisma_findings(findings, format, path)
+
+      {:error, :unavailable} ->
+        {:error,
+         "Prisma is not available for #{path}. Add {:prisma, \"~> 0.1\", only: [:dev, :test], " <>
+           "runtime: false} to the project's mix.exs, then run `mix prisma.build` once to " <>
+           "generate the .pplt files Prisma needs."}
+
+      {:error, {:exit, code, output}} ->
+        {:error, "Prisma exited with status #{code}: #{String.slice(output, 0, 500)}"}
+
+      {:error, {:invalid_json, output}} ->
+        {:error, "Prisma produced unparseable output: #{String.slice(inspect(output), 0, 500)}"}
+    end
+  end
+
+  defp format_prisma_findings(findings, "summary", _path) do
+    by_severity = Enum.frequencies_by(findings, & &1.severity)
+    by_kind = Enum.frequencies_by(findings, & &1.kind)
+
+    {:ok,
+     %{
+       status: "success",
+       source: "prisma",
+       total: length(findings),
+       by_severity: by_severity,
+       by_kind: by_kind
+     }}
+  end
+
+  defp format_prisma_findings(findings, "detailed", _path) do
+    {:ok, %{status: "success", source: "prisma", total: length(findings), findings: findings}}
+  end
+
+  defp format_prisma_findings(findings, "suggestions", _path) do
+    {:ok,
+     %{
+       status: "success",
+       source: "prisma",
+       suggestions: Prisma.to_dead_code_suggestions(findings)
+     }}
+  end
+
+  defp format_prisma_findings(_findings, format, _path) do
+    {:error, "Unknown format: #{format}"}
   end
 
   defp analyze_dead_code_patterns_tool(%{"path" => path} = params) do

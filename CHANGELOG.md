@@ -9,12 +9,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Semantic pattern bootstrap** -- `Ragex.LanguageSupport.ensure_semantic_patterns/0`
-  registers Metastatic's `OpKind` pattern tables explicitly, and
-  `reset_semantic_patterns/0` clears the guard for tests.
+- **Full macro expansion for the Elixir analyzer** via
+  `Ragex.Analyzers.Elixir.MacroExpander`, backed by [ExPanda](https://hexdocs.pm/ex_panda)
+  `~> 0.3`. `:partial` (the default) now genuinely expands core macros and `use`
+  for modules loaded in the running VM; `:full` expands with the caller's
+  `Macro.Env` so project-local macros resolve too. Expansion never raises:
+  unresolvable macros keep their original node and are reported through the new
+  `:unexpanded` key on the analysis result, so callers can surface a confidence
+  signal instead of silently degrading.
+- **`prisma_analyze` MCP tool** (`Ragex.Analysis.Prisma`), a bridge to
+  [Prisma](https://prisma.hexdocs.pm), the hybrid success/gradual type analyzer for
+  Erlang and Elixir. It reports `@spec`-vs-inferred type discrepancies and proves
+  dead code (unreachable clauses, impossible guards, unused private functions)
+  from compiled beams -- things source-level analysis cannot establish. Prisma
+  ships no library API and its Mix task calls `erlang:halt/1`, so it is invoked as
+  a subprocess with `--format json`. Optional: returns an actionable error when
+  the package or `.pplt` files are missing.
 
 ### Fixed
 
+- **`:full` macro expansion was dead code.**
+  `Ragex.Analyzers.Elixir.expand_with_compilation/2` built a `%Macro.Env{}` with
+- **`use` edges were lost once expansion was enabled**, because ExPanda rewrites
+  `use X` into `require X` plus the injected body. The `:use` targets are now
+  recovered from the surface AST, and the synthetic `require` is suppressed so the
+  edge is not duplicated.
+- **Operator encodings polluted the call graph.** Expanding control flow turns
+  `if a == b` into `case :erlang.==(a, b)` and `&&`/`||` into
+  `:erlang.andalso/orelse`, so `:erlang` "calls" that are really just the
+  compiler's encoding of an operator were recorded as dependency edges -- 114 of
+  142 `:erlang` edges in Ragex's own analyzer. They are now filtered out, leaving
+  the genuine BIFs (`is_binary/1`, `length/1`, `binary_to_atom/1`, ...) that *are*
+  worth recording.
+- **Dropped the manual `defdelegate` rewrite.** ExPanda 0.3.0 expands
+  `defdelegate` natively (0.2.x raised inside `:elixir_bootstrap.def/2`), so the
+  analyzer's hand-rolled fallback pass is gone.
+  equivalent direct call before traversal.
+- **`use`-injected definitions were invisible.** `use GenServer` contributed no
+  `child_spec/1` or callbacks, and every DSL-generated definition was lost. They
+  are now visible and tagged `metadata.injected: true`, so callers can still
+  distinguish them from user-authored code (`child_spec/1` proving a module is a
+  supervisor child, for example).
+- **`use` edges were lost once expansion was enabled**, because ExPanda rewrites
+  `use X` into `require X` plus the injected body. The `:use` targets are now
+  recovered from the surface AST, and the synthetic `require` is suppressed so the
+  edge is not duplicated.
 - **Semantic operation analysis silently returned zero operations.**
   Metastatic registers its `OpKind` pattern tables from a bare
   `Metastatic.Semantic.Domains.*.register_all()` call at the bottom of each

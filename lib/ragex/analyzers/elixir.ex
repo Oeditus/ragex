@@ -8,6 +8,8 @@ defmodule Ragex.Analyzers.Elixir do
 
   @behaviour Ragex.Analyzers.Behaviour
 
+  alias Ragex.Analyzers.Elixir.MacroExpander
+
   @impl true
   def analyze(source, file_path, opts \\ []) do
     expand_macros = Keyword.get(opts, :expand_macros, :partial)
@@ -17,13 +19,19 @@ defmodule Ragex.Analyzers.Elixir do
 
     case Code.string_to_quoted(source, file: file_path, columns: true) do
       {:ok, ast} ->
-        # Expand macros based on configuration
-        ast =
-          case expand_macros do
-            :none -> ast
-            :partial -> expand_common_macros(ast)
-            :full -> expand_with_compilation(ast, file_path)
-          end
+        # Recover `use` targets before expansion: ExPanda rewrites `use X` into
+        # `require X` + the injected body, losing the `:use` edge.
+        use_targets = MacroExpander.use_targets(ast)
+
+        # Expand macros based on configuration. `MacroExpander` never raises and
+        # returns the AST untouched when expansion is impossible, so the
+        # analyzer always makes progress.
+        ast = MacroExpander.expand(ast, expand_macros, file: file_path)
+
+        # `@unexpanded` markers are pure diagnostics; leaving them in would
+        # make them look like real module attributes to the traversal below.
+        unexpanded = MacroExpander.unexpanded(ast)
+        ast = MacroExpander.strip_markers(ast)
 
         context = %{
           file: file_path,
@@ -44,7 +52,11 @@ defmodule Ragex.Analyzers.Elixir do
           # Store comments for association
           comments: comments,
           # Track macro expansion mode
-          expand_macros: expand_macros
+          expand_macros: expand_macros,
+          # Macros that could not be resolved (confidence signal)
+          unexpanded: unexpanded,
+          # Modules referenced by `use` in the surface AST (survives expansion)
+          use_targets: use_targets
         }
 
         context = traverse_ast(ast, context)
@@ -60,7 +72,8 @@ defmodule Ragex.Analyzers.Elixir do
           functions: Enum.reverse(context.functions),
           types: Enum.reverse(context.types),
           calls: Enum.reverse(context.calls),
-          imports: Enum.reverse(context.imports)
+          imports: Enum.reverse(context.imports),
+          unexpanded: context.unexpanded
         }
 
         {:ok, result}
@@ -90,6 +103,11 @@ defmodule Ragex.Analyzers.Elixir do
 
     context = %{context | current_module: module_name}
     context = %{context | modules: [module_info | context.modules]}
+
+    # Record `use` edges recovered from the surface AST. Once ExPanda has
+    # expanded the module body, `use X` no longer appears as such (it becomes
+    # `require X` plus the injected body), so these are added up-front.
+    context = add_use_imports(context)
 
     # Traverse module body - this will encounter @moduledoc
     context = traverse_ast(body, context)
@@ -193,7 +211,17 @@ defmodule Ragex.Analyzers.Elixir do
   end
 
   defp traverse_ast({:require, _meta, [module_alias | _]}, context) do
-    add_import(context, module_alias, :require)
+    # ExPanda expands `use X` into `require X` + the injected body. The `:use`
+    # edge is already recorded (from the surface AST via `use_targets/1`), so
+    # skip the synthetic `require` to avoid a duplicate edge for the same
+    # module. A genuine `require` the user wrote still comes through.
+    module = extract_module_name(module_alias)
+
+    if use_import?(context, module) do
+      context
+    else
+      add_import(context, module_alias, :require)
+    end
   end
 
   defp traverse_ast({:use, _meta, [module_alias | _]}, context) do
@@ -246,6 +274,19 @@ defmodule Ragex.Analyzers.Elixir do
     add_import(context, module_alias, :alias)
   end
 
+  # Pipe operator: `lhs |> rhs` supplies one extra argument to `rhs`.
+  #
+  # The surface AST for `data |> Repo.insert()` is
+  #   {:|>, _, [{:data, _, nil}, {{:., _, [Repo, :insert]}, _, []}]}
+  # -- the remote-call node has ZERO args, so recording `length(args)` yields
+  # arity 0 for every piped call in a codebase. Rewrite the pipe into the
+  # equivalent direct call before traversal so arity (and nested-call
+  # detection) is correct. Only applies when expansion left the pipe in place;
+  # with `:partial`/`:full` ExPanda has already desugared it.
+  defp traverse_ast({:|>, _meta, [lhs, rhs]}, context) do
+    traverse_ast(pipe_to_call(lhs, rhs), context)
+  end
+
   # Function call - simplified detection
   defp traverse_ast({{:., _meta1, [module_alias, func]}, meta2, args}, context)
        when is_atom(func) and is_list(args) do
@@ -264,7 +305,13 @@ defmodule Ragex.Analyzers.Elixir do
         line: line
       }
 
-      context = %{context | calls: [call_info | context.calls]}
+      context =
+        if operator_call?(module_name, func) do
+          context
+        else
+          %{context | calls: [call_info | context.calls]}
+        end
+
       # Continue traversing arguments
       Enum.reduce(args, context, &traverse_ast/2)
     else
@@ -287,7 +334,93 @@ defmodule Ragex.Analyzers.Elixir do
   # Skip atoms, numbers, strings, etc.
   defp traverse_ast(_other, context), do: context
 
+  # Operator forms that macro expansion produces as `:erlang.<op>(...)` calls.
+  #
+  # `if a == b` desugars to `case :erlang.==(a, b)`, and `&&`/`||` to
+  # `:erlang.andalso/orelse`, so expanding control flow injects a large number
+  # of `:erlang` "calls" that are not dependencies at all -- they are the
+  # compiler's own encoding of an operator. Left in, they dominate the call
+  # graph (measured: 114 of 142 `:erlang` edges in the analyzer itself) and
+  # drown out the genuine `:erlang` BIFs (`is_binary/1`, `length/1`, ...) that
+  # *are* worth recording.
+  @operator_functions [
+    :"=:=",
+    :==,
+    :!=,
+    :"/=",
+    :<,
+    :>,
+    :"=<",
+    :>=,
+    :+,
+    :-,
+    :*,
+    :/,
+    :++,
+    :--,
+    :andalso,
+    :orelse,
+    :not,
+    :and,
+    :or,
+    :xor,
+    :!
+  ]
+
+  # True when the call is an operator encoding rather than a real dependency.
+  defp operator_call?(:erlang, fun), do: fun in @operator_functions
+  defp operator_call?(_module, _fun), do: false
   # Helper functions
+
+  # Rewrites `lhs |> f(a)` into `f(lhs, a)` so the call is recorded with the
+  # arity the user actually wrote. Handles both remote (`Mod.f/1`) and local
+  # (`f/1`) right-hand sides; anything else is passed through untouched so the
+  # generic tuple/list clauses still walk it.
+  defp pipe_to_call(lhs, {{:., dot_meta, [mod, fun]}, call_meta, args}) when is_list(args) do
+    {{:., dot_meta, [mod, fun]}, call_meta, [lhs | args]}
+  end
+
+  defp pipe_to_call(lhs, {fun, call_meta, args}) when is_atom(fun) and is_list(args) do
+    {fun, call_meta, [lhs | args]}
+  end
+
+  defp pipe_to_call(lhs, rhs), do: {:|>, [], [lhs, rhs]}
+
+  # Emits `:use` import edges for the module currently being traversed.
+  # `:none` mode never expands, so the surface `use` nodes are still present and
+  # the normal `traverse_ast({:use, ...})` clause records them; adding them here
+  # too would duplicate the edge.
+  defp add_use_imports(%{expand_macros: :none} = context), do: context
+
+  defp add_use_imports(context) do
+    Enum.reduce(context.use_targets, context, fn target, acc ->
+      add_import(acc, target, :use)
+    end)
+  end
+
+  # True when a `:use` edge for `module` has already been recorded for the
+  # module currently being traversed.
+  defp use_import?(context, module) do
+    Enum.any?(context.imports, fn
+      %{type: :use, to_module: ^module, from_module: from} -> from == context.current_module
+      _ -> false
+    end)
+  end
+
+  # Distinguishes user-authored definitions from ones a `use` macro injected.
+  #
+  # ExPanda preserves `:line` metadata on definitions the user actually wrote
+  # (it walks the surface AST) but the definitions it synthesises from a
+  # `__using__/1` quote carry no line. Recording that lets callers filter
+  # phantom functions out of "what does this module define?" answers while
+  # still being able to see the injected ones when they are useful (e.g.
+  # `child_spec/1` proving a module is a supervisor child).
+  defp def_metadata(meta) do
+    case Keyword.get(meta, :line) do
+      line when is_integer(line) and line > 0 -> %{injected: false}
+      _ -> %{injected: true}
+    end
+  end
 
   defp handle_function_def(
          {_def_type, _meta, [_signature, body_block]},
@@ -313,7 +446,7 @@ defmodule Ragex.Analyzers.Elixir do
         doc: doc,
         spec: spec,
         visibility: visibility,
-        metadata: %{}
+        metadata: def_metadata(meta)
       }
 
       context = %{context | functions: [func_info | context.functions]}
@@ -453,81 +586,15 @@ defmodule Ragex.Analyzers.Elixir do
 
   defp extract_struct_fields(_), do: []
 
-  # Macro Expansion
-
-  # Expand common macros that don't require compilation context
-  defp expand_common_macros(ast) do
-    Macro.prewalk(ast, fn node ->
-      case node do
-        # Handle defdelegate
-        {:defdelegate, meta, [signature, opts]} ->
-          expand_defdelegate(signature, opts, meta)
-
-        # Handle defstruct (extract struct definition)
-        {:defstruct, meta, [fields]} ->
-          # Keep defstruct as-is but we'll extract info during traversal
-          {:defstruct, meta, [fields]}
-
-        # Keep other nodes as-is
-        other ->
-          other
-      end
-    end)
-  end
-
-  # Expand defdelegate into actual function definition with call
-  defp expand_defdelegate(signature, opts, meta) do
-    {func_name, func_meta, args} = signature
-    target_module = Keyword.get(opts, :to)
-    target_func = Keyword.get(opts, :as, func_name)
-
-    # Build argument list for the delegated call
-    arg_names =
-      case args do
-        nil -> []
-        args when is_list(args) -> Enum.map(args, fn {name, _, _} -> {name, [], nil} end)
-        _ -> []
-      end
-
-    # Create a def with a call to the target module
-    body =
-      if target_module do
-        # Generate: TargetModule.target_func(args...)
-        {{:., [], [target_module, target_func]}, [], arg_names}
-      else
-        # If no :to option, just return nil (shouldn't happen in valid code)
-        nil
-      end
-
-    # Return a def node
-    {:def, meta, [{func_name, func_meta, args}, [do: body]]}
-  end
-
-  # Expand macros using full compilation (requires compilation environment)
-  defp expand_with_compilation(ast, file_path) do
-    # Create a minimal environment for expansion
-    env = %Macro.Env{
-      file: file_path,
-      line: 1,
-      module: nil,
-      function: nil,
-      context: nil,
-      requires: [],
-      aliases: [],
-      functions: [],
-      macros: [],
-      macro_aliases: [],
-      context_modules: [],
-      lexical_tracker: nil,
-      tracers: []
-    }
-
-    # Attempt to expand the entire AST
-    Macro.expand(ast, env)
-  rescue
-    # If expansion fails, fall back to partial expansion
-    _ -> expand_common_macros(ast)
-  end
+  # Macro expansion is handled by `Ragex.Analyzers.Elixir.MacroExpander`, which
+  # delegates to ExPanda. It supersedes the previous hand-rolled `defdelegate`
+  # rewrite and the `expand_with_compilation/2` stub (which built a `%Macro.Env{}`
+  # with no requires/aliases/macros, so `Macro.expand/2` returned the AST
+  # unchanged -- `:full` was silently identical to `:none`).
+  #
+  # ExPanda 0.3.0 also expands `defdelegate` natively (0.2.x raised inside
+  # `:elixir_bootstrap.def/2`), so the manual rewrite that used to live here is
+  # gone.
 
   # Extract comments from source code
   defp extract_comments(source) do

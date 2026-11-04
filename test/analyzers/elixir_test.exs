@@ -465,6 +465,168 @@ defmodule Ragex.Analyzers.ElixirTest do
       assert result.functions == []
       assert result.calls == []
     end
+
+    test "piped calls record the arity the user wrote" do
+      source = """
+      defmodule TestModule do
+        def save(data), do: data |> Repo.insert()
+      end
+      """
+
+      for mode <- [:none, :partial] do
+        assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: mode)
+
+        assert [call] = result.calls,
+               "expected exactly one call in #{mode} mode, got: #{inspect(result.calls)}"
+
+        assert call.to_module == Repo
+        assert call.to_function == :insert
+        assert call.to_arity == 1
+      end
+    end
+
+    test "piped calls into local functions record the arity" do
+      source = """
+      defmodule TestModule do
+        def run(data), do: data |> normalize()
+        defp normalize(x), do: x
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :none)
+      # A local pipe target is not a remote call, so it must not produce a
+      # bogus arity-0 call edge.
+      refute Enum.any?(result.calls, &(&1.to_function == :normalize and &1.to_arity == 0))
+    end
+
+    test "expands use GenServer and marks injected definitions" do
+      source = """
+      defmodule TestServer do
+        use GenServer
+
+        def handle_call(_msg, _from, state), do: {:reply, :ok, state}
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+
+      # The user's own definition is attributed to the user. `use GenServer`
+      # also injects a `handle_call/3` default, so pick the non-injected one.
+      handle_call =
+        Enum.find(result.functions, &(&1.name == :handle_call and not &1.metadata.injected))
+
+      assert handle_call.arity == 3
+      assert handle_call.metadata.injected == false
+
+      # Definitions injected by `use GenServer` are visible but flagged
+      injected = Enum.filter(result.functions, & &1.metadata.injected)
+      assert Enum.any?(injected, &(&1.name == :child_spec and &1.arity == 1))
+
+      # The `:use` edge survives expansion
+      assert Enum.any?(result.imports, &(&1.to_module == GenServer and &1.type == :use))
+    end
+
+    test "does not duplicate the :use edge as a synthetic :require" do
+      source = """
+      defmodule TestServer do
+        use GenServer
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+
+      gen_server_edges = Enum.filter(result.imports, &(&1.to_module == GenServer))
+      assert [%{type: :use}] = gen_server_edges
+    end
+
+    test "reports macros it could not expand" do
+      source = """
+      defmodule TestModule do
+        use Definitely.Not.A.Real.Module
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+      assert [reason] = result.unexpanded
+      assert reason =~ "Definitely.Not.A.Real.Module"
+    end
+
+    test "reports no unexpanded macros for fully resolvable code" do
+      source = """
+      defmodule TestModule do
+        def hello, do: :world
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+      assert result.unexpanded == []
+    end
+
+    test "does not record operator encodings as call edges" do
+      source = """
+      defmodule TestModule do
+        def compare(a, b) do
+          if a == b, do: a - b, else: a ++ b
+        end
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+
+      # `if` desugars to `case :erlang.==(...)`, and `-`/`++` become
+      # `:erlang.-/2` and `:erlang.++/2`. None of those are real dependencies.
+      refute Enum.any?(result.calls, &(&1.to_module == :erlang)),
+             "expected no :erlang operator edges, got: #{inspect(Enum.map(result.calls, &{&1.to_module, &1.to_function}))}"
+    end
+
+    test "still records genuine :erlang BIF calls" do
+      source = """
+      defmodule TestModule do
+        def check(x), do: is_binary(x) and length(x) > 0
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+
+      erlang =
+        result.calls |> Enum.filter(&(&1.to_module == :erlang)) |> Enum.map(& &1.to_function)
+
+      assert :is_binary in erlang
+      assert :length in erlang
+      # ...but the `>/2` comparison is still filtered out
+      refute :> in erlang
+    end
+
+    test "expands defdelegate without a manual rewrite" do
+      source = """
+      defmodule TestModule do
+        defdelegate add(a, b), to: Math
+      end
+      """
+
+      # ExPanda >= 0.3.0 expands defdelegate natively; no fallback pass runs.
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :partial)
+      assert [func] = result.functions
+      assert func.name == :add
+      assert func.arity == 2
+
+      assert [call] = result.calls
+      assert call.to_module == Math
+      assert call.to_function == :add
+      assert call.to_arity == 2
+    end
+
+    test "never crashes on a file it cannot expand" do
+      source = """
+      defmodule TestModule do
+        use Some.Unknown.Dsl, opt: 1
+        def hello, do: :world
+      end
+      """
+
+      assert {:ok, result} = ElixirAnalyzer.analyze(source, "test.ex", expand_macros: :full)
+      assert Enum.any?(result.functions, &(&1.name == :hello))
+    end
   end
 
   describe "documentation reference extraction" do
