@@ -500,7 +500,7 @@ graph TD
 
 ### Prerequisites
 
-- Elixir 1.18 or later
+- Elixir 1.20 or later
 - Erlang/OTP 27 or later
 - Python 3.x (optional, for Python code analysis)
 - Node.JS (optional, for Javascript code analysis)

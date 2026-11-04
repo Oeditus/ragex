@@ -9,7 +9,7 @@ defmodule Ragex.MixProject do
     [
       app: @app,
       version: @version,
-      elixir: "~> 1.18",
+      elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       consolidate_protocols: Mix.env() not in [:dev, :test],
@@ -109,6 +109,12 @@ defmodule Ragex.MixProject do
       # `:elixir_bootstrap.def/2`), which removed a manual rewrite from the
       # analyzer.
       {:ex_panda, "~> 0.3"},
+      # Expression-level type inference (optional). Typle reads the compiler's
+      # inferred types back out of .beam ExCk chunks and re-derives
+      # per-expression types from source. Requires Elixir 1.20+, and is young
+      # (0.3.x), so it is opt-in and every call site is guarded by
+      # Ragex.Analysis.TypeInfo.available?/0.
+      {:typle, "~> 0.3", optional: true},
       # Image processing library (optional -- native/NIF-backed via Vix/libvips,
       # degrades gracefully when absent, see Ragex.Image.available?/0)
       {:image, "~> 0.54", optional: true},

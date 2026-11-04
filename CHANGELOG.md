@@ -7,8 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Minimum Elixir is now 1.20** (was 1.18). This is the version that ships the
+  set-theoretic type system Ragex's optional type inference reads back out of
+  compiled beams, and it lets the analyzer rely on 1.20's compiler behaviour
+  rather than carrying 1.18 compatibility shims.
+
 ### Added
 
+- **Optional expression-level type inference** (`Ragex.Analysis.TypeInfo`),
+  bridging to [Typle](https://typle.hexdocs.pm). Off by default; enable with
+  `config :ragex, type_inference: :enabled` or `RAGEX_TYPE_INFERENCE=1`. Every
+  entry point is guarded and returns `{:error, :unavailable}` rather than
+  raising, so the dependency stays `optional: true`.
+- **`mix ragex.typle.spike`** -- measures Typle's usefulness on a codebase
+  (crash rate and the share of expressions that come back `dynamic()`), so the
+  decision to enable type inference is reproducible rather than anecdotal.
+
+  A spike against this repository (40 files, Elixir 1.20.4 / OTP 29, Typle
+  0.3.1) found **20% of files crash** -- `Typle.Inference.Expr.infer/2` has no
+  clause for the struct-update node `%{struct | key: value}` -- and **81% of
+  inferred expressions are `dynamic()`**. Type inference therefore stays off;
+  re-run the task after a Typle release to see whether the numbers moved.
 - **Full macro expansion for the Elixir analyzer** via
   `Ragex.Analyzers.Elixir.MacroExpander`, backed by [ExPanda](https://hexdocs.pm/ex_panda)
   `~> 0.3`. `:partial` (the default) now genuinely expands core macros and `use`
