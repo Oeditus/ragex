@@ -9,6 +9,10 @@ defmodule Ragex.MixProject do
     [
       app: @app,
       version: @version,
+      # 1.20 is required by the optional `typle` dependency (type inference
+      # reads the compiler's set-theoretic types). Ragex itself does not need
+      # it; the floor is raised because a dependency cannot require a newer
+      # Elixir than its host declares.
       elixir: "~> 1.20",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,

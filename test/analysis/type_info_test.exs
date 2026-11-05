@@ -4,145 +4,181 @@ defmodule Ragex.Analysis.TypeInfoTest do
   alias Ragex.Analysis.TypeInfo
 
   setup do
-    original = Application.get_env(:ragex, :type_inference)
-    original_env = System.get_env("RAGEX_TYPE_INFERENCE")
+    # The feature is config-gated; enable it for these tests and restore the
+    # previous setting afterwards so we never leak state into other suites.
+    previous = Application.get_env(:ragex, :type_inference)
+    Application.put_env(:ragex, :type_inference, :enabled)
 
     on_exit(fn ->
-      if original do
-        Application.put_env(:ragex, :type_inference, original)
-      else
+      if previous == nil do
         Application.delete_env(:ragex, :type_inference)
-      end
-
-      case original_env do
-        nil -> System.delete_env("RAGEX_TYPE_INFERENCE")
-        val -> System.put_env("RAGEX_TYPE_INFERENCE", val)
+      else
+        Application.put_env(:ragex, :type_inference, previous)
       end
     end)
 
     :ok
   end
 
-  describe "enabled?/0" do
-    test "is false by default" do
-      Application.delete_env(:ragex, :type_inference)
-      System.delete_env("RAGEX_TYPE_INFERENCE")
+  describe "enabled?/0 and available?/0" do
+    test "is enabled when configured" do
+      assert TypeInfo.enabled?()
+    end
 
+    test "is disabled by default" do
+      Application.put_env(:ragex, :type_inference, :disabled)
       refute TypeInfo.enabled?()
-    end
-
-    test "is true when configured :enabled" do
-      Application.put_env(:ragex, :type_inference, :enabled)
-
-      assert TypeInfo.enabled?()
-    end
-
-    test "is true when configured true" do
-      Application.put_env(:ragex, :type_inference, true)
-
-      assert TypeInfo.enabled?()
-    end
-
-    test "is true when the env var is set" do
-      Application.delete_env(:ragex, :type_inference)
-      System.put_env("RAGEX_TYPE_INFERENCE", "1")
-
-      assert TypeInfo.enabled?()
-    end
-  end
-
-  describe "unavailable behaviour" do
-    setup do
-      Application.delete_env(:ragex, :type_inference)
-      System.delete_env("RAGEX_TYPE_INFERENCE")
-      :ok
-    end
-
-    test "available?/0 is false" do
       refute TypeInfo.available?()
     end
 
-    test "types_for_file/1 returns {:error, :unavailable} rather than raising" do
-      assert {:error, :unavailable} = TypeInfo.types_for_file("lib/anything.ex")
+    test "available? implies enabled?" do
+      assert TypeInfo.available?() == (TypeInfo.enabled?() and Code.ensure_loaded?(Typle))
+    end
+  end
+
+  describe "when disabled" do
+    test "types_for_file/2 returns :unavailable rather than raising" do
+      Application.put_env(:ragex, :type_inference, :disabled)
+      assert {:error, :unavailable} = TypeInfo.types_for_file("lib/ragex.ex")
     end
 
-    test "type_at/3 returns nil" do
-      assert TypeInfo.type_at("lib/anything.ex", 1, 1) == nil
+    test "type_at/4 returns nil" do
+      Application.put_env(:ragex, :type_inference, :disabled)
+      assert TypeInfo.type_at("lib/ragex.ex", 1, 1) == nil
     end
 
-    test "return_type/3 returns {:error, :unavailable}" do
-      assert {:error, :unavailable} = TypeInfo.return_type(Enum, :count, 1)
+    test "summarize/2 returns :unavailable" do
+      Application.put_env(:ragex, :type_inference, :disabled)
+      assert {:error, :unavailable} = TypeInfo.summarize("lib/ragex.ex")
+    end
+  end
+
+  describe "when enabled and Typle is loaded" do
+    setup do
+      if TypeInfo.available?(), do: :ok, else: {:ok, skip: true}
+    end
+
+    @describetag :tmp_dir
+
+    test "types_for_file/2 returns type_info keyed by {line, column}", %{tmp_dir: dir} do
+      file = write(dir, "sample.ex", sample_source())
+
+      assert {:ok, types} = TypeInfo.types_for_file(file)
+      assert is_map(types)
+
+      assert Enum.all?(types, fn
+               {{line, col}, %{type: _, expr: _, informative?: inf}} ->
+                 is_integer(line) and is_integer(col) and is_boolean(inf)
+
+               _ ->
+                 false
+             end)
+    end
+
+    test "summarize/2 ratios are consistent", %{tmp_dir: dir} do
+      file = write(dir, "sample.ex", sample_source())
+
+      assert {:ok, summary} = TypeInfo.summarize(file)
+
+      assert summary.total > 0
+      assert summary.dynamic <= summary.total
+      assert summary.informative <= summary.total
+      assert summary.dynamic_ratio >= 0.0 and summary.dynamic_ratio <= 1.0
+      assert summary.informative_ratio >= 0.0 and summary.informative_ratio <= 1.0
+    end
+
+    test "type_at/4 returns the type_info at a recorded position", %{tmp_dir: dir} do
+      file = write(dir, "sample.ex", sample_source())
+
+      {:ok, types} = TypeInfo.types_for_file(file)
+      [{line, col} | _] = types |> Map.keys() |> Enum.sort()
+
+      assert %{type: _, expr: _, informative?: _} = TypeInfo.type_at(file, line, col)
+    end
+
+    test "type_at/4 returns nil for an unrecorded position", %{tmp_dir: dir} do
+      file = write(dir, "sample.ex", sample_source())
+      assert TypeInfo.type_at(file, 9999, 9999) == nil
+    end
+
+    test "a file Typle cannot parse is reported as an error, not a raise", %{tmp_dir: dir} do
+      file = write(dir, "broken.ex", "defmodule Broken do\n  def oops(\nend\n")
+
+      assert {:error, _} = TypeInfo.types_for_file(file)
+    end
+
+    test "return_type/3 returns a type for a known function" do
+      # Typle returns the bare Type on success and only wraps failures, so the
+      # contract here is "a type, or {:error, reason}".
+      assert %{} = TypeInfo.return_type(Enum, :count, 1)
+    end
+
+    test "return_type/3 degrades to dynamic() for an unknown module" do
+      # Typle does not raise for a module it cannot resolve; it returns
+      # dynamic(), which is exactly the "no information" signal callers must
+      # treat as unknown rather than as a real type.
+      type = TypeInfo.return_type(NoSuchModule, :nope, 0)
+      assert TypeInfo.dynamic?(type) or match?({:error, _}, type)
     end
   end
 
   describe "dynamic?/1" do
-    test "is false for nil" do
+    test "nil is not dynamic" do
       refute TypeInfo.dynamic?(nil)
     end
 
-    test "is true for a type struct flagged dynamic" do
-      assert TypeInfo.dynamic?(%{dynamic?: true})
+    test "a struct flagged dynamic? is dynamic" do
+      assert TypeInfo.dynamic?(%{dynamic?: true, kind: :dynamic})
     end
 
-    test "is false for a type struct not flagged dynamic" do
-      refute TypeInfo.dynamic?(%{dynamic?: false})
+    test "a struct flagged not-dynamic is not dynamic" do
+      refute TypeInfo.dynamic?(%{dynamic?: false, kind: :integer})
     end
 
-    test "detects dynamic() in the inspected form" do
-      assert TypeInfo.dynamic?(%{__struct__: Typle.Type, kind: :dynamic, params: nil})
+    test "a :dynamic kind is dynamic even without the flag" do
+      assert TypeInfo.dynamic?(%{kind: :dynamic})
     end
   end
 
-  describe "when enabled" do
-    setup do
-      Application.put_env(:ragex, :type_inference, :enabled)
-      :ok
+  describe "informative?/1" do
+    test "dynamic() is not informative" do
+      refute TypeInfo.informative?("dynamic()")
     end
 
-    @tag :typle
-    test "never raises on a file Typle cannot handle (struct update syntax)" do
-      # `%{struct | key: value}` is the known Typle 0.3.1 crash: the AST node is
-      # `{:|, _, [struct, [key: value]]}` and reaches the map-literal clause.
-      path = Path.join(System.tmp_dir!(), "ragex_type_info_struct_update.ex")
-
-      File.write!(path, """
-      defmodule RagexTypeInfoSample do
-        def update(data, issues), do: %{data | issues: issues}
-      end
-      """)
-
-      on_exit(fn -> File.rm(path) end)
-
-      # Either Typle handles it (future version) or it is reported as an error.
-      # What must never happen is an exception escaping.
-      case TypeInfo.types_for_file(path) do
-        {:ok, map} when is_map(map) -> assert true
-        {:error, {:typle_failed, _}} -> assert true
-        {:error, :unavailable} -> assert true
-      end
+    test "an empty type is not informative" do
+      refute TypeInfo.informative?("")
+      refute TypeInfo.informative?(nil)
     end
 
-    @tag :typle
-    test "returns a type map for a simple module" do
-      path = Path.join(System.tmp_dir!(), "ragex_type_info_simple.ex")
-
-      File.write!(path, """
-      defmodule RagexTypeInfoSimple do
-        def greet(name), do: "hello " <> name
-      end
-      """)
-
-      on_exit(fn -> File.rm(path) end)
-
-      case TypeInfo.types_for_file(path) do
-        {:ok, map} ->
-          assert is_map(map)
-          assert map_size(map) > 0
-
-        {:error, {:typle_failed, _}} ->
-          # Typle is young; a future release may still reject this shape.
-          assert true
-      end
+    test "map() alone is not informative" do
+      refute TypeInfo.informative?("map()")
     end
+
+    test "a concrete type is informative" do
+      assert TypeInfo.informative?("integer()")
+      assert TypeInfo.informative?("binary()")
+      assert TypeInfo.informative?("{:ok, binary()}")
+    end
+  end
+
+  # --- helpers ---
+
+  defp write(dir, name, content) do
+    path = Path.join(dir, name)
+    File.write!(path, content)
+    path
+  end
+
+  defp sample_source do
+    """
+    defmodule TypeInfoSample do
+      @spec add(integer(), integer()) :: integer()
+      def add(a, b), do: a + b
+
+      def greet(name) when is_binary(name), do: "hi " <> name
+
+      def tupleize(x), do: {:ok, x}
+    end
+    """
   end
 end

@@ -11,24 +11,30 @@ defmodule Ragex.Analysis.TypeInfo do
   ## Status: opt-in, not enabled by default
 
   A spike against this repository (40 files, Elixir 1.20.4 / OTP 29, Typle
-  0.3.1) measured:
+  0.3.1) measured, on files that parse successfully:
 
-    * **27.5% of files crash** -- `Typle.Inference.Expr.infer/2` has no clause
-      for the struct-update node `%{struct | key: value}`, which parses as
-      `{:|, _, [struct, [key: value]]}` and reaches the map-literal clause as a
-      bare `:|` tuple. 16.6% of files in this repo use that syntax, so this is
-      a hard blocker rather than a nuisance.
-    * **87.6% of inferred expressions are `dynamic()`** on the files that do
-      succeed (8,464 of 9,661). Typle returns `dynamic()` when it cannot
-      infer, so the signal is too thin to justify surfacing as a first-class
-      graph property today.
+  | classification | share |
+  |---|---|
+  | `dynamic()` -- no inference | 85.5% |
+  | empty type (`Type<>`) | 3.2% |
+  | `map()` only (map/struct literals) | 5.9% |
+  | **genuinely informative** | **5.4%** |
 
-  Both are upstream issues in Typle, not in Ragex. This module therefore
-  exists to make the capability *available and safe* -- every entry point is
-  guarded and returns `{:error, :unavailable}` / `{:error, reason}` rather than
-  raising -- so that enabling it later is a configuration change, not a
-  rewrite. Re-run `mix ragex.typle.spike` after a Typle release to see whether
-  the numbers moved.
+  Typle returns `dynamic()` when it cannot infer, and `map()` for any map or
+  struct literal -- neither says anything about the values flowing through the
+  program. What remains is 5.4% of expressions, which is too thin to justify
+  surfacing types as a first-class graph property: a feature built on it would
+  look confident and be wrong most of the time.
+
+  Two crashes in Typle 0.3.1 also had to be fixed before even this number
+  could be measured (struct updates, and `with`/`for` body splicing inherited
+  from ExPanda 0.2.x); both are fixed upstream, see `mix ragex.typle.spike`.
+
+  This module therefore exists to make the capability *available and safe* --
+  every entry point is guarded and returns `{:error, :unavailable}` /
+  `{:error, reason}` rather than raising -- so that enabling it later is a
+  configuration change, not a rewrite. Re-run `mix ragex.typle.spike` after a
+  Typle release to see whether the numbers moved.
 
   ## Enabling
 
@@ -40,7 +46,12 @@ defmodule Ragex.Analysis.TypeInfo do
 
   require Logger
 
-  @type type_map :: %{{non_neg_integer(), non_neg_integer()} => term()}
+  @type type_info :: %{
+          type: term(),
+          expr: String.t() | nil,
+          informative?: boolean()
+        }
+  @type type_map :: %{{non_neg_integer(), non_neg_integer()} => type_info()}
 
   @doc """
   Returns whether type inference is both configured and actually usable.
@@ -69,17 +80,29 @@ defmodule Ragex.Analysis.TypeInfo do
   @doc """
   Infers types for every expression in `file`.
 
-  Returns `{:ok, %{{line, col} => type}}`, or `{:error, :unavailable}` when the
-  feature is off, or `{:error, reason}` when Typle fails on this file.
+  Returns `{:ok, %{{line, col} => type_info}}`, or `{:error, :unavailable}`
+  when the feature is off, or `{:error, reason}` when Typle fails on this file.
 
-  Typle raises on some real-world syntax (see the moduledoc), so the call is
-  wrapped: a crash is reported as an error, never propagated.
+  Typle raises on some real-world syntax, so the call is wrapped: a crash is
+  reported as an error, never propagated.
+
+  ## Options
+
+    * `:unstable` -- use Typle's compiler-replay engine for deeper inference.
+      Defaults to `false`; that engine depends on private compiler APIs.
   """
-  @spec types_for_file(String.t()) :: {:ok, type_map()} | {:error, term()}
-  def types_for_file(file) do
+  @spec types_for_file(String.t(), keyword()) :: {:ok, type_map()} | {:error, term()}
+  def types_for_file(file, opts \\ []) do
     if available?() do
-      with {:ok, map} <- guarded(fn -> Typle.types_for_file(file) end) do
-        {:ok, unwrap(map)}
+      case guarded(fn -> Typle.types_for_file(file, typle_opts(opts)) end) do
+        {:ok, map} when is_map(map) ->
+          {:ok, Map.new(map, fn {pos, value} -> {pos, normalize(value)} end)}
+
+        {:ok, other} ->
+          {:error, {:unexpected_result, other}}
+
+        {:error, _} = error ->
+          error
       end
     else
       {:error, :unavailable}
@@ -87,14 +110,14 @@ defmodule Ragex.Analysis.TypeInfo do
   end
 
   @doc """
-  Returns the inferred type at a `{line, column}`, or `nil`.
+  Returns the inferred type at `{line, column}`, or `nil`.
 
-  Convenience wrapper over `types_for_file/1` for callers that only need one
+  Convenience wrapper over `types_for_file/2` for callers that only need one
   position.
   """
-  @spec type_at(String.t(), non_neg_integer(), non_neg_integer()) :: term() | nil
-  def type_at(file, line, col) do
-    case types_for_file(file) do
+  @spec type_at(String.t(), non_neg_integer(), non_neg_integer(), keyword()) :: type_info() | nil
+  def type_at(file, line, col, opts \\ []) do
+    case types_for_file(file, opts) do
       {:ok, map} -> Map.get(map, {line, col})
       {:error, _} -> nil
     end
@@ -111,6 +134,35 @@ defmodule Ragex.Analysis.TypeInfo do
       guarded(fn -> Typle.return_type(module, function, arity) end)
     else
       {:error, :unavailable}
+    end
+  end
+
+  @doc """
+  Summarises how informative the inferred types for `file` are.
+
+  Returns counts and the share of genuinely informative types, matching the
+  classification in the moduledoc. Useful for deciding whether type data is
+  worth acting on for a given file.
+  """
+  @spec summarize(String.t(), keyword()) :: {:ok, map()} | {:error, term()}
+  def summarize(file, opts \\ []) do
+    case types_for_file(file, opts) do
+      {:ok, map} ->
+        total = map_size(map)
+        informative = Enum.count(map, fn {_pos, info} -> info.informative? end)
+        dynamic = Enum.count(map, fn {_pos, info} -> dynamic?(info.type) end)
+
+        {:ok,
+         %{
+           total: total,
+           dynamic: dynamic,
+           informative: informative,
+           informative_ratio: ratio(informative, total),
+           dynamic_ratio: ratio(dynamic, total)
+         }}
+
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -136,15 +188,53 @@ defmodule Ragex.Analysis.TypeInfo do
     inspect(type) |> String.contains?("dynamic(")
   end
 
-  # Typle returns `{:ok, %{pos => %{type: t, expr: s}}}` by default (`:expr`
-  # defaults to true). Callers of this module want the type, not the source
-  # string, so unwrap uniformly.
-  defp unwrap(map) when is_map(map) do
-    Map.new(map, fn
-      {pos, %{type: type}} -> {pos, type}
-      {pos, type} -> {pos, type}
-    end)
+  @doc """
+  Classifies a single inferred type as informative or not.
+
+  A type is informative when it is neither `dynamic()` (Typle could not infer
+  anything) nor the empty type `Type<>` (a position with no type), and is not
+  merely `map()` -- map and struct literals are trivially typed and say nothing
+  about the values flowing through the program.
+
+  Exposed so callers can apply the same judgement to types obtained elsewhere.
+  """
+  @spec informative?(term()) :: boolean()
+  def informative?(type) do
+    rendered = render(type)
+
+    rendered != "" and
+      not String.contains?(rendered, "dynamic(") and
+      rendered != "map()"
   end
+
+  # --- Private ---
+
+  defp typle_opts(opts), do: Keyword.take(opts, [:unstable, :expr])
+
+  defp normalize(%{type: type} = result), do: to_info(type, Map.get(result, :expr))
+  defp normalize(type), do: to_info(type, nil)
+
+  defp to_info(type, expr) do
+    %{type: type, expr: expr, informative?: informative?(type)}
+  end
+
+  defp render(type) do
+    cond do
+      is_nil(type) -> ""
+      is_binary(type) -> type
+      function_exported?(Typle.Type, :to_string, 1) -> safe_to_string(type)
+      true -> inspect(type)
+    end
+  end
+
+  defp safe_to_string(type) do
+    Typle.Type.to_string(type)
+  rescue
+    _ -> inspect(type)
+  end
+
+  defp ratio(_part, 0), do: 0.0
+  defp ratio(part, total), do: Float.round(part / total, 4)
 
   # Typle raises on unsupported syntax (struct updates, for one). Never let
   # that escape into an analyzer run.

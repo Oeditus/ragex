@@ -26,10 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision to enable type inference is reproducible rather than anecdotal.
 
   A spike against this repository (40 files, Elixir 1.20.4 / OTP 29, Typle
-  0.3.1) found **20% of files crash** -- `Typle.Inference.Expr.infer/2` has no
-  clause for the struct-update node `%{struct | key: value}` -- and **81% of
-  inferred expressions are `dynamic()`**. Type inference therefore stays off;
-  re-run the task after a Typle release to see whether the numbers moved.
+  0.3.1) found **82.5% of inferred expressions are `dynamic()`**, and only
+  ~5% are genuinely informative (the rest are empty types or bare `map()`),
+  so type inference stays off; re-run the task after a Typle release to see
+  whether the numbers moved.
+
+  Getting even that number required fixing two crashes in Typle 0.3.1, both
+  now fixed upstream: `Typle.Inference.Expr.infer/2` had no clause for the
+  struct-update node `%{struct | key: value}` (20% of files here), and Typle
+  pinned ExPanda `~> 0.2`, whose walker spliced `with`/`for` body options into
+  the positional argument list and produced AST that `Macro.to_string/1`
+  cannot even print.
 - **Full macro expansion for the Elixir analyzer** via
   `Ragex.Analyzers.Elixir.MacroExpander`, backed by [ExPanda](https://hexdocs.pm/ex_panda)
   `~> 0.3`. `:partial` (the default) now genuinely expands core macros and `use`
@@ -51,10 +58,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`:full` macro expansion was dead code.**
   `Ragex.Analyzers.Elixir.expand_with_compilation/2` built a `%Macro.Env{}` with
-- **`use` edges were lost once expansion was enabled**, because ExPanda rewrites
-  `use X` into `require X` plus the injected body. The `:use` targets are now
-  recovered from the surface AST, and the synthetic `require` is suppressed so the
-  edge is not duplicated.
+  empty `requires`/`aliases`/`functions`/`macros` and called `Macro.expand/2` on
+  the top-level `defmodule` node, which returns the AST unchanged -- so `:full`
+  was silently identical to `:none`. It now expands via ExPanda.
+- **Piped calls recorded arity 0.** `d |> Repo.insert()` parses with the
+  remote-call node holding zero arguments (the piped value comes from `|>`), so
+  every piped call was recorded as `Repo.insert/0`, corrupting call-graph edges,
+  `find_callers` and arity-based refactoring. Expansion desugars the pipe into
+  an equivalent direct call before traversal.
 - **Operator encodings polluted the call graph.** Expanding control flow turns
   `if a == b` into `case :erlang.==(a, b)` and `&&`/`||` into
   `:erlang.andalso/orelse`, so `:erlang` "calls" that are really just the
@@ -65,7 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dropped the manual `defdelegate` rewrite.** ExPanda 0.3.0 expands
   `defdelegate` natively (0.2.x raised inside `:elixir_bootstrap.def/2`), so the
   analyzer's hand-rolled fallback pass is gone.
-  equivalent direct call before traversal.
 - **`use`-injected definitions were invisible.** `use GenServer` contributed no
   `child_spec/1` or callbacks, and every DSL-generated definition was lost. They
   are now visible and tagged `metadata.injected: true`, so callers can still
