@@ -43,69 +43,10 @@ defmodule Ragex.LanguageSupport do
   alias Metastatic.{Adapter, Document}
   alias Ragex.Cure.Loader, as: CureLoader
 
-  # Adapter modules are deliberately spelled out in full rather than aliased:
-  # the alias list itself would count against
-  # `Credo.Check.Refactor.ModuleDependencies` for this module.
-  @type language ::
-          :elixir
-          | :erlang
-          | :python
-          | :ruby
-          | :haskell
-          | :javascript
-          | :typescript
-          | :cure
-          | :agda
-          | :march
-          | :markdown
-          | :unknown
-
-  @extension_map %{
-    ".ex" => :elixir,
-    ".exs" => :elixir,
-    ".erl" => :erlang,
-    ".hrl" => :erlang,
-    ".py" => :python,
-    ".rb" => :ruby,
-    ".hs" => :haskell,
-    ".lhs" => :haskell,
-    ".js" => :javascript,
-    ".jsx" => :javascript,
-    ".ts" => :typescript,
-    ".tsx" => :typescript,
-    ".mjs" => :javascript,
-    ".cjs" => :javascript,
-    ".cure" => :cure,
-    ".agda" => :agda,
-    ".lagda" => :agda,
-    ".march" => :march,
-    ".mch" => :march,
-    ".md" => :markdown,
-    ".markdown" => :markdown
-  }
-
-  @adapter_map %{
-    elixir: Metastatic.Adapters.Elixir,
-    erlang: Metastatic.Adapters.Erlang,
-    python: Metastatic.Adapters.Python,
-    ruby: Metastatic.Adapters.Ruby,
-    haskell: Metastatic.Adapters.Haskell,
-    javascript: Metastatic.Adapters.JavaScript,
-    typescript: Metastatic.Adapters.TypeScript,
-    cure: Metastatic.Adapters.Cure,
-    agda: Metastatic.Adapters.Agda,
-    march: Metastatic.Adapters.March,
-    markdown: Metastatic.Adapters.Markdown
-  }
-
-  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .lhs .js .jsx .ts .tsx .mjs .cjs .cure .agda .lagda .march .mch .md .markdown)
-
-  # Languages that describe *documents* rather than executable code. They are
-  # fully parseable (and therefore analyzable), but they carry no callable
-  # entities, so code-only passes must skip them.
-  @documentation_languages [:markdown]
-
-  @all_extensions Map.keys(@extension_map)
+  # Language metadata (extensions, adapters, documentation flags) lives in
+  # `Ragex.Languages`, which derives it from `Metastatic.Languages`. This module
+  # keeps only the parsing helpers and delegates detection/lookup there.
+  @type language :: atom() | :unknown
 
   @doc """
   Detects language from a file path extension.
@@ -122,9 +63,7 @@ defmodule Ragex.LanguageSupport do
       :unknown
   """
   @spec detect_language(String.t()) :: language()
-  def detect_language(path) when is_binary(path) do
-    Map.get(@extension_map, Path.extname(path), :unknown)
-  end
+  defdelegate detect_language(path), to: Ragex.Languages
 
   @doc """
   Returns the Metastatic adapter module for a language.
@@ -138,12 +77,7 @@ defmodule Ragex.LanguageSupport do
       {:ok, Metastatic.Adapters.JavaScript}
   """
   @spec get_adapter(language()) :: {:ok, module()} | {:error, {:unsupported_language, language()}}
-  def get_adapter(language) do
-    case Map.fetch(@adapter_map, language) do
-      {:ok, adapter} -> {:ok, adapter}
-      :error -> {:error, {:unsupported_language, language}}
-    end
-  end
+  defdelegate get_adapter(language), to: Ragex.Languages
 
   @doc """
   Parses source code into a `Metastatic.Document` via the appropriate adapter.
@@ -298,9 +232,9 @@ defmodule Ragex.LanguageSupport do
 
         extensions =
           if metastatic_only do
-            @metastatic_extensions
+            Ragex.Languages.metastatic_extensions()
           else
-            @all_extensions
+            Ragex.Languages.supported_extensions()
           end
 
         extensions =
@@ -336,19 +270,19 @@ defmodule Ragex.LanguageSupport do
   Returns the list of all supported file extensions.
   """
   @spec supported_extensions() :: [String.t()]
-  def supported_extensions, do: @all_extensions
+  defdelegate supported_extensions(), to: Ragex.Languages
 
   @doc """
   Returns the list of file extensions with Metastatic adapter support.
   """
   @spec metastatic_extensions() :: [String.t()]
-  def metastatic_extensions, do: @metastatic_extensions
+  defdelegate metastatic_extensions(), to: Ragex.Languages
 
   @doc """
   Returns whether a language has a Metastatic adapter.
   """
   @spec has_adapter?(language()) :: boolean()
-  def has_adapter?(language), do: Map.has_key?(@adapter_map, language)
+  defdelegate has_adapter?(language), to: Ragex.Languages
 
   @doc """
   Returns whether a language describes documents rather than executable code.
@@ -367,7 +301,7 @@ defmodule Ragex.LanguageSupport do
       false
   """
   @spec documentation_language?(language()) :: boolean()
-  def documentation_language?(language), do: language in @documentation_languages
+  defdelegate documentation_language?(language), to: Ragex.Languages
 
   @doc """
   Returns whether a file path points at a documentation-language file.
@@ -381,9 +315,7 @@ defmodule Ragex.LanguageSupport do
       false
   """
   @spec documentation_file?(String.t()) :: boolean()
-  def documentation_file?(path) when is_binary(path) do
-    path |> detect_language() |> documentation_language?()
-  end
+  defdelegate documentation_file?(path), to: Ragex.Languages
 
   @doc """
   Returns whether a file extension belongs to a documentation language.
@@ -397,12 +329,7 @@ defmodule Ragex.LanguageSupport do
       false
   """
   @spec documentation_extension?(String.t()) :: boolean()
-  def documentation_extension?(extension) when is_binary(extension) do
-    case Map.fetch(@extension_map, extension) do
-      {:ok, language} -> documentation_language?(language)
-      :error -> false
-    end
-  end
+  defdelegate documentation_extension?(extension), to: Ragex.Languages
 
   # Resolved by name at call time instead of being listed as compile-time
   # references. `Credo.Check.Refactor.ModuleDependencies` counts every module

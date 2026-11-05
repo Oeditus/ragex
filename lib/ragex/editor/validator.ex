@@ -78,28 +78,19 @@ defmodule Ragex.Editor.Validator do
   @doc """
   Lists all available validators.
 
-  Returns a map of language to validator module.
+  Returns a map of language to validator module. Derived from
+  `Ragex.Languages.validators/0`, so a language that gains a validator in the
+  registry appears here automatically.
   """
   @spec list_validators() :: %{atom() => module()}
-  def list_validators do
-    %{
-      elixir: Ragex.Editor.Validators.Elixir,
-      erlang: Ragex.Editor.Validators.Erlang,
-      python: Ragex.Editor.Validators.Python,
-      ruby: Ragex.Editor.Validators.Ruby,
-      javascript: Ragex.Editor.Validators.Javascript,
-      cure: Ragex.Editor.Validators.Cure,
-      agda: Ragex.Editor.Validators.Agda,
-      markdown: Ragex.Editor.Validators.Markdown
-    }
-  end
+  def list_validators, do: Ragex.Languages.validators()
 
   @doc """
   Gets the validator module for a specific language.
   """
   @spec get_validator(atom()) :: {:ok, module()} | {:error, :no_validator}
   def get_validator(language) when is_atom(language) do
-    case Map.get(list_validators(), language) do
+    case Ragex.Languages.validator(language) do
       nil -> {:error, :no_validator}
       validator -> {:ok, validator}
     end
@@ -132,17 +123,9 @@ defmodule Ragex.Editor.Validator do
   end
 
   defp detect_validator_from_path(path) do
-    language =
-      case Ragex.LanguageSupport.detect_language(path) do
-        :typescript -> :javascript
-        :unknown -> nil
-        lang -> lang
-      end
-
-    if language do
-      get_validator(language)
-    else
-      {:error, :no_validator}
+    case Ragex.Languages.detect_language(path) do
+      :unknown -> {:error, :no_validator}
+      language -> get_validator(language)
     end
   end
 

@@ -105,6 +105,14 @@ defmodule Ragex.MixProject do
         nil -> {:metacredo, "~> 0.1"}
         _ -> {:metacredo, path: "../metacredo"}
       end,
+      # Metastatic is a transitive dependency (via metacredo/dllb), but Ragex
+      # depends on it directly for language adapters and MetaAST. Declared here
+      # so `LOCAL_METASTATIC=1` can point it at the sibling checkout during
+      # development.
+      case System.get_env("LOCAL_METASTATIC") do
+        nil -> {:metastatic, "~> 0.35"}
+        _ -> {:metastatic, path: "../metastatic", override: true}
+      end,
       # Full macro expansion for the Elixir analyzer (Ragex.Analyzers.Elixir.MacroExpander).
       # Already present transitively via metastatic, but declared explicitly
       # because Ragex calls it directly -- an implicit transitive dep would

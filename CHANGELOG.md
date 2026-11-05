@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Languages are now plug-in, not hardcoded.** Ragex no longer keeps its own
+  language lists. The new `Ragex.Languages` registry **derives** from
+  `Metastatic.Languages` (which discovers adapters at compile time) and merges a
+  small Ragex-local overlay for the concerns Metastatic does not know about:
+  validators, native fallback analyzers, and SCIP indexers. This replaces four
+  independent hardcoded registries that had drifted apart:
+  - `Ragex.LanguageSupport`'s `@extension_map` / `@adapter_map` /
+    `@metastatic_extensions` / `@documentation_languages`
+  - `Ragex.Editor.Validator.list_validators/0` (plus the `:typescript ->
+    :javascript` special-case, now expressed as overlay data)
+  - `Ragex.Analyzers.Metastatic.fallback_analyze/3`'s `case language do … end`
+    chain
+  - `Ragex.Analyzers.SCIP.Registry`'s `@languages` table
+
+  Adding a language Metastatic already supports now requires **no Ragex change**
+  at all; only the Ragex-specific extras (validator/analyzer/SCIP) are declared,
+  as data, in `Ragex.Languages`. All existing public functions on
+  `Ragex.LanguageSupport` keep their exact contract and now delegate to the
+  registry.
+
+- **Duplicated subprocess validators collapsed into one generic validator.**
+  `Ragex.Editor.Validators.Subprocess` implements the shared "write temp file →
+  run the toolchain → parse `line:col:message`" shape once. The Python, Ruby and
+  JavaScript validators are now thin specs (extension, command, error parser)
+  over it; Elixir/Erlang stay in-process, and Agda/Cure keep their custom
+  callbacks. Behaviour is unchanged.
+
+### Added
+
+- **`Ragex.Language`** -- struct describing a language (adapter, validator,
+  native analyzer, SCIP indexer, extensions, documentation/experimental flags).
+- **`Ragex.Languages`** -- the derived registry, with `detect_language/1`,
+  `get_adapter/1`, `validator/1`, `native_analyzer/1`, `scip_languages/0`,
+  `validators/0`, `native_analyzers/0`, and documentation-language helpers.
+- **`LOCAL_METASTATIC=1`** -- points the `metastatic` dependency at the sibling
+  `../metastatic` checkout, mirroring the existing `LOCAL_METACREDO` switch, so
+  the two projects can be developed together.
+
 - **Minimum Elixir is now 1.20** (was 1.18). This is the version that ships the
   set-theoretic type system Ragex's optional type inference reads back out of
 ### Added

@@ -6,24 +6,17 @@ defmodule Ragex.Analyzers.SCIP.Registry do
   for marker files (e.g. `go.mod` -> Go, `Cargo.toml` -> Rust), and
   knows which SCIP indexer binary to run for each language.
 
-  ## Supported Languages
+  ## Source of truth
 
-  | Language     | Marker File(s)           | Indexer Binary     | Extensions        |
-  |-------------|--------------------------|-------------------|-------------------|
-  | Go          | `go.mod`                 | `scip-go`         | `.go`             |
-  | Rust        | `Cargo.toml`             | `rust-analyzer`   | `.rs`             |
-  | Java        | `pom.xml`, `build.gradle`| `scip-java`       | `.java`           |
-  | Kotlin      | `build.gradle.kts`       | `scip-java`       | `.kt`, `.kts`     |
-  | Scala       | `build.sbt`              | `scip-java`       | `.scala`          |
-  | C/C++       | `CMakeLists.txt`         | `scip-clang`      | `.c`, `.cpp`, `.h`|
-  | C#          | `*.csproj`, `*.sln`      | `scip-dotnet`     | `.cs`             |
-  | Ruby        | `Gemfile`                | `scip-ruby`       | `.rb`             |
-  | Dart        | `pubspec.yaml`           | `scip-dart`       | `.dart`           |
-  | PHP         | `composer.json`          | `scip-php`        | `.php`            |
+  The list of SCIP languages is **derived from `Ragex.Languages`** (which in
+  turn derives from `Metastatic.Languages`). A language is SCIP-indexable when
+  its `%Ragex.Language{}` descriptor carries SCIP indexer metadata *and* it has
+  no Metastatic adapter -- languages Ragex can parse natively (Elixir, Erlang,
+  Python, JavaScript/TypeScript, Ruby, ...) are excluded because Ragex's own
+  analyzers or Metastatic provide deeper AST access for them.
 
-  Languages already handled natively by Ragex (Elixir, Erlang, Python,
-  JavaScript/TypeScript) are excluded -- Ragex's own analyzers or
-  Metastatic provide deeper AST access for those.
+  Adding a new SCIP-only language therefore means adding it to the
+  `@scip_languages` overlay in `Ragex.Languages`, not editing this module.
   """
 
   @type language_info :: %{
@@ -34,78 +27,22 @@ defmodule Ragex.Analyzers.SCIP.Registry do
           marker_files: [String.t()]
         }
 
-  @languages [
-    %{
-      language: "go",
-      indexer: "scip-go",
-      indexer_args: [],
-      extensions: [".go"],
-      marker_files: ["go.mod"]
-    },
-    %{
-      language: "rust",
-      indexer: "rust-analyzer",
-      indexer_args: ["scip", "."],
-      extensions: [".rs"],
-      marker_files: ["Cargo.toml"]
-    },
-    %{
-      language: "java",
-      indexer: "scip-java",
-      indexer_args: ["index"],
-      extensions: [".java"],
-      marker_files: ["pom.xml", "build.gradle"]
-    },
-    %{
-      language: "kotlin",
-      indexer: "scip-java",
-      indexer_args: ["index"],
-      extensions: [".kt", ".kts"],
-      marker_files: ["build.gradle.kts"]
-    },
-    %{
-      language: "scala",
-      indexer: "scip-java",
-      indexer_args: ["index"],
-      extensions: [".scala"],
-      marker_files: ["build.sbt"]
-    },
-    %{
-      language: "c_cpp",
-      indexer: "scip-clang",
-      indexer_args: [],
-      extensions: [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"],
-      marker_files: ["CMakeLists.txt", "compile_commands.json"]
-    },
-    %{
-      language: "csharp",
-      indexer: "scip-dotnet",
-      indexer_args: [],
-      extensions: [".cs"],
-      marker_files: ["*.csproj", "*.sln"]
-    },
-    %{
-      language: "ruby",
-      indexer: "scip-ruby",
-      indexer_args: [],
-      extensions: [".rb"],
-      marker_files: ["Gemfile"]
-    },
-    %{
-      language: "dart",
-      indexer: "scip-dart",
-      indexer_args: [],
-      extensions: [".dart"],
-      marker_files: ["pubspec.yaml"]
-    },
-    %{
-      language: "php",
-      indexer: "scip-php",
-      indexer_args: [],
-      extensions: [".php"],
-      marker_files: ["composer.json"]
-    }
-  ]
+  # Derived at compile time from the Ragex language registry. Every language
+  # that carries SCIP indexer metadata is included -- including ones that also
+  # have a Metastatic adapter (e.g. Ruby), matching the historical set.
+  @languages (
+               for %Ragex.Language{language: lang, scip_indexer: indexer} <-
+                     Ragex.Languages.scip_languages(),
+                   indexer != nil do
+                 %{
+                   language: Atom.to_string(lang),
+                   indexer: indexer.indexer,
+                   indexer_args: indexer.indexer_args,
+                   extensions: indexer.extensions,
+                   marker_files: indexer.marker_files
+                 }
+               end
+             )
 
   @doc "Returns all known SCIP-supported language definitions."
   @spec all_languages() :: [language_info()]

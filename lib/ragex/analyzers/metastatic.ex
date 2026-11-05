@@ -37,12 +37,6 @@ defmodule Ragex.Analyzers.Metastatic do
   alias Metastatic.Document
   alias Ragex.Analyzers.MetaASTExtractor
 
-  alias Ragex.Analyzers.Elixir, as: ExAnalyzer
-  alias Ragex.Analyzers.Erlang, as: ErlAnalyzer
-  alias Ragex.Analyzers.JavaScript, as: JSAnalyzer
-  alias Ragex.Analyzers.Python, as: PyAnalyzer
-  alias Ragex.Analyzers.Ruby, as: RbAnalyzer
-
   @impl true
   def analyze(source, file_path) do
     language = detect_language(file_path)
@@ -284,14 +278,9 @@ defmodule Ragex.Analyzers.Metastatic do
         {:ok, document_analysis(file_path, language)}
 
       fallback? ->
-        case language do
-          :elixir -> ExAnalyzer.analyze(source, file_path)
-          :erlang -> ErlAnalyzer.analyze(source, file_path)
-          :python -> PyAnalyzer.analyze(source, file_path)
-          :ruby -> RbAnalyzer.analyze(source, file_path)
-          :javascript -> JSAnalyzer.analyze(source, file_path)
-          :typescript -> JSAnalyzer.analyze(source, file_path)
-          _ -> {:error, :no_fallback_analyzer}
+        case Ragex.Languages.native_analyzer(language) do
+          nil -> {:error, :no_fallback_analyzer}
+          analyzer -> analyzer.analyze(source, file_path)
         end
 
       true ->
