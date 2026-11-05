@@ -146,8 +146,6 @@ defmodule Ragex.Analysis.TypeInfo do
     end)
   end
 
-  defp unwrap(other), do: other
-
   # Typle raises on unsupported syntax (struct updates, for one). Never let
   # that escape into an analyzer run.
   defp guarded(fun) do

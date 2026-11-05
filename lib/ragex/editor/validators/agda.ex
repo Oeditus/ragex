@@ -143,7 +143,8 @@ defmodule Ragex.Editor.Validators.Agda do
 
       # Do not let defaults reintroduce the original roots. Keep library manifests
       # enabled so imported modules retain their compiler flags and cached interfaces.
-      cmd_args = ["--only-scope-checking", "--no-default-libraries"] ++ include_args ++ [file_path]
+      cmd_args =
+        ["--only-scope-checking", "--no-default-libraries"] ++ include_args ++ [file_path]
 
       case System.cmd(agda_path, cmd_args,
              stderr_to_stdout: true,
