@@ -129,8 +129,7 @@ defmodule Ragex.Languages do
 
   # One descriptor per Metastatic language, enriched with the Ragex overlay
   # (validator, native analyzer) and any matching SCIP indexer metadata.
-  @metastatic_descriptors (
-                           for %MetastaticLanguage{} = ml <- Metastatic.Languages.all() do
+  @metastatic_descriptors (for %MetastaticLanguage{} = ml <- Metastatic.Languages.all() do
                              %Language{
                                language: ml.language,
                                adapter: ml.adapter,
@@ -141,19 +140,16 @@ defmodule Ragex.Languages do
                                experimental?: ml.experimental?,
                                documentation?: ml.documentation?
                              }
-                           end
-                         )
+                           end)
 
   # SCIP-only languages (no Metastatic adapter).
-  @scip_descriptors (
-                      for {lang, %{extensions: exts} = info} <- @scip_languages,
-                          not MapSet.member?(
-                            MapSet.new(Enum.map(@metastatic_descriptors, & &1.language)),
-                            lang
-                          ) do
-                        %Language{language: lang, scip_indexer: info, extensions: exts}
-                      end
-                    )
+  @scip_descriptors (for {lang, %{extensions: exts} = info} <- @scip_languages,
+                         not MapSet.member?(
+                           MapSet.new(Enum.map(@metastatic_descriptors, & &1.language)),
+                           lang
+                         ) do
+                       %Language{language: lang, scip_indexer: info, extensions: exts}
+                     end)
 
   @languages Enum.sort_by(@metastatic_descriptors ++ @scip_descriptors, & &1.language)
 
@@ -186,7 +182,7 @@ defmodule Ragex.Languages do
   @all_extensions @metastatic_extensions
 
   @documentation_languages for %Language{language: lang, documentation?: true} <- @languages,
-                                 do: lang
+                               do: lang
 
   # ── Public API ──────────────────────────────────────────────────────
 

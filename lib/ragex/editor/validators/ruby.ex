@@ -48,7 +48,8 @@ defmodule Ragex.Editor.Validators.Ruby do
          ]}
 
       _ ->
-        {:error, [Types.validation_error("Syntax error: #{String.trim(output)}", severity: :error)]}
+        {:error,
+         [Types.validation_error("Syntax error: #{String.trim(output)}", severity: :error)]}
     end
   end
 end

@@ -30,19 +30,17 @@ defmodule Ragex.Analyzers.SCIP.Registry do
   # Derived at compile time from the Ragex language registry. Every language
   # that carries SCIP indexer metadata is included -- including ones that also
   # have a Metastatic adapter (e.g. Ruby), matching the historical set.
-  @languages (
-               for %Ragex.Language{language: lang, scip_indexer: indexer} <-
-                     Ragex.Languages.scip_languages(),
-                   indexer != nil do
-                 %{
-                   language: Atom.to_string(lang),
-                   indexer: indexer.indexer,
-                   indexer_args: indexer.indexer_args,
-                   extensions: indexer.extensions,
-                   marker_files: indexer.marker_files
-                 }
-               end
-             )
+  @languages (for %Ragex.Language{language: lang, scip_indexer: indexer} <-
+                    Ragex.Languages.scip_languages(),
+                  indexer != nil do
+                %{
+                  language: Atom.to_string(lang),
+                  indexer: indexer.indexer,
+                  indexer_args: indexer.indexer_args,
+                  extensions: indexer.extensions,
+                  marker_files: indexer.marker_files
+                }
+              end)
 
   @doc "Returns all known SCIP-supported language definitions."
   @spec all_languages() :: [language_info()]
