@@ -116,9 +116,11 @@ defmodule Ragex.MixProject do
       # Expression-level type inference (optional). Typle reads the compiler's
       # inferred types back out of .beam ExCk chunks and re-derives
       # per-expression types from source. Requires Elixir 1.20+, and is young
-      # (0.3.x), so it is opt-in and every call site is guarded by
-      # Ragex.Analysis.TypeInfo.available?/0.
-      {:typle, "~> 0.3", optional: true},
+      # (0.4.x), so it is opt-in and every call site is guarded by
+      # Ragex.Analysis.TypeInfo.available?/0. 0.4.0 is required: it fixes a
+      # crash on struct updates and moves ExPanda to 0.3, whose walker no
+      # longer splices `with`/`for` body options into the argument list.
+      {:typle, "~> 0.4", optional: true},
       # Image processing library (optional -- native/NIF-backed via Vix/libvips,
       # degrades gracefully when absent, see Ragex.Image.available?/0)
       {:image, "~> 0.54", optional: true},

@@ -26,17 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision to enable type inference is reproducible rather than anecdotal.
 
   A spike against this repository (40 files, Elixir 1.20.4 / OTP 29, Typle
-  0.3.1) found **82.5% of inferred expressions are `dynamic()`**, and only
+  0.4.0) found **82.5% of inferred expressions are `dynamic()`**, and only
   ~5% are genuinely informative (the rest are empty types or bare `map()`),
   so type inference stays off; re-run the task after a Typle release to see
   whether the numbers moved.
 
-  Getting even that number required fixing two crashes in Typle 0.3.1, both
-  now fixed upstream: `Typle.Inference.Expr.infer/2` had no clause for the
-  struct-update node `%{struct | key: value}` (20% of files here), and Typle
-  pinned ExPanda `~> 0.2`, whose walker spliced `with`/`for` body options into
-  the positional argument list and produced AST that `Macro.to_string/1`
-  cannot even print.
+  Getting even that number required fixing two crashes, both released in
+  Typle 0.4.0: `Typle.Inference.Expr.infer/2` had no clause for the
+  struct-update node `%{struct | key: value}` (20% of files here crashed), and
+  Typle pinned ExPanda `~> 0.2`, whose walker spliced `with`/`for` body options
+  into the positional argument list and produced AST that `Macro.to_string/1`
+  cannot even print. With both fixed the crash rate on this repository is 0%.
 - **Full macro expansion for the Elixir analyzer** via
   `Ragex.Analyzers.Elixir.MacroExpander`, backed by [ExPanda](https://hexdocs.pm/ex_panda)
   `~> 0.3`. `:partial` (the default) now genuinely expands core macros and `use`

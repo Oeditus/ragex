@@ -11,24 +11,26 @@ defmodule Ragex.Analysis.TypeInfo do
   ## Status: opt-in, not enabled by default
 
   A spike against this repository (40 files, Elixir 1.20.4 / OTP 29, Typle
-  0.3.1) measured, on files that parse successfully:
+  0.4.0) measured:
 
   | classification | share |
   |---|---|
-  | `dynamic()` -- no inference | 85.5% |
+  | `dynamic()` -- no inference | 82.5% |
   | empty type (`Type<>`) | 3.2% |
   | `map()` only (map/struct literals) | 5.9% |
-  | **genuinely informative** | **5.4%** |
+  | **genuinely informative** | **~5%** |
 
   Typle returns `dynamic()` when it cannot infer, and `map()` for any map or
   struct literal -- neither says anything about the values flowing through the
-  program. What remains is 5.4% of expressions, which is too thin to justify
+  program. What remains is ~5% of expressions, which is too thin to justify
   surfacing types as a first-class graph property: a feature built on it would
   look confident and be wrong most of the time.
 
-  Two crashes in Typle 0.3.1 also had to be fixed before even this number
-  could be measured (struct updates, and `with`/`for` body splicing inherited
-  from ExPanda 0.2.x); both are fixed upstream, see `mix ragex.typle.spike`.
+  Two crashes had to be fixed before even this number could be measured, both
+  released in Typle 0.4.0: struct updates (`%{struct | key: value}`), and
+  `with`/`for` body splicing inherited from ExPanda 0.2.x. With both fixed the
+  crash rate on this repository is 0%, so these figures are a fair measurement
+  of the signal rather than of the files that happened to survive.
 
   This module therefore exists to make the capability *available and safe* --
   every entry point is guarded and returns `{:error, :unavailable}` /
