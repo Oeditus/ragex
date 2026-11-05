@@ -51,6 +51,11 @@ defmodule Ragex.LanguageSupportTest do
       assert :agda = LanguageSupport.detect_language("src/Data/Nat.lagda")
     end
 
+    test "detects Markdown" do
+      assert :markdown = LanguageSupport.detect_language("README.md")
+      assert :markdown = LanguageSupport.detect_language("docs/guide.markdown")
+    end
+
     test "returns :unknown for unsupported extensions" do
       assert :unknown = LanguageSupport.detect_language("file.txt")
       assert :unknown = LanguageSupport.detect_language("Makefile")
@@ -80,6 +85,10 @@ defmodule Ragex.LanguageSupportTest do
     test "returns adapter for JavaScript and TypeScript" do
       assert {:ok, Metastatic.Adapters.JavaScript} = LanguageSupport.get_adapter(:javascript)
       assert {:ok, Metastatic.Adapters.TypeScript} = LanguageSupport.get_adapter(:typescript)
+    end
+
+    test "returns adapter for Markdown" do
+      assert {:ok, Metastatic.Adapters.Markdown} = LanguageSupport.get_adapter(:markdown)
     end
 
     test "returns error for :unknown" do
@@ -148,9 +157,10 @@ defmodule Ragex.LanguageSupportTest do
       File.write!(Path.join(dir, "a.ex"), "")
       File.write!(Path.join(dir, "b.py"), "")
       File.write!(Path.join(dir, "c.txt"), "")
+      File.write!(Path.join(dir, "README.md"), "# Docs")
       File.write!(Path.join(sub, "d.erl"), "")
       File.write!(Path.join(sub, "e.js"), "")
-
+      File.write!(Path.join(sub, "GUIDE.markdown"), "# Guide")
       on_exit(fn -> File.rm_rf!(dir) end)
 
       %{dir: dir, sub: sub}
@@ -158,6 +168,12 @@ defmodule Ragex.LanguageSupportTest do
 
     test "finds all source files recursively", %{dir: dir} do
       {:ok, files} = LanguageSupport.find_source_files(dir)
+      basenames = Enum.map(files, &Path.basename/1) |> Enum.sort()
+      assert basenames == ["GUIDE.markdown", "README.md", "a.ex", "b.py", "d.erl", "e.js"]
+    end
+
+    test "include_documentation: false drops Markdown files", %{dir: dir} do
+      {:ok, files} = LanguageSupport.find_source_files(dir, include_documentation: false)
       basenames = Enum.map(files, &Path.basename/1) |> Enum.sort()
       assert basenames == ["a.ex", "b.py", "d.erl", "e.js"]
     end
@@ -176,7 +192,7 @@ defmodule Ragex.LanguageSupportTest do
 
       {:ok, files} = LanguageSupport.find_source_files(dir)
       basenames = Enum.map(files, &Path.basename/1) |> Enum.sort()
-      assert basenames == ["a.ex", "b.py", "d.erl", "e.js"]
+      assert basenames == ["GUIDE.markdown", "README.md", "a.ex", "b.py", "d.erl", "e.js"]
       refute Enum.any?(files, &String.contains?(&1, "_build"))
       refute Enum.any?(files, &String.contains?(&1, "deps"))
       refute Enum.any?(files, &String.contains?(&1, ".elixir_ls"))
@@ -185,13 +201,13 @@ defmodule Ragex.LanguageSupportTest do
     test "non-recursive skips subdirectories", %{dir: dir} do
       {:ok, files} = LanguageSupport.find_source_files(dir, recursive: false)
       basenames = Enum.map(files, &Path.basename/1) |> Enum.sort()
-      assert basenames == ["a.ex", "b.py"]
+      assert basenames == ["README.md", "a.ex", "b.py"]
     end
 
     test "metastatic_only includes JavaScript (now a Metastatic language)", %{dir: dir} do
       {:ok, files} = LanguageSupport.find_source_files(dir, metastatic_only: true)
       basenames = Enum.map(files, &Path.basename/1) |> Enum.sort()
-      assert basenames == ["a.ex", "b.py", "d.erl", "e.js"]
+      assert basenames == ["GUIDE.markdown", "README.md", "a.ex", "b.py", "d.erl", "e.js"]
     end
 
     test "handles single file path", %{dir: dir} do
@@ -223,6 +239,12 @@ defmodule Ragex.LanguageSupportTest do
     test "includes the Cure extension" do
       assert ".cure" in LanguageSupport.supported_extensions()
     end
+
+    test "includes Markdown extensions" do
+      exts = LanguageSupport.supported_extensions()
+      assert ".md" in exts
+      assert ".markdown" in exts
+    end
   end
 
   describe "metastatic_extensions/0" do
@@ -239,6 +261,12 @@ defmodule Ragex.LanguageSupportTest do
       exts = LanguageSupport.metastatic_extensions()
       assert ".agda" in exts
       assert ".lagda" in exts
+    end
+
+    test "includes Markdown extensions" do
+      exts = LanguageSupport.metastatic_extensions()
+      assert ".md" in exts
+      assert ".markdown" in exts
     end
 
     @tag :cure
@@ -320,6 +348,51 @@ defmodule Ragex.LanguageSupportTest do
       assert op_kind[:domain] == :db
       assert op_kind[:operation] == :retrieve
       assert op_kind[:target] == "User"
+    end
+  end
+
+  describe "documentation_language?/1 and documentation_file?/1" do
+    test "Markdown is a documentation language" do
+      assert LanguageSupport.documentation_language?(:markdown)
+      assert LanguageSupport.documentation_file?("README.md")
+      assert LanguageSupport.documentation_file?("docs/guide.markdown")
+    end
+
+    test "code languages are not documentation languages" do
+      refute LanguageSupport.documentation_language?(:elixir)
+      refute LanguageSupport.documentation_language?(:python)
+      refute LanguageSupport.documentation_file?("lib/my_module.ex")
+    end
+
+    test "unknown languages and extensions are not documentation" do
+      refute LanguageSupport.documentation_language?(:unknown)
+      refute LanguageSupport.documentation_file?("file.txt")
+    end
+  end
+
+  describe "parse_document/3 with Markdown" do
+    test "parses a Markdown document into NL-MetaAST" do
+      source = "# Title\n\nSome *prose*.\n"
+
+      assert {:ok, %Metastatic.Document{language: :markdown, ast: ast}} =
+               LanguageSupport.parse_document(source, :markdown)
+
+      assert Metastatic.NL.AST.type(ast) == :document
+    end
+
+    test "exposes headings and links through the NL AST helpers" do
+      source = "# Title\n\nSee [the docs](https://example.com).\n"
+
+      assert {:ok, %Metastatic.Document{ast: ast}} =
+               LanguageSupport.parse_document(source, :markdown)
+
+      assert [heading] = Metastatic.NL.AST.headings(ast)
+      assert {:heading, meta, _children} = heading
+      assert meta[:level] == 1
+
+      assert [link] = Metastatic.NL.AST.links(ast)
+      assert {:link, link_meta, _children} = link
+      assert link_meta[:destination] == "https://example.com"
     end
   end
 end

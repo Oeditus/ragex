@@ -120,17 +120,98 @@ defmodule Ragex.Cure.Loader do
       {:error, :cure_not_available}
   end
 
-  defp find_executable do
-    candidates =
-      case System.get_env("CURE_HOME") do
-        home when is_binary(home) and home != "" ->
-          [Path.join([home, "bin", "cure"]), Path.join(home, "cure")]
+  @doc """
+  Returns the path to the `cure` escript, or `nil` when none can be found.
 
-        _ ->
-          []
-      end
+  Lookup order, first match wins:
 
-    System.find_executable("cure") || Enum.find(candidates, &File.regular?/1)
+    1. `CURE_HOME` -- `$CURE_HOME/bin/cure`, then `$CURE_HOME/cure`.
+    2. `CURE_ESCRIPT` -- an explicit path to the escript itself, for setups where
+       the compiler checkout lives somewhere unusual.
+    3. `PATH` -- a `cure` executable on the system path.
+    4. Local checkouts -- a `cure-lang/cure` or `cure/cure` escript in the working
+       directory or any of its ancestors, which is how the Oeditus projects are
+       laid out locally.
+
+  Discovery is deliberately *not* cached: the compiler may be built after Ragex
+  starts, and a failed lookup must not poison later calls.
+  """
+  @spec find_executable() :: String.t() | nil
+  def find_executable do
+    Enum.find(candidates(), &escript?/1)
+  end
+
+  defp candidates do
+    home_candidates() ++ escript_candidates() ++ path_candidates() ++ checkout_candidates()
+  end
+
+  defp home_candidates do
+    case System.get_env("CURE_HOME") do
+      value when is_binary(value) and value != "" ->
+        [Path.join([value, "bin", "cure"]), Path.join(value, "cure")]
+
+      _ ->
+        []
+    end
+  end
+
+  defp escript_candidates do
+    case System.get_env("CURE_ESCRIPT") do
+      value when is_binary(value) and value != "" -> [value]
+      _ -> []
+    end
+  end
+
+  defp path_candidates do
+    case System.find_executable("cure") do
+      path when is_binary(path) -> [path]
+      nil -> []
+    end
+  end
+
+  # Local checkouts keep the escript at the repository root. Walking up from the
+  # working directory covers both a sibling `../cure-lang` and a nested layout.
+  defp checkout_candidates do
+    File.cwd!()
+    |> ancestor_dirs()
+    |> Enum.flat_map(fn dir ->
+      [
+        Path.join([dir, "cure-lang", "cure"]),
+        Path.join([dir, "cure", "cure"])
+      ]
+    end)
+  end
+
+  defp ancestor_dirs(dir) do
+    parent = Path.dirname(dir)
+
+    if parent == dir do
+      [dir]
+    else
+      [dir | ancestor_dirs(parent)]
+    end
+  end
+
+  defp escript?(path) when is_binary(path) do
+    File.regular?(path) and escript_file?(path)
+  end
+
+  defp escript?(_), do: false
+
+  # Guards against picking up an unrelated file that merely happens to be named
+  # `cure` (a directory, a shell wrapper, a source file).
+  #
+  # The released escript is either a bare BEAM archive (starting with the `ER`
+  # magic) or a shebang-prefixed executable (`#!...`) followed by the archive, so
+  # both are accepted. A plain text file is rejected.
+  defp escript_file?(path) do
+    case File.open(path, [:read, :binary], &IO.binread(&1, 2)) do
+      {:ok, <<0x45, 0x52>>} -> true
+      {:ok, <<0x23, 0x21>>} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
   end
 
   defp beam_file?(filename), do: filename |> to_string() |> String.ends_with?(".beam")

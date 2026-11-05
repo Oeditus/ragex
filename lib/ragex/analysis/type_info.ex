@@ -95,19 +95,12 @@ defmodule Ragex.Analysis.TypeInfo do
   """
   @spec types_for_file(String.t(), keyword()) :: {:ok, type_map()} | {:error, term()}
   def types_for_file(file, opts \\ []) do
-    if available?() do
-      case guarded(fn -> Typle.types_for_file(file, typle_opts(opts)) end) do
-        {:ok, map} when is_map(map) ->
-          {:ok, Map.new(map, fn {pos, value} -> {pos, normalize(value)} end)}
+    case guarded(available?(), fn -> Typle.types_for_file(file, typle_opts(opts)) end) do
+      {:ok, map} when is_map(map) ->
+        {:ok, Map.new(map, fn {pos, value} -> {pos, normalize(value)} end)}
 
-        {:ok, other} ->
-          {:error, {:unexpected_result, other}}
-
-        {:error, _} = error ->
-          error
-      end
-    else
-      {:error, :unavailable}
+      {:error, _} = error ->
+        error
     end
   end
 
@@ -132,11 +125,7 @@ defmodule Ragex.Analysis.TypeInfo do
   """
   @spec return_type(module(), atom(), non_neg_integer()) :: {:ok, term()} | {:error, term()}
   def return_type(module, function, arity) do
-    if available?() do
-      guarded(fn -> Typle.return_type(module, function, arity) end)
-    else
-      {:error, :unavailable}
-    end
+    guarded(available?(), fn -> Typle.return_type(module, function, arity) end)
   end
 
   @doc """
@@ -240,7 +229,9 @@ defmodule Ragex.Analysis.TypeInfo do
 
   # Typle raises on unsupported syntax (struct updates, for one). Never let
   # that escape into an analyzer run.
-  defp guarded(fun) do
+  defp guarded(false = _available?, _fun), do: {:error, :unavailable}
+
+  defp guarded(_, fun) do
     fun.()
   rescue
     e ->

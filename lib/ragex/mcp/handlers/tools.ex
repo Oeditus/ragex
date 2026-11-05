@@ -2670,6 +2670,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp get_analyzer("typescript", _path), do: JavaScriptAnalyzer
   defp get_analyzer("agda", _path), do: Ragex.Analyzers.Metastatic
   defp get_analyzer("cure", _path), do: Ragex.Analyzers.Metastatic
+  defp get_analyzer("markdown", _path), do: Ragex.Analyzers.Metastatic
   defp get_analyzer(_, path), do: get_analyzer("auto", path)
 
   defp use_metastatic? do
@@ -6899,7 +6900,10 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp find_supported_files(dir) do
-    case Ragex.LanguageSupport.find_source_files(dir, metastatic_only: true) do
+    case Ragex.LanguageSupport.find_source_files(dir,
+           metastatic_only: true,
+           include_documentation: false
+         ) do
       {:ok, files} -> files
       _ -> []
     end

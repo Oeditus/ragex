@@ -38,6 +38,98 @@ defmodule Ragex.Cure.LoaderTest do
     end
   end
 
+  describe "find_executable/0" do
+    test "returns a path to an existing escript, or nil" do
+      case Loader.find_executable() do
+        nil -> :ok
+        path -> assert File.regular?(path)
+      end
+    end
+
+    test "honours CURE_ESCRIPT for an unusual checkout location" do
+      dir =
+        Path.join(System.tmp_dir!(), "ragex_cure_escript_#{System.unique_integer([:positive])}")
+
+      File.mkdir_p!(dir)
+      escript = Path.join(dir, "cure")
+      # A shebang-prefixed executable is how the released escript looks.
+      File.write!(escript, "#! /usr/bin/env escript\n")
+      File.chmod!(escript, 0o755)
+      on_exit(fn -> File.rm_rf!(dir) end)
+
+      previous_home = System.get_env("CURE_HOME")
+      previous_escript = System.get_env("CURE_ESCRIPT")
+
+      System.delete_env("CURE_HOME")
+      System.put_env("CURE_ESCRIPT", escript)
+
+      on_exit(fn ->
+        if previous_home,
+          do: System.put_env("CURE_HOME", previous_home),
+          else: System.delete_env("CURE_HOME")
+
+        if previous_escript,
+          do: System.put_env("CURE_ESCRIPT", previous_escript),
+          else: System.delete_env("CURE_ESCRIPT")
+      end)
+
+      assert Loader.find_executable() == escript
+    end
+
+    test "honours CURE_HOME" do
+      dir = Path.join(System.tmp_dir!(), "ragex_cure_home_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(Path.join(dir, "bin"))
+      escript = Path.join([dir, "bin", "cure"])
+      File.write!(escript, "#! /usr/bin/env escript\n")
+      File.chmod!(escript, 0o755)
+      on_exit(fn -> File.rm_rf!(dir) end)
+
+      previous_home = System.get_env("CURE_HOME")
+      previous_escript = System.get_env("CURE_ESCRIPT")
+
+      System.put_env("CURE_HOME", dir)
+      System.delete_env("CURE_ESCRIPT")
+
+      on_exit(fn ->
+        if previous_home,
+          do: System.put_env("CURE_HOME", previous_home),
+          else: System.delete_env("CURE_HOME")
+
+        if previous_escript,
+          do: System.put_env("CURE_ESCRIPT", previous_escript),
+          else: System.delete_env("CURE_ESCRIPT")
+      end)
+
+      assert Loader.find_executable() == escript
+    end
+
+    test "ignores a plain text file that merely happens to be named cure" do
+      dir = Path.join(System.tmp_dir!(), "ragex_cure_fake_#{System.unique_integer([:positive])}")
+      File.mkdir_p!(dir)
+      fake = Path.join(dir, "cure")
+      File.write!(fake, "not an escript\n")
+      on_exit(fn -> File.rm_rf!(dir) end)
+
+      previous_home = System.get_env("CURE_HOME")
+      previous_escript = System.get_env("CURE_ESCRIPT")
+
+      System.delete_env("CURE_HOME")
+      System.put_env("CURE_ESCRIPT", fake)
+
+      on_exit(fn ->
+        if previous_home,
+          do: System.put_env("CURE_HOME", previous_home),
+          else: System.delete_env("CURE_HOME")
+
+        if previous_escript,
+          do: System.put_env("CURE_ESCRIPT", previous_escript),
+          else: System.delete_env("CURE_ESCRIPT")
+      end)
+
+      refute Loader.find_executable() == fake
+    end
+  end
+
   describe "ensure_loaded/0" do
     test "returns :ok or a not-available error without raising" do
       assert Loader.ensure_loaded() in [:ok, {:error, :cure_not_available}]

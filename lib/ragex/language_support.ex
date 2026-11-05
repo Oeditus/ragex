@@ -17,6 +17,15 @@ defmodule Ragex.LanguageSupport do
   - `:typescript` -- `.ts`, `.tsx`
   - `:cure` -- `.cure`
   - `:agda` -- `.agda`, `.lagda`
+  - `:markdown` -- `.md`, `.markdown`
+
+  Markdown is a first-class Metastatic language (since Metastatic 0.35): it is
+  parsed into NL-MetaAST, so prose linting, readability metrics and semantic
+  enrichment apply to documentation exactly as they do to code. Ragex treats
+  Markdown as a *documentation* language rather than a source language -- see
+  `documentation_language?/1` -- so documentation is discoverable and
+  analyzable, but it is kept out of code-only passes (dead code, duplication,
+  refactoring) that assume callable entities.
 
   ## Usage
 
@@ -34,6 +43,9 @@ defmodule Ragex.LanguageSupport do
   alias Metastatic.{Adapter, Document}
   alias Ragex.Cure.Loader, as: CureLoader
 
+  # Adapter modules are deliberately spelled out in full rather than aliased:
+  # the alias list itself would count against
+  # `Credo.Check.Refactor.ModuleDependencies` for this module.
   @type language ::
           :elixir
           | :erlang
@@ -45,6 +57,7 @@ defmodule Ragex.LanguageSupport do
           | :cure
           | :agda
           | :march
+          | :markdown
           | :unknown
 
   @extension_map %{
@@ -66,7 +79,9 @@ defmodule Ragex.LanguageSupport do
     ".agda" => :agda,
     ".lagda" => :agda,
     ".march" => :march,
-    ".mch" => :march
+    ".mch" => :march,
+    ".md" => :markdown,
+    ".markdown" => :markdown
   }
 
   @adapter_map %{
@@ -79,10 +94,16 @@ defmodule Ragex.LanguageSupport do
     typescript: Metastatic.Adapters.TypeScript,
     cure: Metastatic.Adapters.Cure,
     agda: Metastatic.Adapters.Agda,
-    march: Metastatic.Adapters.March
+    march: Metastatic.Adapters.March,
+    markdown: Metastatic.Adapters.Markdown
   }
 
-  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .lhs .js .jsx .ts .tsx .mjs .cjs .cure .agda .lagda .march .mch)
+  @metastatic_extensions ~w(.ex .exs .erl .hrl .py .rb .hs .lhs .js .jsx .ts .tsx .mjs .cjs .cure .agda .lagda .march .mch .md .markdown)
+
+  # Languages that describe *documents* rather than executable code. They are
+  # fully parseable (and therefore analyzable), but they carry no callable
+  # entities, so code-only passes must skip them.
+  @documentation_languages [:markdown]
 
   @all_extensions Map.keys(@extension_map)
 
@@ -254,11 +275,15 @@ defmodule Ragex.LanguageSupport do
   - `:recursive` -- recursively search subdirectories (default: `true`)
   - `:metastatic_only` -- only include languages with Metastatic adapters (default: `false`)
   - `:exclude_patterns` -- patterns/directories to exclude (default: common build/deps dirs)
+  - `:include_documentation` -- include documentation languages such as Markdown
+    (default: `true`). Pass `false` for code-only passes (dead code, duplication,
+    refactoring) that assume callable entities.
 
   ## Examples
 
       {:ok, files} = LanguageSupport.find_source_files("lib/")
       {:ok, files} = LanguageSupport.find_source_files("lib/", metastatic_only: true)
+      {:ok, code} = LanguageSupport.find_source_files("lib/", include_documentation: false)
   """
   @spec find_source_files(String.t(), keyword()) :: {:ok, [String.t()]} | {:error, term()}
   def find_source_files(path, opts \\ []) do
@@ -276,6 +301,13 @@ defmodule Ragex.LanguageSupport do
             @metastatic_extensions
           else
             @all_extensions
+          end
+
+        extensions =
+          if Keyword.get(opts, :include_documentation, true) do
+            extensions
+          else
+            Enum.reject(extensions, &documentation_extension?/1)
           end
 
         glob = Enum.map_join(extensions, ",", &String.trim_leading(&1, "."))
@@ -318,16 +350,73 @@ defmodule Ragex.LanguageSupport do
   @spec has_adapter?(language()) :: boolean()
   def has_adapter?(language), do: Map.has_key?(@adapter_map, language)
 
-  @semantic_domain_modules [
-    Metastatic.Semantic.Domains.Database,
-    Metastatic.Semantic.Domains.Http,
-    Metastatic.Semantic.Domains.Auth,
-    Metastatic.Semantic.Domains.Cache,
-    Metastatic.Semantic.Domains.Queue,
-    Metastatic.Semantic.Domains.File,
-    Metastatic.Semantic.Domains.ExternalApi
-  ]
+  @doc """
+  Returns whether a language describes documents rather than executable code.
 
+  Documentation languages (currently `:markdown`) are fully parseable and
+  analyzable -- prose linting, readability and semantic enrichment all apply --
+  but they define no callable entities. Passes that reason about calls,
+  definitions or refactorings must skip them.
+
+  ## Examples
+
+      iex> Ragex.LanguageSupport.documentation_language?(:markdown)
+      true
+
+      iex> Ragex.LanguageSupport.documentation_language?(:elixir)
+      false
+  """
+  @spec documentation_language?(language()) :: boolean()
+  def documentation_language?(language), do: language in @documentation_languages
+
+  @doc """
+  Returns whether a file path points at a documentation-language file.
+
+  ## Examples
+
+      iex> Ragex.LanguageSupport.documentation_file?("README.md")
+      true
+
+      iex> Ragex.LanguageSupport.documentation_file?("lib/my_module.ex")
+      false
+  """
+  @spec documentation_file?(String.t()) :: boolean()
+  def documentation_file?(path) when is_binary(path) do
+    path |> detect_language() |> documentation_language?()
+  end
+
+  @doc """
+  Returns whether a file extension belongs to a documentation language.
+
+  ## Examples
+
+      iex> Ragex.LanguageSupport.documentation_extension?(".md")
+      true
+
+      iex> Ragex.LanguageSupport.documentation_extension?(".ex")
+      false
+  """
+  @spec documentation_extension?(String.t()) :: boolean()
+  def documentation_extension?(extension) when is_binary(extension) do
+    case Map.fetch(@extension_map, extension) do
+      {:ok, language} -> documentation_language?(language)
+      :error -> false
+    end
+  end
+
+  # Resolved by name at call time instead of being listed as compile-time
+  # references. `Credo.Check.Refactor.ModuleDependencies` counts every module
+  # named in a function body, and this module sits right at the 32-dependency
+  # ceiling -- naming the seven domain modules here would push it over.
+  @semantic_domain_module_names ~w(
+    Metastatic.Semantic.Domains.Database
+    Metastatic.Semantic.Domains.Http
+    Metastatic.Semantic.Domains.Auth
+    Metastatic.Semantic.Domains.Cache
+    Metastatic.Semantic.Domains.Queue
+    Metastatic.Semantic.Domains.File
+    Metastatic.Semantic.Domains.ExternalApi
+  )
   @semantic_ready_key {__MODULE__, :semantic_ready}
 
   @doc """
@@ -358,7 +447,9 @@ defmodule Ragex.LanguageSupport do
     if :persistent_term.get(@semantic_ready_key, false) do
       :ok
     else
-      Enum.each(@semantic_domain_modules, fn domain ->
+      Enum.each(@semantic_domain_module_names, fn name ->
+        domain = Module.concat([name])
+
         try do
           Code.ensure_loaded(domain)
 

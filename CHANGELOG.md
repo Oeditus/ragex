@@ -11,9 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Minimum Elixir is now 1.20** (was 1.18). This is the version that ships the
   set-theoretic type system Ragex's optional type inference reads back out of
-  compiled beams, and it lets the analyzer rely on 1.20's compiler behaviour
-  rather than carrying 1.18 compatibility shims.
+### Added
 
+- **Cure compiler discovery is no longer limited to `PATH`/`CURE_HOME`.**
+  `Ragex.Cure.Loader.find_executable/0` now checks, in order: `CURE_HOME`
+  (`bin/cure`, then `cure`), `PATH`, the new `CURE_ESCRIPT` variable, and
+  `cure-lang/cure` / `cure/cure` in the checkout or any of its ancestors. A
+  candidate is only accepted when it really is an escript (BEAM magic or a
+  shebang), so an unrelated file named `cure` is ignored. This makes a local
+  compiler checkout work without exporting anything.
+
+- **Markdown as a first-class language** (`.md`, `.markdown`), following
+  Metastatic 0.35's NL-MetaAST support. Ragex treats Markdown as a
+  *documentation* language: it is discovered, parsed, validated and indexed,
+  but kept out of passes that assume callable entities (dead code, duplication,
+  refactoring, directory source discovery).
+
+  - `Ragex.LanguageSupport` maps `.md`/`.markdown` to `:markdown`, resolves
+    `Metastatic.Adapters.Markdown`, and gains `documentation_language?/1`,
+    `documentation_file?/1`, `documentation_extension?/1` plus an
+    `include_documentation: false` option on `find_source_files/2`.
+  - `Ragex.Analyzers.Metastatic` materialises a single document entity for
+    Markdown files (named after the file's base name), so documentation lands
+    in the knowledge graph instead of silently vanishing from an analysis run.
+  - `Ragex.Analyzers.DeeperIndexing` indexes link/image destinations and bare
+    URLs as strings and headings as structural markers, skipping fenced,
+    indented and inline code so documentation is never polluted by the code
+    samples it embeds.
+  - `Ragex.Editor.Validators.Markdown` validates by round-tripping through the
+    adapter and reports unclosed fenced code blocks as warnings.
+  - Prose linting, readability metrics and semantic enrichment apply to
+    Markdown through the existing MetaCredo bridge, with no special-casing.
+
+- **Optional expression-level type inference**
 ### Added
 
 - **Optional expression-level type inference** (`Ragex.Analysis.TypeInfo`),

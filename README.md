@@ -211,7 +211,7 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ MCP Tools: `get_ai_usage`, `get_ai_cache_stats`<br/><br/>
     ▸ Metastatic Integration<br/>
       ▹ MetaAST Analyzer: Enhanced cross-language analysis via Metastatic library<br/>
-      ▹ Supported Languages: Elixir, Erlang, Python, Ruby, Haskell, JavaScript, TypeScript, Cure, March, Agda<br/>
+      ▹ Supported Languages: Elixir, Erlang, Python, Ruby, Haskell, JavaScript, TypeScript, Cure, March, Agda, Markdown<br/>
       ▹ Fallback Strategy: Graceful degradation to native analyzers<br/>
       ▹ Feature Flags: Configurable `use_metastatic` option<br/><br/>
     ▸ RAG Pipeline<br/>
@@ -1176,6 +1176,14 @@ Everything that’s supported by [`metastatic`](https://metastatic.hexdocs.pm)
 | Haskell  | :haskell        | .hs, .lhs	| haskell.ex     | Subprocess Stack binary (priv/parsers/haskell)       |
 | JS       | :javascript     | .js, .jsx	| javascript.ex  | Subprocess Node.js Babel parser (priv/parsers/js)    |
 | March    | :march          | .march, .mch	| march.ex       | Subprocess OCaml Dune binary (priv/parsers/march)    |
+| Markdown | :markdown       | .md, .markdown | markdown.ex    | In-process dependency-free Markdown parser (NL-MetaAST) |
 | Python   | :python         | .py          | python.ex      | Subprocess Python ast parser (priv/parsers/python)   |
 | Ruby     | :ruby           | .rb          | ruby.ex        | Subprocess Prism / Parser gem (priv/parsers/ruby)    |
 | TS       | :typescript     | .ts, .tsx    | typescript.ex  | Subprocess TypeScript compiler API (priv/parsers/js) |
+
+**Markdown is a *documentation* language.** It is parsed, validated and indexed
+like every other language -- prose linting, readability metrics and semantic
+enrichment all apply -- but it defines no callable entities, so it is excluded
+from passes that reason about calls and definitions (dead code, duplication,
+refactoring, directory source discovery). Pass `include_documentation: false`
+to `Ragex.LanguageSupport.find_source_files/2` for a code-only file list.

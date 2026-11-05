@@ -345,7 +345,7 @@ defmodule Ragex.Image do
          {:ok, overlay_img} <- Image.open(overlay_path) do
       overlay_processed =
         if opacity < 1.0 do
-          case Image.opacity(overlay_img, opacity) do
+          case Image.multiply_alpha(overlay_img, opacity) do
             {:ok, op_img} -> op_img
             _ -> overlay_img
           end

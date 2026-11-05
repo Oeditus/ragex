@@ -333,6 +333,7 @@ defmodule Ragex.Analysis.Duplication do
     |> Enum.filter(fn path ->
       File.regular?(path) &&
         Enum.any?(extensions, fn ext -> String.ends_with?(path, ext) end) &&
+        not Ragex.LanguageSupport.documentation_file?(path) &&
         not excluded?(path, exclude_patterns, dir)
     end)
   end

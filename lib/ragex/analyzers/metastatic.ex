@@ -12,13 +12,20 @@ defmodule Ragex.Analyzers.Metastatic do
   Each function in the analysis result is enriched with a `:metastatic` key:
 
       %{
-        metastatic: %{
-          cyclomatic: 3,
-          cognitive: 2,
-          max_nesting: 1,
-          halstead: %{volume: 50.0, difficulty: 2.5, ...},
-          loc: %{physical: 10, logical: 8, ...},
-          function_metrics: %{statement_count: 8, ...}
+  - **Modules** -- `:container` nodes with `container_type: :module` or `:class`
+  - **Functions** -- `:function_def` nodes with name, arity, visibility
+  - **Calls** -- `:function_call` nodes with caller/callee resolution
+  - **Imports** -- `:import` nodes with source and import type
+
+  ## Documentation Languages
+
+  Markdown documents carry no callable entities, so `MetaASTExtractor`
+  legitimately returns empty collections for them. `analyze/2` therefore
+  materialises a single *document* module (named after the file's base name)
+  so the file is still indexed, searchable and connected to the graph instead
+  of silently vanishing from an analysis run.
+
+  ## Usage
         }
       }
   """
@@ -42,7 +49,9 @@ defmodule Ragex.Analyzers.Metastatic do
 
     case Ragex.LanguageSupport.parse_document(source, language) do
       {:ok, doc} ->
-        analyze_via_meta_ast(doc, file_path)
+        doc
+        |> analyze_via_meta_ast(file_path)
+        |> ensure_document_entity(file_path, language)
 
       {:error, reason} ->
         Logger.warning(
@@ -270,19 +279,64 @@ defmodule Ragex.Analyzers.Metastatic do
       Application.get_env(:ragex, :features, [])
       |> Keyword.get(:fallback_to_native_analyzers, true)
 
-    if fallback? do
-      case language do
-        :elixir -> ExAnalyzer.analyze(source, file_path)
-        :erlang -> ErlAnalyzer.analyze(source, file_path)
-        :python -> PyAnalyzer.analyze(source, file_path)
-        :ruby -> RbAnalyzer.analyze(source, file_path)
-        :javascript -> JSAnalyzer.analyze(source, file_path)
-        :typescript -> JSAnalyzer.analyze(source, file_path)
-        _ -> {:error, :no_fallback_analyzer}
-      end
-    else
-      {:error, :metastatic_failed_no_fallback}
+    cond do
+      Ragex.LanguageSupport.documentation_language?(language) ->
+        {:ok, document_analysis(file_path, language)}
+
+      fallback? ->
+        case language do
+          :elixir -> ExAnalyzer.analyze(source, file_path)
+          :erlang -> ErlAnalyzer.analyze(source, file_path)
+          :python -> PyAnalyzer.analyze(source, file_path)
+          :ruby -> RbAnalyzer.analyze(source, file_path)
+          :javascript -> JSAnalyzer.analyze(source, file_path)
+          :typescript -> JSAnalyzer.analyze(source, file_path)
+          _ -> {:error, :no_fallback_analyzer}
+        end
+
+      true ->
+        {:error, :metastatic_failed_no_fallback}
     end
+  end
+
+  # Documentation languages (Markdown) have no functions, calls or imports by
+  # definition, so the MetaAST path legitimately yields empty collections.
+  # Materialise a single document entity instead, so the file still lands in
+  # the knowledge graph and stays discoverable via search.
+  defp ensure_document_entity({:ok, analysis}, file_path, language) do
+    if Ragex.LanguageSupport.documentation_language?(language) do
+      {:ok, %{analysis | modules: [document_entity(file_path, language)]}}
+    else
+      {:ok, analysis}
+    end
+  end
+
+  defp ensure_document_entity(error, _file_path, _language), do: error
+
+  defp document_analysis(file_path, language) do
+    %{
+      modules: [document_entity(file_path, language)],
+      functions: [],
+      calls: [],
+      imports: []
+    }
+  end
+
+  defp document_entity(file_path, language) do
+    %{
+      name: document_entity_name(file_path),
+      file: file_path,
+      line: 1,
+      doc: nil,
+      metadata: %{container_type: :document, language: language}
+    }
+  end
+
+  defp document_entity_name(file_path) do
+    file_path
+    |> Path.basename()
+    |> Path.rootname()
+    |> String.replace(~r/[^A-Za-z0-9_]/, "_")
   end
 
   defp safe_meta_ast_to_json(node) do

@@ -264,4 +264,118 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
       assert [_, _] = comments
     end
   end
+
+  describe "Markdown support" do
+    @document """
+    # Title
+
+    Some *prose* with a [link](https://example.com/docs) and <https://auto.link/x>.
+
+    See https://bare.example.com/page too.
+
+    ```elixir
+    def hello, do: "https://inside-fence.example.com"
+    ```
+
+        indented code https://indented.example.com
+
+    ## Section Two
+
+    Inline `[fake](https://fake.example.com)` is not a link.
+    """
+
+    test "indexes link, autolink and bare URL destinations" do
+      destinations =
+        @document
+        |> DeeperIndexing.extract_strings(:markdown)
+        |> Enum.map(&elem(&1, 1))
+
+      assert "https://example.com/docs" in destinations
+      assert "https://auto.link/x" in destinations
+      assert "https://bare.example.com/page" in destinations
+    end
+
+    test "skips fenced code blocks" do
+      destinations =
+        @document
+        |> DeeperIndexing.extract_strings(:markdown)
+        |> Enum.map(&elem(&1, 1))
+
+      refute "https://inside-fence.example.com" in destinations
+    end
+
+    test "skips indented code blocks" do
+      destinations =
+        @document
+        |> DeeperIndexing.extract_strings(:markdown)
+        |> Enum.map(&elem(&1, 1))
+
+      refute "https://indented.example.com" in destinations
+    end
+
+    test "skips inline code spans" do
+      destinations =
+        @document
+        |> DeeperIndexing.extract_strings(:markdown)
+        |> Enum.map(&elem(&1, 1))
+
+      refute "https://fake.example.com" in destinations
+    end
+
+    test "returns line numbers alongside destinations" do
+      assert [{3, "https://example.com/docs"} | _] =
+               DeeperIndexing.extract_strings(@document, :markdown)
+    end
+
+    test "extracts headings as structural markers" do
+      assert [{1, "Title"}, {13, "Section Two"}] =
+               DeeperIndexing.extract_comments(@document, :markdown)
+    end
+
+    test "ignores hash-prefixed lines inside code blocks" do
+      source = "# Real\n\n```bash\n# not a heading\n```\n"
+      assert [{1, "Real"}] = DeeperIndexing.extract_comments(source, :markdown)
+    end
+
+    test "handles a document with no links or headings" do
+      assert DeeperIndexing.extract_strings("just prose", :markdown) == []
+      assert DeeperIndexing.extract_comments("just prose", :markdown) == []
+    end
+
+    test "handles a longer closing fence" do
+      source = "```\ncode https://a.example.com\n````\n\n# After\n\nhttps://b.example.com\n"
+
+      assert [{7, "https://b.example.com"}] =
+               DeeperIndexing.extract_strings(source, :markdown)
+
+      assert [{5, "After"}] = DeeperIndexing.extract_comments(source, :markdown)
+    end
+
+    test "a tilde fence may contain backtick fences" do
+      source = "~~~\n```\nhttps://inside.example.com\n```\n~~~\n\nhttps://outside.example.com\n"
+
+      assert [{7, "https://outside.example.com"}] =
+               DeeperIndexing.extract_strings(source, :markdown)
+    end
+
+    test "an unclosed fence swallows the rest of the document" do
+      source = "https://before.example.com\n\n```\nhttps://inside.example.com\n"
+
+      assert [{1, "https://before.example.com"}] =
+               DeeperIndexing.extract_strings(source, :markdown)
+    end
+
+    test "associates every item with :module_level, since documents have no functions" do
+      enrichment = DeeperIndexing.extract(@document, "README.md", %{functions: []})
+
+      assert Map.keys(enrichment.strings) == [:module_level]
+      assert Map.keys(enrichment.comments) == [:module_level]
+    end
+
+    test "leaves code languages unaffected" do
+      assert DeeperIndexing.extract_strings(~s|def f, do: "hello"|, :elixir) == [
+               {1, "hello"}
+             ]
+    end
+  end
 end

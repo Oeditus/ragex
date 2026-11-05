@@ -89,7 +89,8 @@ defmodule Ragex.Editor.Validator do
       ruby: Ragex.Editor.Validators.Ruby,
       javascript: Ragex.Editor.Validators.Javascript,
       cure: Ragex.Editor.Validators.Cure,
-      agda: Ragex.Editor.Validators.Agda
+      agda: Ragex.Editor.Validators.Agda,
+      markdown: Ragex.Editor.Validators.Markdown
     }
   end
 

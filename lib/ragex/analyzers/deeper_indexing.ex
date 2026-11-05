@@ -19,6 +19,16 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     and `#`-style comments.
   - **JavaScript/TypeScript** -- regex extraction of string literals, template
     literals, and `//` / `/* */` comments.
+  - **Markdown** -- headings are indexed as structural markers, link and image
+    destinations as strings, and prose paragraphs as searchable text. Fenced
+    and indented code blocks are skipped so documentation is never polluted by
+    the code samples it embeds.
+
+  ## Documentation Languages
+
+  Markdown has no functions, so every extracted item is associated with
+  `:module_level`. `Ragex.Analyzers.Metastatic` materialises a single document
+  entity for such files, which is what makes the prose reachable from search.
 
   ## Usage
 
@@ -144,6 +154,19 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     extract_strings_regex(source, ~r/"([^"\\]|\\.)*"/, 1)
   end
 
+  # Markdown has no string literals. What is worth indexing is the *destination*
+  # of links and images: those are the URLs and paths a reader would search for.
+  # Bare URLs are included too, since autolinks and plain references are common.
+  def extract_strings(source, :markdown) do
+    source
+    |> markdown_prose_lines()
+    |> Enum.flat_map(fn {line_num, line} ->
+      markdown_destinations(line)
+      |> Enum.map(fn destination -> {line_num, destination} end)
+    end)
+    |> Enum.reject(fn {_line, destination} -> String.length(destination) < 3 end)
+  end
+
   def extract_strings(_source, _language), do: []
 
   defp extract_strings_regex(source, regex, _group) do
@@ -236,6 +259,32 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     extract_line_comments(source, ~r/^\s*#+\s*(.*)$/)
   end
 
+  # A Markdown document is *entirely* prose, so there is nothing to single out
+  # as a "comment". Headings are the closest structural equivalent: they carry
+  # the document's topic vocabulary and are what readers navigate by.
+  def extract_comments(source, :markdown) do
+    source
+    |> markdown_prose_lines()
+    |> Enum.flat_map(fn {line_num, line} ->
+      case Regex.run(~r/^\s{0,3}(\#{1,6})\s+(.+?)\s*#*\s*$/, line) do
+        [_, hashes, text] -> [{line_num, String.trim(text), String.length(hashes)}]
+        _ -> []
+      end
+    end)
+    |> Enum.reduce([], fn {line_num, text, _level}, acc ->
+      case acc do
+        # Merge consecutive heading lines, which is how wrapped ATX headings
+        # and adjacent setext titles are commonly written.
+        [{prev_line, prev_text} | rest] when line_num - prev_line == 1 ->
+          [{line_num, prev_text <> " " <> text} | rest]
+
+        _ ->
+          [{line_num, text} | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
   def extract_comments(_source, _language), do: []
 
   defp extract_line_comments(source, regex) do
@@ -265,6 +314,93 @@ defmodule Ragex.Analyzers.DeeperIndexing do
       end
     end)
     |> Enum.reverse()
+  end
+
+  # ── Markdown Helpers ────────────────────────────────────────────────
+
+  # Returns `{line_number, line}` pairs for everything that is *not* inside a
+  # fenced or indented code block. Code samples are skipped deliberately: a
+  # `def hello` inside a fenced block is documentation *about* code, not a
+  # symbol of the document, and indexing it would create phantom matches.
+  defp markdown_prose_lines(source) do
+    source
+    |> String.split("\n")
+    |> Enum.with_index(1)
+    |> Enum.reduce({[], nil}, fn {line, line_num}, {acc, fence} ->
+      case fence do
+        nil ->
+          cond do
+            fence_open?(line) ->
+              {acc, fence_marker(line)}
+
+            indented_code?(line) ->
+              {acc, :indented}
+
+            true ->
+              {[{line_num, line} | acc], nil}
+          end
+
+        :indented ->
+          # An indented block ends at the first non-blank, non-indented line.
+          if String.trim(line) == "" or indented_code?(line) do
+            {acc, :indented}
+          else
+            {[{line_num, line} | acc], nil}
+          end
+
+        marker ->
+          # A fenced block ends only at a fence of the same character.
+          if fence_open?(line) and fence_marker(line) == marker do
+            {acc, nil}
+          else
+            {acc, marker}
+          end
+      end
+    end)
+    |> elem(0)
+    |> Enum.reverse()
+  end
+
+  defp fence_open?(line) do
+    line |> String.trim_leading() |> fence_marker() |> Kernel.!=(nil)
+  end
+
+  defp fence_marker(line) do
+    trimmed = String.trim_leading(line)
+
+    cond do
+      String.starts_with?(trimmed, "```") -> "```"
+      String.starts_with?(trimmed, "~~~") -> "~~~"
+      true -> nil
+    end
+  end
+
+  defp indented_code?(line) do
+    String.trim(line) != "" and
+      (String.starts_with?(line, "    ") or String.starts_with?(line, "\t"))
+  end
+
+  # Extracts link/image destinations and bare URLs from a single line.
+  # Inline code spans are stripped first so `[x](y)` inside backticks is not
+  # mistaken for a real link.
+  defp markdown_destinations(line) do
+    cleaned = Regex.replace(~r/`[^`]*`/, line, " ")
+
+    bracketed =
+      Regex.scan(~r/!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?[^)]*\)/, cleaned, capture: :all_but_first)
+      |> List.flatten()
+
+    autolinks =
+      Regex.scan(~r/<((?:https?|mailto):[^>\s]+)>/, cleaned, capture: :all_but_first)
+      |> List.flatten()
+
+    bare_urls =
+      Regex.scan(~r/(?:^|\s)((?:https?|ftp):\/\/[^\s<>)\]]+)/, cleaned, capture: :all_but_first)
+      |> List.flatten()
+
+    (bracketed ++ autolinks ++ bare_urls)
+    |> Enum.map(&String.trim_trailing(&1, "."))
+    |> Enum.uniq()
   end
 
   # ── Function Association ────────────────────────────────────────────

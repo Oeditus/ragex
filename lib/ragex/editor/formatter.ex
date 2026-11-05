@@ -91,7 +91,7 @@ defmodule Ragex.Editor.Formatter do
     abs_path = Path.expand(path)
     cwd = project_root || Path.dirname(abs_path)
 
-    {"mix", ["format", Path.relative_to(abs_path, cwd)], [cd: cwd]}
+    {"mix", ["format"], [cd: cwd]}
   end
 
   defp detect_formatter(:erlang, path) do
@@ -178,8 +178,14 @@ defmodule Ragex.Editor.Formatter do
   defp detect_formatter(_language, _path), do: nil
 
   defp run_formatter(command, args, path, opts) do
+    target =
+      case Keyword.get(opts, :cd) do
+        nil -> path
+        cd -> Path.relative_to(Path.expand(path), cd)
+      end
+
     # Build full argument list
-    full_args = args ++ [path]
+    full_args = args ++ [target]
 
     Logger.debug("Running formatter: #{command} #{Enum.join(full_args, " ")}")
 

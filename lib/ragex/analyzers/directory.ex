@@ -421,8 +421,13 @@ defmodule Ragex.Analyzers.Directory do
     end
   end
 
+  # Documentation languages (Markdown) are parseable but define no callable
+  # entities, so they are not "source" for the purposes of directory analysis.
+  # They remain reachable through `Ragex.LanguageSupport.find_source_files/2`,
+  # which includes them unless `include_documentation: false` is passed.
   defp supported_file?(path) do
-    Path.extname(path) in Ragex.LanguageSupport.supported_extensions()
+    Path.extname(path) in Ragex.LanguageSupport.supported_extensions() and
+      not Ragex.LanguageSupport.documentation_file?(path)
   end
 
   defp filter_changed_files(file_paths) do
