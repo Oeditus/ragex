@@ -213,15 +213,10 @@ defmodule Ragex.Analysis.TypeInfo do
     cond do
       is_nil(type) -> ""
       is_binary(type) -> type
-      function_exported?(Typle.Type, :to_string, 1) -> safe_to_string(type)
+      # credo:disable-for-next-line
+      function_exported?(Typle.Type, :to_string, 1) -> apply(Typle.Type, :to_string, [type])
       true -> inspect(type)
     end
-  end
-
-  defp safe_to_string(type) do
-    Typle.Type.to_string(type)
-  rescue
-    _ -> inspect(type)
   end
 
   defp ratio(_part, 0), do: 0.0
