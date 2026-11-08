@@ -17,10 +17,15 @@ defmodule Ragex.Languages do
   * **A language Metastatic already supports** (e.g. `:rust` once an adapter
     exists): it appears here automatically. To give it a validator or native
     analyzer, add an entry to the relevant overlay map below.
-  * **A language only Ragex can handle** (via SCIP, e.g. Go, Rust, Java): add
+  * **A language only Ragex can handle** (via SCIP, e.g. Go, Rust): add
     it to `@scip_languages`. It is surfaced as a language with no Metastatic
     adapter but a SCIP indexer.
 
+  A language can be both. `:java` is the worked example: Metastatic ships a
+  `Metastatic.Adapters.Java` adapter (JDK tree API via a subprocess bridge), so
+  Java becomes a first-class parseable language with a validator and a native
+  fallback analyzer, *and* it keeps its `scip-java` entry for projects that
+  prefer precise cross-file symbol indexing. `:ruby` is the same shape.
   ## Examples
 
       iex> Ragex.Languages.supported?(:elixir)
@@ -48,6 +53,7 @@ defmodule Ragex.Languages do
     ruby: Ragex.Editor.Validators.Ruby,
     javascript: Ragex.Editor.Validators.Javascript,
     typescript: Ragex.Editor.Validators.Javascript,
+    java: Ragex.Editor.Validators.Java,
     cure: Ragex.Editor.Validators.Cure,
     agda: Ragex.Editor.Validators.Agda,
     markdown: Ragex.Editor.Validators.Markdown
@@ -59,7 +65,8 @@ defmodule Ragex.Languages do
     python: Ragex.Analyzers.Python,
     ruby: Ragex.Analyzers.Ruby,
     javascript: Ragex.Analyzers.JavaScript,
-    typescript: Ragex.Analyzers.JavaScript
+    typescript: Ragex.Analyzers.JavaScript,
+    java: Ragex.Analyzers.Java
   }
 
   # Languages handled only through SCIP (no Metastatic adapter). These are
@@ -76,7 +83,7 @@ defmodule Ragex.Languages do
       indexer: "scip-java",
       indexer_args: ["index"],
       extensions: [".java"],
-      marker_files: ["pom.xml", "build.gradle"]
+      marker_files: ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle"]
     },
     kotlin: %{
       indexer: "scip-java",
