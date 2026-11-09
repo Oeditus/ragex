@@ -46,14 +46,19 @@ defmodule Ragex.Embeddings.Bumblebee do
   end
 
   @doc """
-  Returns `true` when CUDA GPU acceleration is available via EXLA.
+  Returns `true` when EXLA reports at least one CUDA device.
+
+  Does not create a client: requesting an unsupported platform can crash the
+  shared `EXLA.Client` GenServer even if the caller catches the exit.
   """
   @spec cuda_available?() :: boolean()
   def cuda_available? do
     if available?() do
       try do
-        _ = EXLA.Client.fetch!(:cuda)
-        true
+        match?(
+          %{cuda: devices} when is_integer(devices) and devices > 0,
+          EXLA.Client.get_supported_platforms()
+        )
       rescue
         _ -> false
       catch
