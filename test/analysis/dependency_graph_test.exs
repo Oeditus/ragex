@@ -257,6 +257,22 @@ defmodule Ragex.Analysis.DependencyGraphTest do
       afferents = Enum.map(all_metrics, fn {_module, metrics} -> metrics.afferent end)
       assert afferents == Enum.sort(afferents, :desc)
     end
+
+    test "skips modules whose coupling cannot be computed instead of crashing" do
+      # A module can be present in the graph but fail to resolve to coupling
+      # metrics (e.g. a referenced-but-undefined name such as `ClientConfig`).
+      # Previously this raised a MatchError and aborted the whole project
+      # calculation; now the offending module is skipped.
+      Store.add_node(:module, :Unresolvable, %{file: "unresolvable.ex", line: 1})
+
+      {:ok, all_metrics} = DependencyGraph.all_coupling_metrics()
+
+      modules = Enum.map(all_metrics, fn {module, _metrics} -> module end)
+      assert :ModA in modules
+      assert length(all_metrics) >= 5
+
+      assert Enum.all?(all_metrics, fn {_module, metrics} -> is_map(metrics) end)
+    end
   end
 
   describe "find_unused/1" do

@@ -353,6 +353,7 @@ defmodule Ragex.Retrieval.CrossLanguage do
       String.ends_with?(file, [".erl", ".hrl"]) -> :erlang
       String.ends_with?(file, ".py") -> :python
       String.ends_with?(file, [".js", ".jsx", ".ts", ".tsx"]) -> :javascript
+      String.ends_with?(file, ".java") -> :java
       true -> nil
     end
   end

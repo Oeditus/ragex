@@ -268,9 +268,22 @@ defmodule Ragex.Analysis.DependencyGraph do
 
       metrics_list =
         modules
-        |> Enum.map(fn module ->
-          {:ok, metrics} = coupling_metrics(module, include_transitive: include_transitive)
-          {module, metrics}
+        |> Enum.flat_map(fn module ->
+          # A module recorded in the graph may not be resolvable to coupling
+          # metrics (e.g. a referenced-but-undefined name such as
+          # `ClientConfig`). Skip those instead of aborting the whole project
+          # calculation with a MatchError.
+          case coupling_metrics(module, include_transitive: include_transitive) do
+            {:ok, metrics} ->
+              [{module, metrics}]
+
+            {:error, reason} ->
+              Logger.debug(fn ->
+                "Skipping coupling metrics for #{inspect(module)}: #{inspect(reason)}"
+              end)
+
+              []
+          end
         end)
         |> sort_coupling_metrics(sort_by, descending)
 

@@ -407,5 +407,23 @@ defmodule Ragex.Editor.CoreTest do
       assert is_list(errors)
       assert errors != []
     end
+
+    test "returns enoent error with helpful path suggestion when file is missing in nested directory",
+         %{test_dir: dir} do
+      real_nested_file = Path.join([dir, "sub", "pkg", "MyClass.java"])
+      File.mkdir_p!(Path.dirname(real_nested_file))
+      File.write!(real_nested_file, "class MyClass {}")
+
+      # Model guessed wrong path with same basename
+      guessed_wrong_path = Path.join([dir, "wrong", "hierarchy", "MyClass.java"])
+      changes = [Types.replace(1, 1, "class MyClassModified {}")]
+
+      assert {:error, {:enoent, msg}} =
+               Core.edit_file(guessed_wrong_path, changes, validate: false)
+
+      assert msg =~ "does not exist"
+      assert msg =~ "Did you mean"
+      assert msg =~ "MyClass.java"
+    end
   end
 end

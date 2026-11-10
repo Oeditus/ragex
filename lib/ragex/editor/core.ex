@@ -54,7 +54,7 @@ defmodule Ragex.Editor.Core do
 
     with :ok <- validate_changes_list(changes),
          {:ok, abs_path} <- expand_path(path),
-         {:ok, original_content} <- File.read(abs_path),
+         {:ok, original_content} <- read_file_for_edit(path, abs_path),
          {:ok, original_stat} <- File.stat(abs_path),
          {:ok, backup_info} <- maybe_create_backup(abs_path, create_backup_opt),
          {:ok, modified_content} <-
@@ -97,7 +97,7 @@ defmodule Ragex.Editor.Core do
   def validate_changes(path, changes, opts \\ []) do
     with :ok <- validate_changes_list(changes),
          {:ok, abs_path} <- expand_path(path),
-         {:ok, original_content} <- File.read(abs_path),
+         {:ok, original_content} <- read_file_for_edit(path, abs_path),
          {:ok, _modified_content} <-
            apply_changes_and_validate(original_content, changes, abs_path, true, opts) do
       :ok
@@ -152,6 +152,95 @@ defmodule Ragex.Editor.Core do
 
   defp expand_path(path) do
     {:ok, Path.expand(path)}
+  end
+
+  @doc """
+  Attempts to find a candidate matching file in the workspace when a requested path does not exist.
+  """
+  @spec suggest_file_path(String.t(), String.t()) :: String.t() | nil
+  def suggest_file_path(path, cwd \\ File.cwd!()) do
+    basename = Path.basename(path)
+
+    if basename != "" and basename != "." do
+      abs_path = Path.expand(path, cwd)
+
+      search_dirs =
+        [cwd, find_search_root(abs_path)]
+        |> Enum.uniq()
+        |> Enum.filter(&(&1 && File.dir?(&1)))
+
+      search_dirs
+      |> Enum.find_value(nil, fn root ->
+        root
+        |> Path.join("**/#{basename}")
+        |> Path.wildcard()
+        |> Enum.reject(fn p ->
+          String.contains?(p, [
+            "/_build/",
+            "/deps/",
+            "/target/",
+            "/.git/",
+            "/.ragex/",
+            "/.yoke/",
+            "/node_modules/"
+          ])
+        end)
+        |> case do
+          [match | _] ->
+            Path.relative_to(match, root)
+
+          [] ->
+            nil
+        end
+      end)
+    else
+      nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp find_search_root(abs_path) do
+    find_marker_root(Path.dirname(abs_path))
+  end
+
+  defp find_marker_root("/"), do: nil
+  defp find_marker_root(""), do: nil
+
+  defp find_marker_root(dir) do
+    if File.exists?(Path.join(dir, ".git")) or
+         File.exists?(Path.join(dir, "pom.xml")) or
+         File.exists?(Path.join(dir, "mix.exs")) or
+         File.exists?(Path.join(dir, "build.gradle")) do
+      dir
+    else
+      parent = Path.dirname(dir)
+
+      if parent in ["/", "/tmp", "/home", dir] do
+        dir
+      else
+        find_marker_root(parent)
+      end
+    end
+  end
+
+  defp read_file_for_edit(path, abs_path) do
+    case File.read(abs_path) do
+      {:ok, content} ->
+        {:ok, content}
+
+      {:error, :enoent} ->
+        hint =
+          case suggest_file_path(path) do
+            nil -> ""
+            suggested -> " Did you mean '#{suggested}'?"
+          end
+
+        {:error, {:enoent, "File '#{path}' does not exist (resolved to '#{abs_path}').#{hint}"}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp maybe_create_backup(_path, false), do: {:ok, nil}

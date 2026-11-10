@@ -377,5 +377,36 @@ defmodule Ragex.Analyzers.DeeperIndexingTest do
                {1, "hello"}
              ]
     end
+
+    test "extracts Java strings, text blocks, and comments" do
+      java_code = ~s'''
+      // Class comment
+      package de.idigath.service;
+
+      /**
+       * Javadoc documentation
+       */
+      public class Foo {
+          /* inline block comment */
+          String greeting = "Hello Java";
+          String query = """
+              SELECT * FROM articles
+              """;
+      }
+      '''
+
+      strings = DeeperIndexing.extract_strings(java_code, :java)
+      string_values = Enum.map(strings, &elem(&1, 1))
+
+      assert "Hello Java" in string_values
+      assert Enum.any?(string_values, &String.contains?(&1, "SELECT * FROM articles"))
+
+      comments = DeeperIndexing.extract_comments(java_code, :java)
+      comment_texts = Enum.map(comments, &elem(&1, 1))
+
+      assert "Class comment" in comment_texts
+      assert Enum.any?(comment_texts, &String.contains?(&1, "Javadoc documentation"))
+      assert "inline block comment" in comment_texts
+    end
   end
 end

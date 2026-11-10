@@ -150,6 +150,21 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     Enum.sort_by(templates ++ quoted, &elem(&1, 0))
   end
 
+  def extract_strings(source, :java) do
+    # Multi-line text blocks (Java 15+)
+    text_blocks =
+      Regex.scan(~r/"""([\s\S]*?)"""/, source)
+      |> Enum.flat_map(fn [full_match, content] ->
+        before = String.split(source, full_match) |> hd()
+        line_num = length(String.split(before, "\n"))
+        [{line_num, String.trim(content)}]
+      end)
+
+    strings = extract_strings_regex(source, ~r/"([^"\\]|\\.)*"/, 1)
+
+    Enum.sort_by(text_blocks ++ strings, &elem(&1, 0))
+  end
+
   def extract_strings(source, lang) when lang in [:haskell, :agda, :cure] do
     extract_strings_regex(source, ~r/"([^"\\]|\\.)*"/, 1)
   end
@@ -225,7 +240,7 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     extract_line_comments(source, ~r/^\s*#\s*(.*)$/)
   end
 
-  def extract_comments(source, lang) when lang in [:javascript, :typescript] do
+  def extract_comments(source, lang) when lang in [:javascript, :typescript, :java] do
     line_comments = extract_line_comments(source, ~r|^\s*//\s*(.*)$|)
 
     # Block comments: /* ... */

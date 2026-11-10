@@ -172,7 +172,7 @@ defmodule Ragex.MCP.Handlers.Tools do
             language: %{
               type: "string",
               description: "Programming language (auto-detect if not specified)",
-              enum: ["elixir", "erlang", "python", "javascript", "typescript", "auto"]
+              enum: ["elixir", "erlang", "python", "javascript", "typescript", "java", "auto"]
             },
             generate_embeddings: %{
               type: "boolean",
@@ -468,7 +468,7 @@ defmodule Ragex.MCP.Handlers.Tools do
             source_language: %{
               type: "string",
               description: "Source language",
-              enum: ["elixir", "erlang", "python", "javascript"]
+              enum: ["elixir", "erlang", "python", "javascript", "java"]
             },
             source_construct: %{
               type: "string",
@@ -480,7 +480,7 @@ defmodule Ragex.MCP.Handlers.Tools do
               description: "Target languages to search (empty = all languages)",
               items: %{
                 type: "string",
-                enum: ["elixir", "erlang", "python", "javascript"]
+                enum: ["elixir", "erlang", "python", "javascript", "java"]
               },
               default: []
             },
@@ -513,7 +513,7 @@ defmodule Ragex.MCP.Handlers.Tools do
             language: %{
               type: "string",
               description: "Source language",
-              enum: ["elixir", "erlang", "python", "javascript"]
+              enum: ["elixir", "erlang", "python", "javascript", "java"]
             },
             code: %{
               type: "string",
@@ -524,7 +524,7 @@ defmodule Ragex.MCP.Handlers.Tools do
               description: "Languages to generate alternatives for",
               items: %{
                 type: "string",
-                enum: ["elixir", "erlang", "python", "javascript"]
+                enum: ["elixir", "erlang", "python", "javascript", "java"]
               },
               default: []
             }
@@ -583,7 +583,7 @@ defmodule Ragex.MCP.Handlers.Tools do
               description: "Filter by languages (empty = all)",
               items: %{
                 type: "string",
-                enum: ["elixir", "erlang", "python", "javascript"]
+                enum: ["elixir", "erlang", "python", "javascript", "java"]
               },
               default: []
             },
@@ -655,7 +655,7 @@ defmodule Ragex.MCP.Handlers.Tools do
             language: %{
               type: "string",
               description: "Explicit language for validation (auto-detected from extension)",
-              enum: ["elixir", "erlang", "python", "javascript"]
+              enum: ["elixir", "erlang", "python", "javascript", "java"]
             }
           },
           required: ["path", "changes"]
@@ -688,7 +688,7 @@ defmodule Ragex.MCP.Handlers.Tools do
             language: %{
               type: "string",
               description: "Explicit language for validation",
-              enum: ["elixir", "erlang", "python", "javascript"]
+              enum: ["elixir", "erlang", "python", "javascript", "java"]
             }
           },
           required: ["path", "changes"]
@@ -989,7 +989,7 @@ defmodule Ragex.MCP.Handlers.Tools do
                     type: "string",
                     description:
                       "Explicit language for validation (auto-detected from extension)",
-                    enum: ["elixir", "erlang", "python", "javascript"]
+                    enum: ["elixir", "erlang", "python", "javascript", "java"]
                   }
                 },
                 required: ["path", "changes"]
@@ -1816,7 +1816,7 @@ defmodule Ragex.MCP.Handlers.Tools do
             language: %{
               type: "string",
               description: "Explicit language override",
-              enum: ["elixir", "erlang", "python", "javascript", "typescript"]
+              enum: ["elixir", "erlang", "python", "javascript", "typescript", "java"]
             },
             ai_explain: %{
               type: "boolean",
@@ -2511,6 +2511,8 @@ defmodule Ragex.MCP.Handlers.Tools do
   def format_reason(""), do: "‹UNKNOWN›"
   def format_reason(reason) when is_binary(reason), do: reason
   def format_reason({_, reason, _}) when is_binary(reason), do: reason
+  def format_reason({_, reason}) when is_binary(reason), do: reason
+  def format_reason(reason), do: inspect(reason)
 
   # Private functions
 
@@ -2668,6 +2670,13 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp get_analyzer("javascript", _path), do: JavaScriptAnalyzer
   defp get_analyzer("typescript", _path), do: JavaScriptAnalyzer
+
+  defp get_analyzer("java", path) do
+    if use_metastatic?() and metastatic_supports?(path),
+      do: Ragex.Analyzers.Metastatic,
+      else: Ragex.Analyzers.Java
+  end
+
   defp get_analyzer("agda", _path), do: Ragex.Analyzers.Metastatic
   defp get_analyzer("cure", _path), do: Ragex.Analyzers.Metastatic
   defp get_analyzer("markdown", _path), do: Ragex.Analyzers.Metastatic
@@ -2690,6 +2699,7 @@ defmodule Ragex.MCP.Handlers.Tools do
       ext in [".erl", ".hrl"] -> ErlangAnalyzer
       ext == ".py" -> PythonAnalyzer
       ext in [".js", ".jsx", ".ts", ".tsx", ".mjs"] -> JavaScriptAnalyzer
+      ext == ".java" -> Ragex.Analyzers.Java
       # Default fallback
       true -> ElixirAnalyzer
     end
@@ -2700,6 +2710,7 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp get_language_name(ErlangAnalyzer), do: "erlang"
   defp get_language_name(PythonAnalyzer), do: "python"
   defp get_language_name(JavaScriptAnalyzer), do: "javascript"
+  defp get_language_name(Ragex.Analyzers.Java), do: "java"
   defp get_language_name(_), do: "unknown"
 
   @doc """
@@ -3267,6 +3278,9 @@ defmodule Ragex.MCP.Handlers.Tools do
            "hint" => hint,
            "errors" => Enum.map(errors, &format_validation_error/1)
          }}
+
+      {:error, {:enoent, msg}} when is_binary(msg) ->
+        {:error, "Edit failed: #{msg}"}
 
       {:error, reason} when is_binary(reason) ->
         {:error, "Edit failed: #{reason}"}

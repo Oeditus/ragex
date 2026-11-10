@@ -2,7 +2,7 @@ defmodule Ragex.Editor.ValidatorsTest do
   use ExUnit.Case, async: true
 
   alias Ragex.Editor.Validator
-  alias Ragex.Editor.Validators.{Agda, Cure, Erlang, Javascript, Python}
+  alias Ragex.Editor.Validators.{Agda, Cure, Erlang, Java, Javascript, Python}
   alias Ragex.Editor.Validators.Elixir, as: ElixirValidator
 
   describe "Ragex.Editor.Validator" do
@@ -491,6 +491,64 @@ defmodule Ragex.Editor.ValidatorsTest do
       refute Agda.can_validate?("test.ex")
       refute Agda.can_validate?("test.cure")
       refute Agda.can_validate?("test.py")
+    end
+  end
+
+  describe "Ragex.Editor.Validators.Java" do
+    test "validates correct Java syntax" do
+      code = """
+      package de.idigath.service;
+
+      public class Foo {
+          public int getAnswer() {
+              return 42;
+          }
+      }
+      """
+
+      assert {:ok, :valid} =
+               Java.validate(code, path: "src/main/java/de/idigath/service/Foo.java")
+    end
+
+    test "fails on syntax errors" do
+      bad_code = "public class Foo { invalid syntax !!! }"
+      assert {:error, [error]} = Java.validate(bad_code)
+      assert error.severity == :error
+    end
+
+    test "detects public type and filename mismatch" do
+      code = "package de.idigath.service; public class Foo {}"
+
+      assert {:error, [error]} =
+               Java.validate(code, path: "src/main/java/de/idigath/service/Bar.java")
+
+      assert error.message =~ "Public class 'Foo' must be declared in a file named 'Foo.java'"
+    end
+
+    test "detects package and directory hierarchy mismatch" do
+      code = "package de.idigath.service; public class Foo {}"
+
+      assert {:error, [error]} =
+               Java.validate(code, path: "src/main/java/com/example/Foo.java")
+
+      assert error.message =~ "Package 'de.idigath.service' does not match file path"
+    end
+
+    test "warns on placeholder packages" do
+      code = "package com.example; public class Foo {}"
+
+      assert {:error, [error]} =
+               Java.validate(code, path: "src/main/java/com/example/Foo.java")
+
+      assert error.severity == :warning
+      assert error.message =~ "Placeholder package 'com.example' detected"
+    end
+
+    test "can_validate? returns true for .java files" do
+      assert Java.can_validate?("Foo.java")
+      assert Java.can_validate?("src/main/java/Foo.java")
+      refute Java.can_validate?("test.ex")
+      refute Java.can_validate?("test.py")
     end
   end
 end
