@@ -21,6 +21,10 @@ config :logger,
 
 # EXLA Compiler & CUDA Memory Configuration
 # Prevents EXLA from pre-allocating 90% of GPU VRAM upfront to avoid OOM
+if Code.ensure_loaded?(Ragex.CudaDetector) and Ragex.CudaDetector.cuda_available?() do
+  config :ragex, :exla_client, :cuda
+end
+
 config :exla,
   clients: [
     cuda: [

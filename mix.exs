@@ -1,3 +1,7 @@
+Code.compiler_options(ignore_module_conflict: true)
+Code.require_file("lib/ragex/cuda_detector.ex", __DIR__)
+Ragex.CudaDetector.auto_configure()
+
 defmodule Ragex.MixProject do
   use Mix.Project
 
