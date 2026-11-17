@@ -42,6 +42,7 @@ defmodule Ragex.LanguageSupport do
 
   alias Metastatic.{Adapter, Document}
   alias Ragex.Cure.Loader, as: CureLoader
+  alias Ragex.Plugin.LanguageRunner
 
   # Language metadata (extensions, adapters, documentation flags) lives in
   # `Ragex.Languages`, which derives it from `Metastatic.Languages`. This module
@@ -135,8 +136,14 @@ defmodule Ragex.LanguageSupport do
         end
 
       case res do
-        {:ok, %Document{} = doc} -> {:ok, doc}
-        {:error, _} = error -> error
+        {:ok, %Document{} = doc} ->
+          # Language plugins get a chance to repair or enrich the document
+          # before any analyzer consumes it. The runner never fails: a broken
+          # plugin degrades to an unmodified document rather than a lost file.
+          {:ok, LanguageRunner.post_process(doc, language, opts)}
+
+        {:error, _} = error ->
+          error
       end
     end
   end

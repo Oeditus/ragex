@@ -65,6 +65,7 @@ defmodule Ragex.Plugin do
           required(:description) => String.t(),
           optional(:author) => String.t() | nil,
           optional(:category) => plugin_category(),
+          optional(:language) => atom(),
           optional(:dependencies) => [atom()],
           optional(:priority) => integer(),
           optional(:capabilities) => [atom()]

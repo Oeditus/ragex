@@ -2586,6 +2586,10 @@ defmodule Ragex.MCP.Handlers.Tools do
     # Load and initialize store and per-project .ragex db for target directory
     Store.load_project(path)
 
+    # Tell the plugin registry which languages this workspace actually uses, so
+    # language-scoped plugins only advertise tools that can do something here.
+    refresh_active_languages(path)
+
     opts = []
 
     opts =
@@ -2606,6 +2610,31 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp analyze_directory(_), do: {:error, "Invalid parameters for analyze_directory"}
+
+  # Derives the workspace's language set from the files actually present and
+  # hands it to the plugin registry. Best-effort: any failure leaves scoping
+  # disabled (everything advertised), which is the safe default.
+  defp refresh_active_languages(path) do
+    if Process.whereis(Ragex.Plugin.Registry) do
+      case Ragex.LanguageSupport.find_source_files(path, include_documentation: false) do
+        {:ok, files} ->
+          languages =
+            files
+            |> Enum.map(&Ragex.Languages.detect_language/1)
+            |> Enum.reject(&(&1 == :unknown))
+            |> Enum.uniq()
+
+          Ragex.Plugin.Registry.set_active_languages(languages)
+
+        _ ->
+          :ok
+      end
+    end
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
+  end
 
   defp watch_directory(%{"path" => path} = params) do
     opts =

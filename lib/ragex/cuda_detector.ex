@@ -11,6 +11,7 @@ defmodule Ragex.CudaDetector do
   Runs GPU detection and configures environment and application settings for CUDA
   if a GPU is detected and CPU-only mode has not been explicitly requested.
   """
+  @spec auto_configure() :: {:ok, map()} | :cpu_only | :no_gpu
   def auto_configure do
     if cpu_only?() do
       :cpu_only
@@ -30,6 +31,7 @@ defmodule Ragex.CudaDetector do
   Returns `true` if CPU-only mode is explicitly enforced via `EXLA_CPU_ONLY=true`
   or `XLA_TARGET=cpu`.
   """
+  @spec cpu_only?() :: boolean()
   def cpu_only? do
     System.get_env("EXLA_CPU_ONLY") in ["1", "true"] or
       System.get_env("XLA_TARGET") == "cpu"
@@ -38,6 +40,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Returns `true` if CUDA has been configured in the environment or application.
   """
+  @spec configured_cuda?() :: boolean()
   def configured_cuda? do
     System.get_env("XLA_TARGET") in ["cuda", "cuda12", "cuda13"] or
       System.get_env("RAGEX_EXLA_CLIENT") == "cuda" or
@@ -47,6 +50,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Returns `true` if a CUDA GPU is available or configured, and CPU-only mode is not set.
   """
+  @spec cuda_available?() :: boolean()
   def cuda_available? do
     not cpu_only?() and (configured_cuda?() or gpu_present?())
   end
@@ -54,6 +58,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Detects NVIDIA hardware, CUDA toolkits, and library directories.
   """
+  @spec detect() :: {:ok, map()} | :no_gpu
   def detect do
     if gpu_present?() do
       nvcc_path = find_nvcc()
@@ -84,6 +89,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Checks for the presence of NVIDIA GPU devices or drivers.
   """
+  @spec gpu_present?() :: boolean()
   def gpu_present? do
     File.exists?("/dev/nvidia0") or
       File.exists?("/dev/nvidiactl") or
@@ -103,6 +109,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Finds the `nvcc` compiler executable in PATH or standard installation locations.
   """
+  @spec find_nvcc() :: String.t() | nil
   def find_nvcc do
     case System.find_executable("nvcc") do
       nil ->
@@ -129,6 +136,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Locates the CUDA root directory from environment variables, nvcc path, or standard paths.
   """
+  @spec find_cuda_home(String.t() | nil) :: String.t() | nil
   def find_cuda_home(nvcc_path) do
     cond do
       env_home = System.get_env("CUDA_HOME") || System.get_env("CUDA_PATH") ->
@@ -154,6 +162,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Finds CUDA and companion library directories (libcudart, libcublas, libcudnn, libnccl, etc.).
   """
+  @spec find_cuda_lib_dirs(String.t() | nil) :: [String.t()]
   def find_cuda_lib_dirs(cuda_home) do
     if cuda_home && File.dir?(cuda_home) do
       candidates = [
@@ -177,6 +186,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Infers the appropriate XLA target ("cuda13", "cuda12", or "cuda").
   """
+  @spec infer_target(String.t() | nil) :: String.t()
   def infer_target(nvcc_path) do
     case System.get_env("XLA_TARGET") do
       target when is_binary(target) and target not in ["", "cpu"] ->
@@ -229,6 +239,7 @@ defmodule Ragex.CudaDetector do
   @doc """
   Applies detected CUDA configuration to environment variables and application config.
   """
+  @spec apply_env(map()) :: :ok
   def apply_env(info) do
     if is_nil(System.get_env("XLA_TARGET")) or System.get_env("XLA_TARGET") == "" do
       System.put_env("XLA_TARGET", info.target)

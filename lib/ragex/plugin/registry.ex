@@ -12,7 +12,8 @@ defmodule Ragex.Plugin.Registry do
     Ragex.Plugins.GitArchaeology,
     Ragex.Plugins.CodeQuality,
     Ragex.Plugins.SecurityAudit,
-    Ragex.Plugins.URLAnalyzer
+    Ragex.Plugins.URLAnalyzer,
+    Ragex.Plugins.Languages.Elixir
   ]
 
   # Client API
@@ -86,6 +87,30 @@ defmodule Ragex.Plugin.Registry do
     GenServer.call(__MODULE__, :list_dependencies)
   end
 
+  @doc """
+  Sets the languages present in the workspace being analysed.
+
+  Language-scoped plugins (`Ragex.Plugin.Language`) only advertise their tools
+  when one of their languages is active. Passing `[]` disables scoping
+  entirely, which is the default: every plugin is advertised.
+  """
+  @spec set_active_languages([atom()]) :: :ok
+  def set_active_languages(languages) when is_list(languages) do
+    GenServer.call(__MODULE__, {:set_active_languages, languages})
+  end
+
+  @doc "Returns the languages currently considered active."
+  @spec active_languages() :: [atom()]
+  def active_languages do
+    GenServer.call(__MODULE__, :active_languages)
+  end
+
+  @doc "Returns the language-scoped plugins serving `language`."
+  @spec plugins_for_language(atom()) :: [module()]
+  def plugins_for_language(language) when is_atom(language) do
+    GenServer.call(__MODULE__, {:plugins_for_language, language})
+  end
+
   # Server Callbacks
 
   @impl true
@@ -96,7 +121,10 @@ defmodule Ragex.Plugin.Registry do
     state = %{
       plugins: %{},
       tool_map: %{},
-      running_tools: %{}
+      running_tools: %{},
+      # Empty means "no scoping": every plugin is advertised, which preserves
+      # the pre-language-plugin behaviour for existing installations.
+      active_languages: []
     }
 
     state =
@@ -177,7 +205,9 @@ defmodule Ragex.Plugin.Registry do
           :capabilities,
           :module,
           :enabled,
-          :tools_count
+          :tools_count,
+          :languages,
+          :available?
         ])
       end)
 
@@ -190,9 +220,32 @@ defmodule Ragex.Plugin.Registry do
       state.plugins
       |> get_topological_sorted_plugins()
       |> Enum.filter(& &1.enabled)
-      |> Enum.flat_map(& &1.tools)
+      |> Enum.filter(&scoped_in?(&1, state.active_languages))
+      |> Enum.flat_map(&advertised_tools(&1, state.active_languages))
 
     {:reply, tools, state}
+  end
+
+  @impl true
+  def handle_call({:set_active_languages, languages}, _from, state) do
+    {:reply, :ok, %{state | active_languages: Enum.uniq(languages)}}
+  end
+
+  @impl true
+  def handle_call(:active_languages, _from, state) do
+    {:reply, state.active_languages, state}
+  end
+
+  @impl true
+  def handle_call({:plugins_for_language, language}, _from, state) do
+    modules =
+      state.plugins
+      |> Map.values()
+      |> Enum.filter(&(&1.enabled and language in &1.languages))
+      |> Enum.sort_by(& &1.priority)
+      |> Enum.map(& &1.module)
+
+    {:reply, modules, state}
   end
 
   @impl true
@@ -309,6 +362,41 @@ defmodule Ragex.Plugin.Registry do
     {:reply, {:ok, combined_results}, state}
   end
 
+  # A plugin is in scope when it declares no languages (generic plugin), when
+  # no languages are active (scoping disabled), or when at least one of its
+  # languages is active in the workspace.
+  @doc false
+  @spec scoped_in?(map(), [atom()]) :: boolean()
+  def scoped_in?(%{languages: []}, _active), do: true
+  def scoped_in?(_entry, []), do: true
+  def scoped_in?(%{languages: languages}, active), do: Enum.any?(languages, &(&1 in active))
+
+  # Language-scoped plugins may vary their tool set per active language; generic
+  # plugins always advertise their static `tools/0`.
+  #
+  # With no active languages, scoping is disabled and every language plugin
+  # advertises its full set -- otherwise `set_active_languages([])` would hide
+  # language tools entirely instead of turning scoping off.
+  @doc false
+  @spec advertised_tools(map(), [atom()]) :: [map()]
+  def advertised_tools(%{languages: []} = entry, _active), do: entry.tools
+
+  def advertised_tools(%{module: mod, languages: languages} = entry, active) do
+    if function_exported?(mod, :language_tools, 1) do
+      languages
+      |> filter_active(active)
+      |> Enum.flat_map(&mod.language_tools/1)
+      |> Enum.map(&Map.put_new(&1, :destruction_level, :none))
+    else
+      entry.tools
+    end
+  end
+
+  # An empty `active` set means scoping is disabled, so every language the
+  # plugin serves contributes its tools.
+  defp filter_active(languages, []), do: languages
+  defp filter_active(languages, active), do: Enum.filter(languages, &(&1 in active))
+
   defp reply_async(mod, tool_name, args, destruction_level, from) do
     if sup = Process.whereis(Ragex.Plugin.TaskSupervisor) do
       Task.Supervisor.start_child(sup, fn ->
@@ -355,6 +443,21 @@ defmodule Ragex.Plugin.Registry do
           Map.put_new(tool, :destruction_level, :none)
         end)
 
+      # Language scope. `info[:language]` may be a single atom or a list; a
+      # plugin that declares a language unknown to `Ragex.Languages` is a bug
+      # we surface at registration rather than silently mis-scoping later.
+      languages = List.wrap(Map.get(info, :language))
+
+      case Enum.reject(languages, &Ragex.Languages.supported?/1) do
+        [] ->
+          :ok
+
+        unknown ->
+          Logger.warning(
+            "Plugin #{inspect(plugin_id)} declares unknown language(s): #{inspect(unknown)}"
+          )
+      end
+
       entry = %{
         id: plugin_id,
         name: Map.get(info, :name, to_string(plugin_id)),
@@ -366,6 +469,8 @@ defmodule Ragex.Plugin.Registry do
         capabilities: Map.get(info, :capabilities, []),
         module: plugin_module,
         enabled: true,
+        languages: languages,
+        available?: true,
         tools: tools,
         tools_count: length(tools)
       }
