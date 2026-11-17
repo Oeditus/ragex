@@ -114,6 +114,39 @@ is still advertised — a user who has PropWise installed must be able to find i
 found no function definitions, not that the code is clean; the tool description
 says so explicitly.
 
+### `muex_analyze`
+
+Bridges [Muex](https://hexdocs.pm/muex), a mutation-testing runner. Muex
+introduces deliberate defects into the source, runs the suite against each one,
+and reports how many the tests caught. Surviving mutants are lines that are
+executed but not asserted on — the concrete form of "our coverage is a lie".
+
+This complements `propwise_analyze`: PropWise proposes properties *worth
+writing*, Muex shows which lines currently have *no assertion guarding them at
+all*.
+
+**How it runs.** Unlike PropWise, the Muex bridge does not require Muex to be
+loaded in the Ragex VM. Mutation testing is meaningful precisely for projects
+that have Muex as a dev/test dependency, which Ragex will not have loaded, so
+`run/1` shells out to `mix muex` inside the analysed project instead. The
+process-local `available?/1` probe still exists, but it only governs whether
+advertising the tool is honest — it is not a precondition for running it.
+
+**Cost.** A run executes the project's test suite once per mutant, so it is
+slow by nature. The tool exposes Muex's own bounding options — `max_mutations`,
+`since`, `optimize_level`, `coverage_guided`, `deadline_minutes` — and defaults
+`optimize_level` to `conservative` (<1% score impact, 50-65% fewer mutants)
+rather than Muex's `balanced`, because an MCP tool call has a human waiting on
+it. A separate `run_timeout` bounds the whole subprocess (default 15 minutes).
+
+**The score is a range.** `score_low` assumes timed-out mutants survived and
+`score_high` assumes they were killed. They differ only when the run timed out,
+so a single number would be a lie in exactly the case the reader most needs to
+know about. Equivalent and no-coverage mutants are excluded from the score and
+reported as their own counts rather than folded into "survived".
+
+A score below `fail_at` is reported as `passed: false`, not as a tool error:
+"your tests are weak" is a finding, not a failure of the tool.
 ### No post-processing needed
 
 This plugin implements no `post_process/2` hook. An earlier revision carried an

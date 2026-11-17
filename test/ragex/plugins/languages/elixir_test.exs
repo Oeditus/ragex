@@ -19,16 +19,37 @@ defmodule Ragex.Plugins.Languages.ElixirTest do
       assert is_binary(info.description)
     end
 
-    test "tools/0 advertises propwise_analyze" do
-      assert [%{name: "propwise_analyze"} = tool] = ElixirPlugin.tools()
-      assert tool.destruction_level == :none
-      assert tool.inputSchema.required == ["path"]
+    test "tools/0 advertises propwise_analyze and muex_analyze" do
+      assert [propwise, muex] = ElixirPlugin.tools()
+
+      assert propwise.name == "propwise_analyze"
+      assert propwise.destruction_level == :none
+      assert propwise.inputSchema.required == ["path"]
+
+      assert muex.name == "muex_analyze"
+      assert muex.destruction_level == :none
+      assert muex.inputSchema.required == ["path"]
+    end
+
+    test "every advertised tool has a dispatch clause" do
+      # A tool advertised without a clause is a trap: the registry would offer
+      # it and every call would fail with "Unknown tool". Bad-argument errors
+      # are expected here (no real path is supplied) -- what must not happen is
+      # the unknown-tool error.
+      for %{name: name} <- ElixirPlugin.tools() do
+        case ElixirPlugin.execute(name, %{}) do
+          {:error, msg} -> refute msg =~ "Unknown tool", "#{name} has no dispatch clause"
+          _ -> :ok
+        end
+      end
     end
   end
 
   describe "language scoping" do
     test "language_tools/1 returns tools only for :elixir" do
-      assert [%{name: "propwise_analyze"}] = ElixirPlugin.language_tools(:elixir)
+      assert [%{name: "propwise_analyze"}, %{name: "muex_analyze"}] =
+               ElixirPlugin.language_tools(:elixir)
+
       assert ElixirPlugin.language_tools(:python) == []
       assert ElixirPlugin.language_tools(:ruby) == []
     end
@@ -47,6 +68,19 @@ defmodule Ragex.Plugins.Languages.ElixirTest do
         assert msg =~ "PropWise is not available"
         assert msg =~ "mix.exs"
       end
+    end
+
+    test "muex_analyze validates its arguments" do
+      # Muex, like PropWise, is not a Ragex dependency. The argument check runs
+      # before any probe or subprocess, so it is the shipped behaviour either
+      # way.
+      assert {:error, msg} = ElixirPlugin.execute("muex_analyze", %{})
+      assert msg =~ "requires a \"path\" argument"
+    end
+
+    test "muex_analyze reports a missing Mix project rather than a score" do
+      assert {:error, msg} = ElixirPlugin.execute("muex_analyze", %{"path" => "/nonexistent"})
+      assert msg =~ "no mix.exs"
     end
   end
 

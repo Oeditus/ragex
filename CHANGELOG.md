@@ -59,6 +59,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shebang), so an unrelated file named `cure` is ignored. This makes a local
   compiler checkout work without exporting anything.
 
+- **`muex_analyze`** -- mutation testing for Elixir, contributed by the Elixir
+  language plugin and backed by [Muex](https://hexdocs.pm/muex). Muex
+  introduces deliberate defects into the source, runs the suite against each
+  one, and reports which mutants survived -- i.e. which lines are executed but
+  not asserted on. This is the concrete answer to "our coverage is high but our
+  tests catch nothing", and complements the existing `propwise_analyze`:
+  PropWise proposes properties worth writing, Muex shows which lines currently
+  have no assertion guarding them at all.
+
+  Like PropWise, Muex is **not** a Ragex dependency, so the tool degrades to an
+  actionable error rather than being advertised as usable. Unlike PropWise, the
+  bridge does not require Muex in the Ragex VM: it shells out to `mix muex`
+  inside the analysed project, which is the only arrangement that works when
+  Muex is a dev/test dependency of that project. The tool exposes Muex's own
+  bounding options (`max_mutations`, `since`, `optimize_level`,
+  `coverage_guided`, `deadline_minutes`) and defaults `optimize_level` to
+  `conservative` rather than `balanced`, because an MCP tool call has a human
+  waiting on it. The mutation score is reported as `score_low`/`score_high`
+  rather than a single number: they differ only when the run timed out, which is
+  exactly when a single figure would mislead. A score below `fail_at` is
+  reported as `passed: false`, not as a tool error.
+
 - **Markdown as a first-class language** (`.md`, `.markdown`), following
   Metastatic 0.35's NL-MetaAST support. Ragex treats Markdown as a
   *documentation* language: it is discovered, parsed, validated and indexed,
