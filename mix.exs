@@ -100,6 +100,10 @@ defmodule Ragex.MixProject do
       {:bumblebee, "~> 0.5", optional: true},
       {:nx, "~> 0.12 or ~> 1.0", optional: true},
       {:exla, "~> 0.12 or ~> 1.0", optional: true},
+      # EXLA 0.13.1 uses Fine's Decoder<T>::decode interface. Fine 0.2
+      # replaces it with try_decode, but EXLA's "~> 0.1" allows that breaking
+      # release. Keep the compatible headers until EXLA supports the new API.
+      {:fine, "~> 0.1.6", optional: true, runtime: false},
       # AI Provider
       {:req, "~> 0.5"},
       # Terminal Markdown rendering
