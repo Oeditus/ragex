@@ -10,6 +10,13 @@ env:
   MIX_ENV: test
   ELIXIR_VERSION: '1.20'
   OTP_VERSION: '29'
+  # Pin the XLA build target to CPU. GitHub-hosted runners have no NVIDIA GPU
+  # and no CUDA runtime, and `xla` reads XLA_TARGET at dependency compile time
+  # to choose which precompiled archive to download. Leaving it unset lets
+  # Ragex.CudaDetector infer a CUDA target from a host environment that cannot
+  # actually build or link against it, which fails `mix deps.compile exla`.
+  XLA_TARGET: cpu
+  EXLA_CPU_ONLY: 'true'
 
 jobs:
   deps:

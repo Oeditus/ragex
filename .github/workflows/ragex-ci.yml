@@ -9,6 +9,11 @@ on:
 env:
   ELIXIR_VERSION: '1.20'
   OTP_VERSION: '29'
+  # CPU-only XLA build: the runner has no GPU and no CUDA runtime, and
+  # XLA_TARGET is consumed by the `xla` package at dependency compile time.
+  # See the matching comment in ci.yml.
+  XLA_TARGET: cpu
+  EXLA_CPU_ONLY: 'true'
 
 jobs:
   analyze:

@@ -20,8 +20,13 @@ config :logger,
   ]
 
 # EXLA Compiler & CUDA Memory Configuration
-# Prevents EXLA from pre-allocating 90% of GPU VRAM upfront to avoid OOM
-if Code.ensure_loaded?(Ragex.CudaDetector) and Ragex.CudaDetector.cuda_available?() do
+# Prevents EXLA from pre-allocating 90% of GPU VRAM upfront to avoid OOM.
+#
+# `cuda_usable?/0` (not `cuda_available?/0`) is the right guard here: a CUDA
+# build of `exla` links against `libcudart`, so selecting the `:cuda` client on a
+# host that has a GPU device but no resolvable CUDA runtime crashes on first
+# use. Without the runtime we fall through to EXLA's `:host` client.
+if Code.ensure_loaded?(Ragex.CudaDetector) and Ragex.CudaDetector.cuda_usable?() do
   config :ragex, :exla_client, :cuda
 end
 

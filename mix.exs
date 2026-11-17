@@ -1,5 +1,11 @@
 Code.compiler_options(ignore_module_conflict: true)
 Code.require_file("lib/ragex/cuda_detector.ex", __DIR__)
+
+# Detects a GPU and exports `XLA_TARGET` / `RAGEX_EXLA_CLIENT` for the *runtime*
+# client. It is a no-op while dependencies are being compiled: `xla` reads
+# `XLA_TARGET` at compile time to pick which precompiled archive to download,
+# so writing it mid-`mix deps.compile` makes `xla` fetch the CPU archive while
+# `exla` is built for CUDA (or vice versa). See `Ragex.CudaDetector` for details.
 Ragex.CudaDetector.auto_configure()
 
 defmodule Ragex.MixProject do

@@ -5,25 +5,77 @@ defmodule Ragex.CudaDetector do
   Detects NVIDIA GPUs and CUDA toolkits/drivers, configuring `XLA_TARGET`,
   `RAGEX_EXLA_CLIENT`, `PATH`, and `LD_LIBRARY_PATH` so that EXLA and Bumblebee
   compile and run with CUDA acceleration automatically.
+
+  ## Compile-time vs. runtime
+
+  `XLA_TARGET` is read by the `xla` package at **dependency compile time** to
+  pick which precompiled XLA archive to download. Setting it from the host
+  environment therefore changes the build of `exla` itself and must be done
+  before `mix deps.compile` runs -- `auto_configure/0` (invoked from `mix.exs`)
+  is deliberately a no-op during dependency compilation, see
+  `deps_compilation?/0`. Runtime clients are selected separately via
+  `:ragex, :exla_client` / `RAGEX_EXLA_CLIENT`.
   """
 
   @doc """
   Runs GPU detection and configures environment and application settings for CUDA
   if a GPU is detected and CPU-only mode has not been explicitly requested.
-  """
-  @spec auto_configure() :: {:ok, map()} | :cpu_only | :no_gpu
-  def auto_configure do
-    if cpu_only?() do
-      :cpu_only
-    else
-      case detect() do
-        {:ok, info} ->
-          apply_env(info)
-          {:ok, info}
 
-        error ->
-          error
-      end
+  Returns `:deps_compilation` without touching the environment when called while
+  Mix is compiling dependencies. `mix.exs` evaluates this module on every Mix
+  invocation, including the dependency compilation of `xla`/`exla`, and writing
+  `XLA_TARGET` at that point would flip their build target mid-run: `xla` would
+  download the CUDA archive and `exla` would then fail to build against a
+  precompiled CPU-only `xla_extension`. The build target must come from the
+  caller's environment (or CI variables) instead.
+  """
+  @spec auto_configure() :: {:ok, map()} | :cpu_only | :no_gpu | :deps_compilation
+  def auto_configure do
+    cond do
+      deps_compilation?() ->
+        :deps_compilation
+
+      cpu_only?() ->
+        :cpu_only
+
+      true ->
+        case detect() do
+          {:ok, info} ->
+            apply_env(info)
+            {:ok, info}
+
+          error ->
+            error
+        end
+    end
+  end
+
+  @doc """
+  Returns `true` when the current Mix invocation is compiling dependencies
+  (`mix deps.compile`, `mix deps.get`, `mix deps.update`, ...).
+
+  Those tasks rebuild `xla`/`exla` from source, and their build target is
+  decided by `XLA_TARGET` at that moment. Mutating the environment from
+  `mix.exs` while they run produces a half-CUDA/half-CPU build that fails to
+  compile, so detection is skipped for them.
+  """
+  @spec deps_compilation?() :: boolean()
+  def deps_compilation? do
+    xla_build?() or deps_task?()
+  end
+
+  defp xla_build? do
+    case System.get_env("XLA_BUILD") do
+      nil -> false
+      "" -> false
+      _ -> true
+    end
+  end
+
+  defp deps_task? do
+    case System.argv() do
+      [task | _] when is_binary(task) -> String.starts_with?(task, "deps.")
+      _ -> false
     end
   end
 
@@ -234,6 +286,62 @@ defmodule Ragex.CudaDetector do
     end
   rescue
     _ -> nil
+  end
+
+  @doc """
+  Returns `true` when a CUDA build of XLA is actually usable on this machine.
+
+  A CUDA build of `exla` links against `libcudart`, so a GPU device alone is not
+  enough: the CUDA runtime must also be resolvable at runtime. This guards
+  `:ragex, :exla_client` so that a CUDA-targeted build on a host without the
+  CUDA runtime degrades to the host CPU client instead of crashing on first use.
+
+  Returns `false` in CPU-only mode.
+  """
+  @spec cuda_usable?() :: boolean()
+  def cuda_usable? do
+    not cpu_only?() and cuda_runtime_present?()
+  end
+
+  @doc """
+  Returns `true` when the CUDA runtime library (`libcudart`) can be found on the
+  standard linker paths, in `LD_LIBRARY_PATH`, or under a detected `CUDA_HOME`.
+  """
+  @spec cuda_runtime_present?() :: boolean()
+  def cuda_runtime_present? do
+    Enum.any?(cuda_runtime_candidates(), &File.exists?/1)
+  rescue
+    _ -> false
+  end
+
+  defp cuda_runtime_candidates do
+    ld_paths =
+      System.get_env("LD_LIBRARY_PATH", "")
+      |> String.split(":", trim: true)
+
+    home_dirs =
+      case find_cuda_home(find_nvcc()) do
+        nil -> []
+        home -> find_cuda_lib_dirs(home)
+      end
+
+    (ld_paths ++ home_dirs ++ default_cuda_lib_dirs())
+    |> Enum.uniq()
+    |> Enum.flat_map(fn dir ->
+      Path.wildcard(Path.join(dir, "libcudart.so*")) ++
+        Path.wildcard(Path.join(dir, "libcudart.dylib")) ++
+        Path.wildcard(Path.join(dir, "cudart64_*.dll"))
+    end)
+  end
+
+  defp default_cuda_lib_dirs do
+    [
+      "/usr/local/cuda/lib64",
+      "/usr/local/cuda/lib",
+      "/usr/lib/x86_64-linux-gnu",
+      "/usr/lib64",
+      "/usr/lib"
+    ] ++ Path.wildcard("/usr/local/cuda-*/lib64")
   end
 
   @doc """
