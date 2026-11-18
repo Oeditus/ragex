@@ -54,6 +54,7 @@ defmodule Ragex.Languages do
     javascript: Ragex.Editor.Validators.Javascript,
     typescript: Ragex.Editor.Validators.Javascript,
     java: Ragex.Editor.Validators.Java,
+    rust: Ragex.Editor.Validators.Rust,
     cure: Ragex.Editor.Validators.Cure,
     agda: Ragex.Editor.Validators.Agda,
     markdown: Ragex.Editor.Validators.Markdown
@@ -69,8 +70,11 @@ defmodule Ragex.Languages do
     java: Ragex.Analyzers.Java
   }
 
-  # Languages handled only through SCIP (no Metastatic adapter). These are
-  # surfaced so file discovery and SCIP indexing know about them.
+  # SCIP indexer metadata. A language here may *also* have a Metastatic
+  # adapter — `:java` and `:rust` both do. In that case the adapter provides
+  # parsing, analysis and validation, while the SCIP entry provides precise
+  # cross-file symbol indexing for projects that want it. The two are
+  # complementary, not alternatives.
   @scip_languages %{
     go: %{indexer: "scip-go", indexer_args: [], extensions: [".go"], marker_files: ["go.mod"]},
     rust: %{
