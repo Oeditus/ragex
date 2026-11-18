@@ -8,7 +8,7 @@ defmodule Ragex.LanguagesTest do
   modules.
   """
 
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Ragex.{Language, Languages}
 
@@ -142,6 +142,33 @@ defmodule Ragex.LanguagesTest do
       assert ".py" in exts
       refute ".go" in exts
       refute ".rs" in exts
+    end
+  end
+
+  describe "runtime Metastatic language plugins" do
+    test "runtime-registered Metastatic adapters are immediately visible" do
+      lang = :ragex_test_plugin_lang
+      ext = ".ragex_test_ext"
+
+      on_exit(fn ->
+        Metastatic.Languages.unregister(lang)
+      end)
+
+      refute Languages.supported?(lang)
+      assert Languages.detect_language("sample#{ext}") == :unknown
+
+      assert :ok =
+               Metastatic.Languages.register(lang, Metastatic.Adapters.Elixir, extensions: [ext])
+
+      assert Languages.supported?(lang)
+      assert Languages.has_adapter?(lang)
+      assert Languages.metastatic_language?(lang)
+      assert Languages.get_adapter(lang) == {:ok, Metastatic.Adapters.Elixir}
+      assert Languages.detect_language("sample#{ext}") == lang
+      assert ext in Languages.supported_extensions()
+      assert ext in Languages.metastatic_extensions()
+      assert %Language{language: ^lang, adapter: Metastatic.Adapters.Elixir} = Languages.get(lang)
+      assert Enum.any?(Languages.all(), &(&1.language == lang))
     end
   end
 end

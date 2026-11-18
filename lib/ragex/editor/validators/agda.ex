@@ -52,7 +52,7 @@ defmodule Ragex.Editor.Validators.Agda do
           agda_path -> run_agda_cli(agda_path, content, opts)
         end
 
-      {:error, "Agda parser unavailable"} ->
+      {:error, "Agda parser unavailable" <> _} ->
         validate_via_cli(content, opts)
 
       {:error, reason} ->

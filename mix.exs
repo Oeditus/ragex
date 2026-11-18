@@ -12,7 +12,7 @@ defmodule Ragex.MixProject do
   use Mix.Project
 
   @app :ragex
-  @version "0.41.0"
+  @version "0.42.0"
   @source_url "https://github.com/Oeditus/ragex"
 
   def project do
@@ -124,7 +124,7 @@ defmodule Ragex.MixProject do
       # so `LOCAL_METASTATIC=1` can point it at the sibling checkout during
       # development.
       case System.get_env("LOCAL_METASTATIC") do
-        nil -> {:metastatic, "~> 0.35"}
+        nil -> {:metastatic, "~> 0.38"}
         _ -> {:metastatic, path: "../metastatic", override: true}
       end,
       # Full macro expansion for the Elixir analyzer (Ragex.Analyzers.Elixir.MacroExpander).

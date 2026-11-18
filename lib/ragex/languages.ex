@@ -3,9 +3,9 @@ defmodule Ragex.Languages do
   Single source of truth for language support in Ragex.
 
   Ragex does not maintain its own list of languages. Instead it **derives** its
-  registry from `Metastatic.Languages` (which discovers adapters at compile
-  time) and merges a small Ragex-local overlay describing the concerns that
-  Metastatic knows nothing about:
+  registry dynamically from `Metastatic.Languages` (built-in adapters plus any
+  runtime-registered third-party plugins) and merges a small Ragex-local overlay
+  describing the concerns that Metastatic knows nothing about:
 
     * the `Ragex.Editor.Validator` implementation for a language
     * the native fallback analyzer (`Ragex.Analyzers.Behaviour`) used when
@@ -134,62 +134,31 @@ defmodule Ragex.Languages do
 
   # ── Build the registry by deriving from Metastatic ──────────────────
 
-  # One descriptor per Metastatic language, enriched with the Ragex overlay
-  # (validator, native analyzer) and any matching SCIP indexer metadata.
-  @metastatic_descriptors (for %MetastaticLanguage{} = ml <- Metastatic.Languages.all() do
-                             %Language{
-                               language: ml.language,
-                               adapter: ml.adapter,
-                               validator: Map.get(@validators, ml.language),
-                               native_analyzer: Map.get(@native_analyzers, ml.language),
-                               scip_indexer: Map.get(@scip_languages, ml.language),
-                               extensions: ml.extensions,
-                               experimental?: ml.experimental?,
-                               documentation?: ml.documentation?
-                             }
-                           end)
+  # SCIP-only languages (languages with no Metastatic adapter at compile time,
+  # or fallback descriptors when queried directly). Metastatic languages are
+  # queried dynamically from `Metastatic.Languages` so runtime-registered
+  # third-party plugins are visible immediately.
+  @scip_only_descriptors (for {lang, %{extensions: exts} = info} <- @scip_languages,
+                              not Metastatic.Languages.supported?(lang) do
+                            %Language{language: lang, scip_indexer: info, extensions: exts}
+                          end)
 
-  # SCIP-only languages (no Metastatic adapter).
-  @scip_descriptors (for {lang, %{extensions: exts} = info} <- @scip_languages,
-                         not MapSet.member?(
-                           MapSet.new(Enum.map(@metastatic_descriptors, & &1.language)),
-                           lang
-                         ) do
-                       %Language{language: lang, scip_indexer: info, extensions: exts}
-                     end)
+  @scip_only_by_language Map.new(@scip_only_descriptors, fn %Language{language: lang} = l ->
+                           {lang, l}
+                         end)
 
-  @languages Enum.sort_by(@metastatic_descriptors ++ @scip_descriptors, & &1.language)
-
-  @by_language Map.new(@languages, fn %Language{language: lang} = l -> {lang, l} end)
-
-  # Detection and file discovery only consider languages Ragex can actually
-  # parse (i.e. those with a Metastatic adapter). SCIP-only languages are
-  # indexed by their own toolchain and are deliberately *not* part of
-  # `detect_language/1` or `supported_extensions/0` -- this preserves the
-  # long-standing contract that `detect_language("file.c")` is `:unknown`.
-  @extension_map for %Language{language: lang, extensions: exts} <- @metastatic_descriptors,
-                     ext <- exts,
-                     into: %{},
-                     do: {ext, lang}
-
-  @adapter_map for %Language{language: lang, adapter: adapter} <- @languages,
-                   is_atom(adapter) and adapter != nil,
-                   into: %{},
-                   do: {lang, adapter}
-
-  @metastatic_languages_set @metastatic_descriptors
-                            |> Enum.map(& &1.language)
-                            |> MapSet.new()
-
-  @metastatic_extensions @metastatic_descriptors
-                         |> Enum.flat_map(& &1.extensions)
-                         |> Enum.uniq()
-                         |> Enum.sort()
-
-  @all_extensions @metastatic_extensions
-
-  @documentation_languages for %Language{language: lang, documentation?: true} <- @languages,
-                               do: lang
+  defp merge_overlay(%MetastaticLanguage{} = ml) do
+    %Language{
+      language: ml.language,
+      adapter: ml.adapter,
+      validator: Map.get(@validators, ml.language),
+      native_analyzer: Map.get(@native_analyzers, ml.language),
+      scip_indexer: Map.get(@scip_languages, ml.language),
+      extensions: ml.extensions,
+      experimental?: ml.experimental?,
+      documentation?: ml.documentation?
+    }
+  end
 
   # ── Public API ──────────────────────────────────────────────────────
 
@@ -202,7 +171,19 @@ defmodule Ragex.Languages do
       true
   """
   @spec all() :: [Language.t()]
-  def all, do: @languages
+  def all do
+    metastatic_langs = Metastatic.Languages.all()
+    metastatic_set = MapSet.new(metastatic_langs, & &1.language)
+
+    metastatic_descriptors = Enum.map(metastatic_langs, &merge_overlay/1)
+
+    scip_descriptors =
+      Enum.reject(@scip_only_descriptors, fn %Language{language: lang} ->
+        MapSet.member?(metastatic_set, lang)
+      end)
+
+    Enum.sort_by(metastatic_descriptors ++ scip_descriptors, & &1.language)
+  end
 
   @doc """
   Returns the descriptor for a language, or `nil`.
@@ -212,15 +193,22 @@ defmodule Ragex.Languages do
       iex> %Ragex.Language{language: :elixir} = Ragex.Languages.get(:elixir)
   """
   @spec get(atom()) :: Language.t() | nil
-  def get(language), do: Map.get(@by_language, language)
+  def get(language) when is_atom(language) do
+    case Metastatic.Languages.get(language) do
+      %MetastaticLanguage{} = ml -> merge_overlay(ml)
+      nil -> Map.get(@scip_only_by_language, language)
+    end
+  end
 
   @doc "Returns the list of supported language atoms."
   @spec supported_languages() :: [atom()]
-  def supported_languages, do: Enum.map(@languages, & &1.language)
+  def supported_languages, do: Enum.map(all(), & &1.language)
 
   @doc "Returns whether a language is supported."
   @spec supported?(atom()) :: boolean()
-  def supported?(language), do: Map.has_key?(@by_language, language)
+  def supported?(language) when is_atom(language) do
+    Metastatic.Languages.supported?(language) or Map.has_key?(@scip_only_by_language, language)
+  end
 
   @doc """
   Detects the language from a file path extension.
@@ -237,7 +225,10 @@ defmodule Ragex.Languages do
   """
   @spec detect_language(String.t()) :: atom()
   def detect_language(path) when is_binary(path) do
-    Map.get(@extension_map, Path.extname(path), :unknown)
+    case Metastatic.Languages.detect_language(path) do
+      {:ok, lang} -> lang
+      {:error, _} -> :unknown
+    end
   end
 
   @doc """
@@ -252,16 +243,18 @@ defmodule Ragex.Languages do
       {:error, {:unsupported_language, :go}}
   """
   @spec get_adapter(atom()) :: {:ok, module()} | {:error, {:unsupported_language, atom()}}
-  def get_adapter(language) do
-    case Map.fetch(@adapter_map, language) do
+  def get_adapter(language) when is_atom(language) do
+    case Metastatic.Languages.get_adapter(language) do
       {:ok, adapter} -> {:ok, adapter}
-      :error -> {:error, {:unsupported_language, language}}
+      {:error, _} -> {:error, {:unsupported_language, language}}
     end
   end
 
   @doc "Returns whether a language has a Metastatic adapter."
   @spec has_adapter?(atom()) :: boolean()
-  def has_adapter?(language), do: Map.has_key?(@adapter_map, language)
+  def has_adapter?(language) when is_atom(language) do
+    Metastatic.Languages.supported?(language)
+  end
 
   @doc "Returns the validator module for a language, or `nil`."
   @spec validator(atom()) :: module() | nil
@@ -293,12 +286,14 @@ defmodule Ragex.Languages do
   @doc "Returns all languages that have a SCIP indexer."
   @spec scip_languages() :: [Language.t()]
   def scip_languages do
-    Enum.filter(@languages, fn %Language{scip_indexer: idx} -> idx != nil end)
+    Enum.filter(all(), fn %Language{scip_indexer: idx} -> idx != nil end)
   end
 
   @doc "Returns whether a language describes documents rather than code."
   @spec documentation_language?(atom()) :: boolean()
-  def documentation_language?(language), do: language in @documentation_languages
+  def documentation_language?(language) when is_atom(language) do
+    Metastatic.Languages.documentation?(language)
+  end
 
   @doc """
   Returns whether a file path points at a documentation-language file.
@@ -329,39 +324,31 @@ defmodule Ragex.Languages do
   """
   @spec documentation_extension?(String.t()) :: boolean()
   def documentation_extension?(extension) when is_binary(extension) do
-    case Map.fetch(@extension_map, extension) do
-      {:ok, language} -> documentation_language?(language)
-      :error -> false
+    case Metastatic.Languages.detect_language("file" <> extension) do
+      {:ok, language} -> Metastatic.Languages.documentation?(language)
+      {:error, _} -> false
     end
   end
 
   @doc "Returns all supported file extensions."
   @spec supported_extensions() :: [String.t()]
-  def supported_extensions, do: @all_extensions
+  def supported_extensions, do: Metastatic.Languages.supported_extensions()
 
   @doc "Returns the file extensions with Metastatic adapter support."
   @spec metastatic_extensions() :: [String.t()]
-  def metastatic_extensions, do: @metastatic_extensions
+  def metastatic_extensions, do: Metastatic.Languages.supported_extensions()
 
   @doc "Returns whether a language is supported by Metastatic."
   @spec metastatic_language?(atom()) :: boolean()
-  def metastatic_language?(language), do: MapSet.member?(@metastatic_languages_set, language)
+  def metastatic_language?(language) when is_atom(language) do
+    Metastatic.Languages.supported?(language)
+  end
 
   @doc "Returns a map of language atom to validator module (only those with validators)."
   @spec validators() :: %{atom() => module()}
-  def validators do
-    for %Language{language: lang, validator: validator} <- @languages,
-        is_atom(validator) and validator != nil,
-        into: %{},
-        do: {lang, validator}
-  end
+  def validators, do: @validators
 
   @doc "Returns a map of language atom to native analyzer module (only those with analyzers)."
   @spec native_analyzers() :: %{atom() => module()}
-  def native_analyzers do
-    for %Language{language: lang, native_analyzer: analyzer} <- @languages,
-        is_atom(analyzer) and analyzer != nil,
-        into: %{},
-        do: {lang, analyzer}
-  end
+  def native_analyzers, do: @native_analyzers
 end

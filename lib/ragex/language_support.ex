@@ -120,11 +120,8 @@ defmodule Ragex.LanguageSupport do
 
   defp do_parse_document(content, language, opts) do
     with {:ok, adapter} <- get_adapter(language) do
-      # Metastatic's semantic pattern tables are populated by a module-level
-      # side effect that only fires at compile time, so they can be empty in
-      # any build that loads the beams from disk. Without this the adapter's
-      # `Enricher.enrich_tree/2` pass attaches no `:op_kind` metadata and every
-      # semantic-analysis feature silently reports zero operations.
+      # Ensure Metastatic's semantic OpKind pattern tables are populated
+      # (idempotent and cheap via `:persistent_term` guard).
       _ = ensure_semantic_patterns()
 
       res =
@@ -338,65 +335,21 @@ defmodule Ragex.LanguageSupport do
   @spec documentation_extension?(String.t()) :: boolean()
   defdelegate documentation_extension?(extension), to: Ragex.Languages
 
-  # Resolved by name at call time instead of being listed as compile-time
-  # references. `Credo.Check.Refactor.ModuleDependencies` counts every module
-  # named in a function body, and this module sits right at the 32-dependency
-  # ceiling -- naming the seven domain modules here would push it over.
-  @semantic_domain_module_names ~w(
-    Metastatic.Semantic.Domains.Database
-    Metastatic.Semantic.Domains.Http
-    Metastatic.Semantic.Domains.Auth
-    Metastatic.Semantic.Domains.Cache
-    Metastatic.Semantic.Domains.Queue
-    Metastatic.Semantic.Domains.File
-    Metastatic.Semantic.Domains.ExternalApi
-  )
   @semantic_ready_key {__MODULE__, :semantic_ready}
 
   @doc """
   Ensures Metastatic's semantic operation patterns are registered.
 
-  Metastatic registers its `OpKind` pattern tables from module-level
-  `register_all/0` calls at the bottom of each `Metastatic.Semantic.Domains.*`
-  module. Elixir only evaluates that kind of top-level side effect while the
-  module is being **compiled**, so in any build where the beams are loaded from
-  disk (a release, a `mix compile` from a clean `_build`, a dependency compiled
-  ahead of time, ...) the tables stay empty and `Enricher.enrich_tree/2`
-  silently attaches no `op_kind` metadata at all.
-
-  Empty pattern tables mean semantic analysis degrades to "no operations
-  detected" with no error anywhere, so Ragex calls this once during
-  application start (see `Ragex.Application`) and again from every code path
-  that reads `op_kind`.
-
-  The call is idempotent -- `Metastatic.Semantic.Patterns.register/3` appends
-  to the existing list -- so it is guarded by a `:persistent_term` flag to keep
-  repeated calls cheap and to avoid growing the tables on every invocation.
-
-  Returns `:ok` even when the domain modules are unavailable, so a Metastatic
-  version that reorganises them cannot break startup.
+  Delegates to `Metastatic.Semantic.ensure_registered/0` (guarded by a
+  `:persistent_term` flag so repeated calls on the parse hot path are a single
+  lookup).
   """
   @spec ensure_semantic_patterns() :: :ok
   def ensure_semantic_patterns do
     if :persistent_term.get(@semantic_ready_key, false) do
       :ok
     else
-      Enum.each(@semantic_domain_module_names, fn name ->
-        domain = Module.concat([name])
-
-        try do
-          Code.ensure_loaded(domain)
-
-          if function_exported?(domain, :register_all, 0) do
-            domain.register_all()
-          end
-        rescue
-          _ -> :ok
-        catch
-          _, _ -> :ok
-        end
-      end)
-
+      :ok = Metastatic.Semantic.ensure_registered()
       :persistent_term.put(@semantic_ready_key, true)
       :ok
     end
