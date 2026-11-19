@@ -279,20 +279,28 @@ defmodule Ragex.Embeddings.Bumblebee do
         System.get_env("RAGEX_EXLA_CLIENT") ||
         System.get_env("EXLA_CLIENT")
 
-    defn_options =
-      cond do
-        exla_client ->
-          client_atom =
-            if is_atom(exla_client), do: exla_client, else: String.to_atom(to_string(exla_client))
-
-          [compiler: EXLA, client: client_atom]
-
-        cuda_available?() ->
-          [compiler: EXLA, client: :cuda]
-
-        true ->
-          [compiler: EXLA, client: :host]
+    client =
+      case exla_client do
+        nil -> if cuda_available?(), do: :cuda, else: :host
+        client when is_atom(client) -> client
+        client -> String.to_atom(to_string(client))
       end
+
+    # Hardware detection cannot tell whether the installed XLA archive supports
+    # CUDA. An unsupported request crashes EXLA's shared client server before
+    # the execution-time fallback can recover.
+    client =
+      if client == :cuda and not cuda_available?() do
+        Logger.warning(
+          "CUDA requested but the installed EXLA backend has no CUDA devices. Using host CPU."
+        )
+
+        :host
+      else
+        client
+      end
+
+    defn_options = [compiler: EXLA, client: client]
 
     try do
       serving = build_serving(model, tokenizer, sequence_length, defn_options)

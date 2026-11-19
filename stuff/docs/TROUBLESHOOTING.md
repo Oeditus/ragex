@@ -50,6 +50,49 @@ DeadCode.find_unused_exports(min_confidence: 0.8)
 
 ## Error Messages
 
+### CUDA unavailable after rebuilding dependencies
+
+**Symptom:** EXLA reports `Could not find registered platform with name: "cuda"`,
+even though `nvidia-smi` sees the GPU. Subsequent calls may fail with `:noproc`
+for `EXLA.Client` or `EXLA.Defn.LockedCache`.
+
+**Cause:** The installed XLA archive is CPU-only, while hardware detection
+requests CUDA. Requesting an unsupported client crashes EXLA's shared client
+process. Ragex checks EXLA's supported platforms before selecting CUDA and uses
+the host CPU when CUDA devices are unavailable.
+
+To restore GPU execution, activate the CUDA toolkit in the shell before
+compiling dependencies and set the target explicitly. For CUDA 13:
+
+```bash
+XLA_TARGET=cuda13 MIX_ENV=test mix deps.compile exla --force
+```
+
+Use `cuda12` with a CUDA 12 toolkit, and repeat without `MIX_ENV=test` for the
+development build. Verify the installed backend without starting Ragex:
+
+```bash
+MIX_ENV=test mix run --no-start -e 'Application.ensure_all_started(:exla); IO.inspect(EXLA.Client.get_supported_platforms())'
+```
+
+The result must contain a positive `:cuda` device count for GPU execution.
+
+Ragex uses Nx/EXLA 1.0 with Bumblebee 0.8, Axon 0.9, NxImage 0.2,
+NxSignal 0.4, and Safetensors 0.2. Upgrade these as a compatible stack rather
+than changing EXLA alone. EXLA 1.0 fixes the CUDA callback constructor
+mismatch encountered in a fresh CUDA-enabled EXLA 0.13.1 build.
+
+Image 0.73 still declares optional Nx/EXLA 0.x and NxImage 0.1 requirements.
+The explicit overrides in `mix.exs` allow the newer stack without removing
+Image. `test/ragex/image_test.exs` covers image operations, pixel-preserving
+Image/Nx conversion in both axis layouts, and NxImage processing. Direct
+CUDA embeddings and a CUDA Image/NxImage round-trip have also been verified.
+This validates the exercised integrations, not every optional Image API;
+remove the overrides once Image publishes compatible requirements.
+
+Fine remains constrained to 0.1.6 because EXLA 1.0 uses its `Decoder<T>::decode`
+interface, which Fine 0.2 replaces with `try_decode`.
+
 ### "Complex pattern not supported"
 
 **Full message:** `Complex pattern not supported`

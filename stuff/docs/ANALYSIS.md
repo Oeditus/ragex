@@ -27,10 +27,11 @@ All analysis features are accessible via MCP tools and can be integrated into yo
 
 - Elixir (.ex, .exs)
 - Erlang (.erl, .hrl)
+- LFE (.lfe)
 - Python (.py)
 - JavaScript/TypeScript (.js, .ts)
 - Ruby (.rb)
-- Haskell (.hs)
+- Haskell (.hs, .lhs)
 
 ## Analysis Approaches
 

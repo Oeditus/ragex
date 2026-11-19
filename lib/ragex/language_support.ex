@@ -10,14 +10,24 @@ defmodule Ragex.LanguageSupport do
 
   - `:elixir` -- `.ex`, `.exs`
   - `:erlang` -- `.erl`, `.hrl`
+  - `:lfe` -- `.lfe`
   - `:python` -- `.py`
   - `:ruby` -- `.rb`
-  - `:haskell` -- `.hs`
+  - `:haskell` -- `.hs`, `.lhs`
   - `:javascript` -- `.js`, `.jsx`, `.mjs`, `.cjs`
   - `:typescript` -- `.ts`, `.tsx`
   - `:cure` -- `.cure`
   - `:agda` -- `.agda`, `.lagda`
   - `:markdown` -- `.md`, `.markdown`
+
+  LFE (Lisp-Flavoured Erlang) is a first-class Metastatic language since
+  Metastatic 0.40. Unlike the subprocess-bridged adapters (Haskell, Python,
+  JavaScript) it parses in-process through LFE's own reader, so it is the
+  cheapest adapter in the library. The LFE toolchain is not part of OTP:
+  `Metastatic.Adapters.Lfe.parse/1` returns `{:error, reason}` (never raises)
+  when it is unavailable, and Ragex then falls back to the native analyzer path
+  like it does for any other parse failure. LFE is flagged `experimental` in
+  the registry, exactly as Metastatic advertises it.
 
   Markdown is a first-class Metastatic language (since Metastatic 0.35): it is
   parsed into NL-MetaAST, so prose linting, readability metrics and semantic

@@ -47,6 +47,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `../metastatic` checkout, mirroring the existing `LOCAL_METACREDO` switch, so
   the two projects can be developed together.
 
+- **LFE as a first-class language** (`.lfe`), following Metastatic 0.40's LFE
+  adapter. LFE is the cheapest adapter in the library: its reader
+  (`lfe_scan`/`lfe_io`) is ordinary BEAM code, so parsing is a function call
+  rather than a subprocess bridge.
+
+  - `Ragex.LanguageSupport` maps `.lfe` to `:lfe` and resolves
+    `Metastatic.Adapters.Lfe`. No Ragex code changes were needed for detection
+    or adapter lookup -- `Ragex.Languages` derives both from Metastatic -- but
+    the remaining Ragex-local concerns are now covered explicitly.
+  - `Ragex.Analyzers.DeeperIndexing` indexes `"..."` binaries as strings and
+    `;`-style comments, stripping the whole leading semicolon run so `;;`
+    nesting markers never leak into the indexed text.
+  - `Ragex.URLAnalyzer.Classifier` recognises `.lfe` (and `.lhs`) as raw code,
+    so a URL pointing at an LFE or literate-Haskell file is fetched and
+    analysed instead of being treated as a web page.
+  - LFE is advertised as **experimental**, exactly as Metastatic flags it: its
+    toolchain is not part of OTP, so `parse/1` returns `{:error, reason}`
+    rather than raising when LFE is absent, and Ragex falls back to the native
+    analyzer path like it does for any other parse failure. An `:lfe`
+    development/test dependency makes the path exercisable locally and in CI
+    without forcing every Ragex host to install LFE.
+
+- **Haskell support upgraded to Metastatic 0.40.** The adapter now handles
+  real-world constructs end-to-end -- record syntax (`C { f = v }`), operator
+  sections, enum ranges, `::` type signatures and pattern nodes -- instead of
+  emitting `unsupported` nodes that forced Ragex onto the fallback analyzer.
+  `.lhs` (literate Haskell) is documented alongside `.hs`, and deeper indexing
+  covers Haskell strings and both `--` and `{- -}` comments.
 - **Minimum Elixir is now 1.20** (was 1.18). This is the version that ships the
   set-theoretic type system Ragex's optional type inference reads back out of
 ### Added

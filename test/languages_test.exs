@@ -121,6 +121,19 @@ defmodule Ragex.LanguagesTest do
       assert Languages.detect_language("a.md") == :markdown
     end
 
+    test "detects LFE" do
+      # `.lfe` arrived with `Metastatic.Adapters.Lfe` (Metastatic 0.40).
+      assert Languages.detect_language("src/demo.lfe") == :lfe
+      assert Languages.detect_language("demo.lfe") == :lfe
+    end
+
+    test "detects both Haskell extensions" do
+      # `.hs` was always supported; `.lhs` (literate Haskell) is part of the
+      # same adapter and must not be mistaken for an unknown extension.
+      assert Languages.detect_language("Main.hs") == :haskell
+      assert Languages.detect_language("Literate.lhs") == :haskell
+    end
+
     test "SCIP-only extensions are not detected (preserves contract)" do
       assert Languages.detect_language("a.go") == :unknown
       assert Languages.detect_language("a.c") == :unknown
@@ -155,6 +168,49 @@ defmodule Ragex.LanguagesTest do
       # `.rs` is a Metastatic extension now; `.go` remains SCIP-only.
       assert ".rs" in exts
       refute ".go" in exts
+    end
+
+    test "includes the Haskell and LFE extensions" do
+      exts = Languages.supported_extensions()
+      assert ".hs" in exts
+      assert ".lhs" in exts
+      assert ".lfe" in exts
+    end
+  end
+
+  describe "LFE and Haskell descriptors" do
+    test "LFE is advertised as experimental, like Metastatic does" do
+      # LFE's reader/compiler are not part of OTP, so Metastatic flags the
+      # language experimental; Ragex must not silently upgrade that claim.
+      assert %Language{language: :lfe, experimental?: true} = Languages.get(:lfe)
+      assert Languages.supported?(:lfe)
+      assert Languages.has_adapter?(:lfe)
+      assert Languages.get_adapter(:lfe) == {:ok, Metastatic.Adapters.Lfe}
+    end
+
+    test "Haskell is advertised as experimental and carries both extensions" do
+      assert %Language{language: :haskell, experimental?: true, extensions: exts} =
+               Languages.get(:haskell)
+
+      assert ".hs" in exts
+      assert ".lhs" in exts
+      assert Languages.get_adapter(:haskell) == {:ok, Metastatic.Adapters.Haskell}
+    end
+
+    test "neither language claims a Ragex validator or native analyzer" do
+      # Ragex has no Haskell/LFE validator and no native fallback analyzer for
+      # them, so the overlay must resolve to `nil` rather than a stale module.
+      assert Languages.validator(:lfe) == nil
+      assert Languages.validator(:haskell) == nil
+      assert Languages.native_analyzer(:lfe) == nil
+      assert Languages.native_analyzer(:haskell) == nil
+    end
+
+    test "neither language is a documentation language" do
+      refute Languages.documentation_language?(:lfe)
+      refute Languages.documentation_language?(:haskell)
+      refute Languages.documentation_file?("src/demo.lfe")
+      refute Languages.documentation_file?("Main.hs")
     end
   end
 

@@ -26,6 +26,14 @@ defmodule Ragex.Languages do
   Java becomes a first-class parseable language with a validator and a native
   fallback analyzer, *and* it keeps its `scip-java` entry for projects that
   prefer precise cross-file symbol indexing. `:ruby` is the same shape.
+
+  `:haskell` and `:lfe` are the two languages Ragex inherits from Metastatic
+  0.40 with no overlay entry at all: neither has a Ragex validator or native
+  fallback analyzer, so they are surfaced exactly as Metastatic describes them
+  (adapter, extensions, `experimental?: true`). They are the worked example of
+  the first bullet above -- adding a language to Metastatic requires no Ragex
+  change unless a Ragex-only concern is wanted.
+
   ## Examples
 
       iex> Ragex.Languages.supported?(:elixir)

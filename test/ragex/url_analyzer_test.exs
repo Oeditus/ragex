@@ -23,6 +23,13 @@ defmodule Ragex.URLAnalyzerTest do
       assert {:ok, :raw_code, _} = Classifier.classify("https://example.com/script.py")
     end
 
+    test "classifies LFE and literate Haskell links as :raw_code" do
+      # `.lfe` arrived with Metastatic's LFE adapter and `.lhs` is the second
+      # Haskell extension; both must be fetched as source, not as web pages.
+      assert {:ok, :raw_code, _} = Classifier.classify("https://example.com/src/demo.lfe")
+      assert {:ok, :raw_code, _} = Classifier.classify("https://example.com/src/Main.lhs")
+    end
+
     test "classifies API specification URLs as :api_spec" do
       assert {:ok, :api_spec, _} = Classifier.classify("https://example.com/openapi.json")
       assert {:ok, :api_spec, _} = Classifier.classify("https://example.com/swagger.yaml")

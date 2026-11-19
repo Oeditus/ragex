@@ -1,6 +1,7 @@
 defmodule Ragex.LanguageSupportTest do
   use ExUnit.Case, async: true
 
+  alias Metastatic.Adapters.Lfe
   alias Metastatic.AST
   alias Metastatic.Semantic.Patterns
   alias Ragex.LanguageSupport
@@ -26,6 +27,12 @@ defmodule Ragex.LanguageSupportTest do
 
     test "detects Haskell" do
       assert :haskell = LanguageSupport.detect_language("Main.hs")
+      assert :haskell = LanguageSupport.detect_language("Literate.lhs")
+    end
+
+    test "detects LFE" do
+      assert :lfe = LanguageSupport.detect_language("src/demo.lfe")
+      assert :lfe = LanguageSupport.detect_language("demo.lfe")
     end
 
     test "detects JavaScript family" do
@@ -70,6 +77,7 @@ defmodule Ragex.LanguageSupportTest do
       assert {:ok, Metastatic.Adapters.Python} = LanguageSupport.get_adapter(:python)
       assert {:ok, Metastatic.Adapters.Ruby} = LanguageSupport.get_adapter(:ruby)
       assert {:ok, Metastatic.Adapters.Haskell} = LanguageSupport.get_adapter(:haskell)
+      assert {:ok, Metastatic.Adapters.Lfe} = LanguageSupport.get_adapter(:lfe)
     end
 
     @tag :cure
@@ -131,6 +139,47 @@ defmodule Ragex.LanguageSupportTest do
     test "returns error for unsupported language" do
       assert {:error, {:unsupported_language, :lua}} =
                LanguageSupport.parse_document("x = 1", :lua)
+    end
+  end
+
+  describe "parse_document/3 with LFE" do
+    @lfe_source """
+    (defmodule demo
+      (export (add 2)))
+
+    ;; Adds two numbers
+    (defun add (a b)
+      (+ a b))
+    """
+
+    test "parses LFE source into a Metastatic document" do
+      # LFE is parsed in-process by Metastatic's own reader, so this path has
+      # no subprocess to mock; the only failure mode is a missing toolchain.
+      case LanguageSupport.parse_document(@lfe_source, :lfe) do
+        {:ok, %Metastatic.Document{language: :lfe, ast: ast}} ->
+          assert {:block, _meta, _children} = ast
+
+        {:error, reason} ->
+          flunk("LFE toolchain unavailable in this VM: #{inspect(reason)}")
+      end
+    end
+
+    test "reports a missing LFE toolchain as an error tuple, never an exception" do
+      # The adapter is contractually total: whatever the VM state, a parse
+      # either succeeds or returns `{:error, binary}`. This pins the shape so
+      # a future adapter change cannot start raising into the MCP handlers.
+      case Lfe.available?() do
+        true ->
+          assert {:ok, _doc} = LanguageSupport.parse_document(@lfe_source, :lfe)
+
+        false ->
+          assert {:error, reason} = LanguageSupport.parse_document(@lfe_source, :lfe)
+          assert is_binary(reason) or is_atom(reason)
+      end
+    end
+
+    test "rejects malformed LFE without raising" do
+      assert {:error, _reason} = LanguageSupport.parse_document("(defun add", :lfe)
     end
   end
 
@@ -240,6 +289,13 @@ defmodule Ragex.LanguageSupportTest do
       assert ".cure" in LanguageSupport.supported_extensions()
     end
 
+    test "includes the Haskell and LFE extensions" do
+      exts = LanguageSupport.supported_extensions()
+      assert ".hs" in exts
+      assert ".lhs" in exts
+      assert ".lfe" in exts
+    end
+
     test "includes Markdown extensions" do
       exts = LanguageSupport.supported_extensions()
       assert ".md" in exts
@@ -289,6 +345,11 @@ defmodule Ragex.LanguageSupportTest do
     @tag :cure
     test "true for Cure" do
       assert LanguageSupport.has_adapter?(:cure)
+    end
+
+    test "true for Haskell and LFE" do
+      assert LanguageSupport.has_adapter?(:haskell)
+      assert LanguageSupport.has_adapter?(:lfe)
     end
 
     test "false for unknown languages" do

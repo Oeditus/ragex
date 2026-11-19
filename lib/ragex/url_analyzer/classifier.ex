@@ -36,6 +36,8 @@ defmodule Ragex.URLAnalyzer.Classifier do
     ".zsh",
     ".sql",
     ".hs",
+    ".lhs",
+    ".lfe",
     ".cure",
     ".agda",
     ".lagda"

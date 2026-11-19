@@ -25,6 +25,49 @@ defmodule Ragex.ImageTest do
     end
   end
 
+  describe "Nx compatibility" do
+    test "converts an image to a tensor and back without changing pixels", %{base_path: path} do
+      assert {:ok, image} = Image.open(path)
+      assert {:ok, tensor} = Image.to_nx(image, backend: Nx.BinaryBackend)
+      assert Nx.shape(tensor) == {150, 200, 3}
+      assert Nx.type(tensor) == {:u, 8}
+      assert Nx.names(tensor) == [:height, :width, :bands]
+
+      assert {:ok, restored} = Image.from_nx(tensor)
+      assert Image.shape(restored) == Image.shape(image)
+      assert {:ok, restored_tensor} = Image.to_nx(restored, backend: Nx.BinaryBackend)
+      assert Nx.to_binary(restored_tensor) == Nx.to_binary(tensor)
+    end
+
+    test "preserves nonuniform pixels in height-first and width-first tensors" do
+      original = Nx.iota({3, 4, 3}, type: :u8, backend: Nx.BinaryBackend)
+      assert {:ok, image} = Image.from_nx(original)
+
+      for {layout, shape, names} <- [
+            {:hwc, {3, 4, 3}, [:height, :width, :bands]},
+            {:whc, {4, 3, 3}, [:width, :height, :bands]}
+          ] do
+        assert {:ok, tensor} = Image.to_nx(image, shape: layout, backend: Nx.BinaryBackend)
+        assert Nx.shape(tensor) == shape
+        assert Nx.names(tensor) == names
+        assert {:ok, restored} = Image.from_nx(tensor)
+        assert {:ok, restored_tensor} = Image.to_nx(restored, backend: Nx.BinaryBackend)
+        assert Nx.to_binary(restored_tensor) == Nx.to_binary(original)
+      end
+    end
+
+    test "processes image tensors through NxImage before converting back", %{base_path: path} do
+      assert {:ok, image} = Image.open(path)
+      assert {:ok, tensor} = Image.to_nx(image, backend: Nx.BinaryBackend)
+      resized = NxImage.resize(tensor, {30, 40}, method: :nearest)
+
+      assert {:ok, restored} = Image.from_nx(resized)
+      assert Image.shape(restored) == {40, 30, 3}
+      assert {:ok, restored_tensor} = Image.to_nx(restored, backend: Nx.BinaryBackend)
+      assert Nx.to_binary(restored_tensor) == Nx.to_binary(resized)
+    end
+  end
+
   test "info/1 returns image metadata", %{base_path: base_path} do
     assert {:ok, info} = RagexImage.info(base_path)
     assert info.width == 200

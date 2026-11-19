@@ -97,10 +97,14 @@ defmodule Ragex.MixProject do
       # Embeddings and ML (optional -- native/NIF-backed, cannot load from
       # inside an escript archive; degrades gracefully when absent, see
       # Ragex.Embeddings.Bumblebee.available?/0)
-      {:bumblebee, "~> 0.5", optional: true},
-      {:nx, "~> 0.12 or ~> 1.0", optional: true},
-      {:exla, "~> 0.12 or ~> 1.0", optional: true},
-      # EXLA 0.13.1 uses Fine's Decoder<T>::decode interface. Fine 0.2
+      {:bumblebee, "~> 0.8.0", optional: true},
+      # Image 0.73 still declares optional Nx/EXLA 0.x and NxImage 0.1
+      # bounds. Override only these integrations for the Nx 1.0 stack;
+      # test/ragex/image_test.exs covers image operations and Nx round-trips.
+      {:nx, "~> 1.0", optional: true, override: true},
+      {:exla, "~> 1.0", optional: true, override: true},
+      {:nx_image, "~> 0.2.0", optional: true, override: true},
+      # EXLA 1.0 uses Fine's Decoder<T>::decode interface. Fine 0.2
       # replaces it with try_decode, but EXLA's "~> 0.1" allows that breaking
       # release. Keep the compatible headers until EXLA supports the new API.
       {:fine, "~> 0.1.6", optional: true, runtime: false},
@@ -123,10 +127,21 @@ defmodule Ragex.MixProject do
       # depends on it directly for language adapters and MetaAST. Declared here
       # so `LOCAL_METASTATIC=1` can point it at the sibling checkout during
       # development.
+      #
+      # 0.40.0 is the floor: it is the release that added the LFE adapter
+      # (`Metastatic.Adapters.Lfe`, `.lfe`) and the real-world Haskell
+      # construct support (record syntax, sections, ranges, `::` type
+      # signatures, pattern nodes) that Ragex's Haskell analysis relies on.
       case System.get_env("LOCAL_METASTATIC") do
-        nil -> {:metastatic, "~> 0.38"}
+        nil -> {:metastatic, "~> 0.40"}
         _ -> {:metastatic, path: "../metastatic", override: true}
       end,
+      # LFE toolchain (`lfe_scan`, `lfe_io`, `lfe_comp`), which is *not* part
+      # of OTP. `Metastatic.Adapters.Lfe` reaches it in-process and degrades to
+      # `{:error, reason}` when it is missing, so this is a development/test
+      # dependency only: it makes the LFE path exercisable locally and in CI
+      # without forcing every Ragex host to install LFE.
+      {:lfe, "~> 2.2", only: [:dev, :test], runtime: false},
       # Full macro expansion for the Elixir analyzer (Ragex.Analyzers.Elixir.MacroExpander).
       # Already present transitively via metastatic, but declared explicitly
       # because Ragex calls it directly -- an implicit transitive dep would

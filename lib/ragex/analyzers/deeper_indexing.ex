@@ -19,6 +19,9 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     and `#`-style comments.
   - **JavaScript/TypeScript** -- regex extraction of string literals, template
     literals, and `//` / `/* */` comments.
+  - **LFE** -- regex extraction of `"..."` binaries and `;`-style comments
+    (the whole leading semicolon run is stripped, so `;;` nesting markers do
+    not leak into the indexed text).
   - **Markdown** -- headings are indexed as structural markers, link and image
     destinations as strings, and prose paragraphs as searchable text. Fenced
     and indented code blocks are skipped so documentation is never polluted by
@@ -169,6 +172,14 @@ defmodule Ragex.Analyzers.DeeperIndexing do
     extract_strings_regex(source, ~r/"([^"\\]|\\.)*"/, 1)
   end
 
+  # LFE strings are Erlang binaries written with double quotes; the reader
+  # keeps them verbatim, so the same scan applies. Character literals
+  # (`#\a`) are single-character and filtered out by the length floor in
+  # `extract_strings_regex/3`.
+  def extract_strings(source, :lfe) do
+    extract_strings_regex(source, ~r/"([^"\\]|\\.)*"/, 1)
+  end
+
   # Markdown has no string literals. What is worth indexing is the *destination*
   # of links and images: those are the URLs and paths a reader would search for.
   # Bare URLs are included too, since autolinks and plain references are common.
@@ -272,6 +283,14 @@ defmodule Ragex.Analyzers.DeeperIndexing do
 
   def extract_comments(source, :cure) do
     extract_line_comments(source, ~r/^\s*#+\s*(.*)$/)
+  end
+
+  # LFE comments start with `;`, and by convention the number of leading
+  # semicolons encodes nesting level (`;;` inside a `defun`, `;;;` for
+  # top-level commentary). The whole run is stripped so the indexed text is
+  # the prose, not the punctuation.
+  def extract_comments(source, :lfe) do
+    extract_line_comments(source, ~r/^\s*;+\s*(.*)$/)
   end
 
   # A Markdown document is *entirely* prose, so there is nothing to single out

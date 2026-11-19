@@ -211,7 +211,7 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
       ▹ MCP Tools: `get_ai_usage`, `get_ai_cache_stats`<br/><br/>
     ▸ Metastatic Integration<br/>
       ▹ MetaAST Analyzer: Enhanced cross-language analysis via Metastatic library<br/>
-      ▹ Supported Languages: Elixir, Erlang, Python, Ruby, Haskell, JavaScript, TypeScript, Cure, March, Agda, Markdown<br/>
+    ▹ Supported Languages: Elixir, Erlang, LFE, Python, Ruby, Haskell, JavaScript, TypeScript, Cure, March, Agda, Markdown<br/>
       ▹ Fallback Strategy: Graceful degradation to native analyzers<br/>
       ▹ Feature Flags: Configurable `use_metastatic` option<br/><br/>
     ▸ RAG Pipeline<br/>
@@ -1175,6 +1175,7 @@ Everything that’s supported by [`metastatic`](https://metastatic.hexdocs.pm)
 | Erlang   | :erlang         | .erl, .hrl	| erlang.ex      | Native BEAM :erl_scan and :erl_parse                 |
 | Haskell  | :haskell        | .hs, .lhs	| haskell.ex     | Subprocess Stack binary (priv/parsers/haskell)       |
 | JS       | :javascript     | .js, .jsx	| javascript.ex  | Subprocess Node.js Babel parser (priv/parsers/js)    |
+| LFE      | :lfe            | .lfe         | lfe.ex         | In-process LFE reader (lfe_scan/lfe_io), no subprocess |
 | March    | :march          | .march, .mch	| march.ex       | Subprocess OCaml Dune binary (priv/parsers/march)    |
 | Markdown | :markdown       | .md, .markdown | markdown.ex    | In-process dependency-free Markdown parser (NL-MetaAST) |
 | Python   | :python         | .py          | python.ex      | Subprocess Python ast parser (priv/parsers/python)   |
