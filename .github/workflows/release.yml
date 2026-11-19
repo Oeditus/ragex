@@ -11,11 +11,16 @@ permissions:
 env:
   ELIXIR_VERSION: '1.20'
   OTP_VERSION: '29'
+  RAGEX_HEX_BUILD: '1'
+  XLA_TARGET: cpu
+  EXLA_CPU_ONLY: 'true'
 
 jobs:
   build:
     name: Build Release Artifacts
     runs-on: ubuntu-latest
+    env:
+      MIX_ENV: prod
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -37,11 +42,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            deps
-            _build
-          key: ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
+            deps_hex
+            _build_hex
+          key: ${{ runner.os }}-hex-profile-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-cpu-${{ hashFiles('mix.hex.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
+            ${{ runner.os }}-hex-profile-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-cpu-
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libgit2-dev
@@ -50,10 +55,10 @@ jobs:
         run: mix deps.get --only prod
 
       - name: Compile project
-        run: MIX_ENV=prod mix compile
+        run: mix compile --warnings-as-errors
 
-      - name: Build hex archive
-        run: MIX_ENV=prod mix archive.build
+      - name: Build Mix archive
+        run: mix archive.build
 
       - name: Verify artifacts
         run: |
@@ -142,6 +147,9 @@ jobs:
   publish-hex:
     name: Publish to Hex.pm
     runs-on: ubuntu-latest
+    env:
+      # Keep ExDoc available while selecting override-free package dependencies.
+      MIX_ENV: dev
     needs: build
     if: "!contains(github.ref, 'alpha') && !contains(github.ref, 'beta') && !contains(github.ref, 'rc') && !contains(github.ref, 'dev')"
     steps:
@@ -158,17 +166,25 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            deps
-            _build
-          key: ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-${{ hashFiles('**/mix.lock') }}
+            deps_hex
+            _build_hex
+          key: ${{ runner.os }}-hex-profile-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-cpu-${{ hashFiles('mix.hex.lock') }}
           restore-keys: |
-            ${{ runner.os }}-mix-otp${{ env.OTP_VERSION }}-elixir${{ env.ELIXIR_VERSION }}-
+            ${{ runner.os }}-hex-profile-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-cpu-
 
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libgit2-dev
 
       - name: Install dependencies
         run: mix deps.get
+
+      - name: Compile project
+        run: mix compile --warnings-as-errors
+
+      - name: Build and verify Hex package
+        run: |
+          mix hex.build --output "$RUNNER_TEMP/ragex.tar"
+          elixir scripts/verify_hex_package.exs "$RUNNER_TEMP/ragex.tar"
 
       - name: Publish to Hex
         run: mix hex.publish --yes

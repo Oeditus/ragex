@@ -27,6 +27,9 @@ defmodule Ragex.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       consolidate_protocols: Mix.env() not in [:dev, :test],
+      lockfile: if(hex_profile?(), do: "mix.hex.lock", else: "mix.lock"),
+      deps_path: if(hex_profile?(), do: "deps_hex", else: "deps"),
+      build_path: if(hex_profile?(), do: "_build_hex", else: "_build"),
       deps: deps(),
       description: description(),
       package: package(),
@@ -54,6 +57,33 @@ defmodule Ragex.MixProject do
       # Improvement Plan rather than silently ignored forever.
       hex: [ignore_advisories: ["GHSA-rhv4-8758-jx7v"]]
     ]
+  end
+
+  # Dependencies run in :prod in downstream projects. An explicit flag also
+  # permits packaging in :dev, where ExDoc is available, without local overrides.
+  defp hex_profile? do
+    Mix.env() == :prod or System.get_env("RAGEX_HEX_BUILD") == "1"
+  end
+
+  defp ml_deps do
+    if hex_profile?() do
+      [
+        {:bumblebee, "~> 0.7.1 or ~> 0.8.0", optional: true},
+        # Do not admit 0.13: its fresh CUDA callback build fails to compile.
+        {:nx, "~> 0.12.0 or ~> 1.0", optional: true},
+        {:exla, "~> 0.12.0 or ~> 1.0", optional: true},
+        {:nx_image, "~> 0.1.2 or ~> 0.2.0", optional: true}
+      ]
+    else
+      [
+        {:bumblebee, "~> 0.8.0", optional: true},
+        # Image's optional 0.x requirements lag behind this validated stack.
+        # These overrides are local only and must never enter Hex metadata.
+        {:nx, "~> 1.0", optional: true, override: true},
+        {:exla, "~> 1.0", optional: true, override: true},
+        {:nx_image, "~> 0.2.0", optional: true, override: true}
+      ]
+    end
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]
@@ -94,17 +124,7 @@ defmodule Ragex.MixProject do
       {:dllb, "~> 0.9"},
       # TUI Framework
       {:owl, "~> 0.12"},
-      # Embeddings and ML (optional -- native/NIF-backed, cannot load from
-      # inside an escript archive; degrades gracefully when absent, see
-      # Ragex.Embeddings.Bumblebee.available?/0)
-      {:bumblebee, "~> 0.8.0", optional: true},
-      # Image 0.73 still declares optional Nx/EXLA 0.x and NxImage 0.1
-      # bounds. Override only these integrations for the Nx 1.0 stack;
-      # test/ragex/image_test.exs covers image operations and Nx round-trips.
-      {:nx, "~> 1.0", optional: true, override: true},
-      {:exla, "~> 1.0", optional: true, override: true},
-      {:nx_image, "~> 0.2.0", optional: true, override: true},
-      # EXLA 1.0 uses Fine's Decoder<T>::decode interface. Fine 0.2
+      # Both supported EXLA lines use Fine's Decoder<T>::decode interface. Fine 0.2
       # replaces it with try_decode, but EXLA's "~> 0.1" allows that breaking
       # release. Keep the compatible headers until EXLA supports the new API.
       {:fine, "~> 0.1.6", optional: true, runtime: false},
@@ -119,9 +139,9 @@ defmodule Ragex.MixProject do
       {:bandit, "~> 1.0"},
       {:plug, "~> 1.16"},
       # MetaCredo analysis (transitively brings Metastatic for core types)
-      case System.get_env("LOCAL_METACREDO") do
-        nil -> {:metacredo, "~> 0.1"}
-        _ -> {:metacredo, path: "../metacredo"}
+      case {hex_profile?(), System.get_env("LOCAL_METACREDO")} do
+        {false, value} when not is_nil(value) -> {:metacredo, path: "../metacredo"}
+        _ -> {:metacredo, "~> 0.1"}
       end,
       # Metastatic is a transitive dependency (via metacredo/dllb), but Ragex
       # depends on it directly for language adapters and MetaAST. Declared here
@@ -132,9 +152,12 @@ defmodule Ragex.MixProject do
       # (`Metastatic.Adapters.Lfe`, `.lfe`) and the real-world Haskell
       # construct support (record syntax, sections, ranges, `::` type
       # signatures, pattern nodes) that Ragex's Haskell analysis relies on.
-      case System.get_env("LOCAL_METASTATIC") do
-        nil -> {:metastatic, "~> 0.40"}
-        _ -> {:metastatic, path: "../metastatic", override: true}
+      case {hex_profile?(), System.get_env("LOCAL_METASTATIC")} do
+        {false, value} when not is_nil(value) ->
+          {:metastatic, path: "../metastatic", override: true}
+
+        _ ->
+          {:metastatic, "~> 0.40"}
       end,
       # LFE toolchain (`lfe_scan`, `lfe_io`, `lfe_comp`), which is *not* part
       # of OTP. `Metastatic.Adapters.Lfe` reaches it in-process and degrades to
@@ -168,7 +191,7 @@ defmodule Ragex.MixProject do
       {:dialyxir, "~> 1.4", only: :dev, runtime: false},
       # Scans mix.lock for known security vulnerabilities (`mix deps.audit`)
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false}
-    ]
+    ] ++ ml_deps()
   end
 
   # See the `hex: [ignore_advisories: ...]` comment above for why

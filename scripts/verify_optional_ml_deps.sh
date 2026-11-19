@@ -28,7 +28,9 @@ trap cleanup EXIT
 echo "==> Copying repository to ${WORKDIR}"
 rsync -a \
   --exclude='_build' \
+  --exclude='_build_hex' \
   --exclude='deps' \
+  --exclude='deps_hex' \
   --exclude='.git' \
   --exclude='.dialyzer' \
   --exclude='cover' \

@@ -77,14 +77,18 @@ MIX_ENV=test mix run --no-start -e 'Application.ensure_all_started(:exla); IO.in
 
 The result must contain a positive `:cuda` device count for GPU execution.
 
-Ragex uses Nx/EXLA 1.0 with Bumblebee 0.8, Axon 0.9, NxImage 0.2,
+Local development uses Nx/EXLA 1.0 with Bumblebee 0.8, Axon 0.9, NxImage 0.2,
 NxSignal 0.4, and Safetensors 0.2. Upgrade these as a compatible stack rather
 than changing EXLA alone. EXLA 1.0 fixes the CUDA callback constructor
 mismatch encountered in a fresh CUDA-enabled EXLA 0.13.1 build.
 
 Image 0.73 still declares optional Nx/EXLA 0.x and NxImage 0.1 requirements.
-The explicit overrides in `mix.exs` allow the newer stack without removing
-Image. `test/ragex/image_test.exs` covers image operations, pixel-preserving
+Local-only overrides in `mix.exs` allow the newer stack without removing
+Image. The `RAGEX_HEX_BUILD=1` profile has no overrides and permits the
+compatible 0.12 stack as well as 1.x; downstream `:prod` builds use the same
+requirements automatically. See
+[Dependency Profiles and Hex Publishing](CONFIGURATION.md#dependency-profiles-and-hex-publishing).
+`test/ragex/image_test.exs` covers image operations, pixel-preserving
 Image/Nx conversion in both axis layouts, and NxImage processing. Direct
 CUDA embeddings and a CUDA Image/NxImage round-trip have also been verified.
 This validates the exercised integrations, not every optional Image API;

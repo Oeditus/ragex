@@ -5,6 +5,7 @@ This document covers all configuration options for Ragex, including embedding mo
 ## Table of Contents
 
 - [Embedding Models](#embedding-models)
+- [Dependency Profiles and Hex Publishing](#dependency-profiles-and-hex-publishing)
 - [Configuration Methods](#configuration-methods)
 - [Available Models](#available-models)
 - [Model Selection Guide](#model-selection-guide)
@@ -12,6 +13,63 @@ This document covers all configuration options for Ragex, including embedding mo
 - [Cache Configuration](#cache-configuration)
 - [Migration Guide](#migration-guide)
 - [Performance Tuning](#performance-tuning)
+
+## Dependency Profiles and Hex Publishing
+
+Ragex has two dependency profiles:
+
+- **Local development/test** uses the latest validated ML stack: Bumblebee 0.8,
+  Nx/EXLA 1.0, and NxImage 0.2. Three local overrides bypass Image 0.73's older
+  optional dependency bounds. Normal commands use `mix.lock`, `deps/`, and
+  `_build/`.
+- **Hex/library** is selected with `RAGEX_HEX_BUILD=1`, or automatically in
+  `MIX_ENV=prod` (the default environment for a downstream dependency).
+  It has no overrides and uses `mix.hex.lock`, `deps_hex/`, and `_build_hex/`.
+  Sibling checkout flags `LOCAL_METACREDO` and `LOCAL_METASTATIC` are ignored.
+
+Keep both lockfiles in version control. Resolving the Hex profile does not
+downgrade or rebuild the local profile's dependencies. The lockfiles are
+contributor/CI inputs; downstream applications resolve their own versions.
+
+### Build and verify a package
+
+Use the flag in the default development environment so ExDoc remains available:
+
+```bash
+RAGEX_HEX_BUILD=1 mix deps.get
+RAGEX_HEX_BUILD=1 mix compile --warnings-as-errors
+RAGEX_HEX_BUILD=1 mix hex.build --output /tmp/ragex.tar
+elixir scripts/verify_hex_package.exs /tmp/ragex.tar
+RAGEX_HEX_BUILD=1 mix hex.publish --dry-run
+```
+
+These commands do not publish. The verifier checks the archive's actual
+dependency metadata and evaluates its packaged `mix.exs` in a downstream-style
+`:prod` environment without the flag or any active sibling checkout overrides.
+CI also compiles and tests the Hex-compatible ML/Image stack separately.
+
+After reviewing the package and dry-run output, publish explicitly:
+
+```bash
+RAGEX_HEX_BUILD=1 mix hex.publish
+```
+
+For GPU builds, activate the CUDA toolkit and set `XLA_TARGET=cuda13` (or
+`cuda12`) before compiling each profile. CPU-only CI sets `XLA_TARGET=cpu`
+and `EXLA_CPU_ONLY=true`. The profile does not change those hardware settings.
+
+### Consumer compatibility
+
+Published optional requirements allow Bumblebee 0.7/0.8, Nx/EXLA 0.12 or 1.x,
+and NxImage 0.1/0.2. The 0.13 Nx/EXLA line is deliberately excluded because
+a fresh EXLA 0.13.1 CUDA callback build fails to compile.
+
+Image 0.73's declared bounds select the compatible 0.12 stack when the
+optional ML and Image dependencies are enabled together. Consumers using
+EXLA 1.0 without Image can select the newer stack normally. Consumers needing
+Image and EXLA 1.0 together must supply their own top-level overrides until
+Image publishes compatible requirements; Ragex cannot impose library-level
+overrides through Hex.
 
 ## Embedding Models
 

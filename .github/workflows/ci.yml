@@ -147,9 +147,45 @@ jobs:
     - name: Run diff analysis
       run: mix ragex.ci --no-db --no-user --base origin/${{ github.base_ref }} --format github
 
+  hex_package:
+    name: Hex package compatibility
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: dev
+      RAGEX_HEX_BUILD: '1'
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ env.ELIXIR_VERSION }}
+        otp-version: ${{ env.OTP_VERSION }}
+
+    - name: Cache package-profile dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps_hex
+          _build_hex
+        key: ${{ runner.os }}-hex-profile-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-cpu-${{ hashFiles('mix.hex.lock') }}
+
+    - name: Resolve and compile without overrides
+      run: |
+        mix deps.get
+        mix compile --warnings-as-errors
+
+    - name: Test the package-compatible ML and Image stack
+      run: |
+        MIX_ENV=test mix test test/embeddings/bumblebee_test.exs test/ragex/image_test.exs test/mcp/handlers/image_tools_test.exs
+
+    - name: Build and inspect the package without publishing
+      run: |
+        mix hex.build --output "$RUNNER_TEMP/ragex.tar"
+        elixir scripts/verify_hex_package.exs "$RUNNER_TEMP/ragex.tar"
+
   ci:
     name: CI
-    needs: [compile, credo, test]
+    needs: [compile, credo, test, hex_package]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -157,7 +193,8 @@ jobs:
       run: |
         if [ "${{ needs.compile.result }}" != "success" ] || \
            [ "${{ needs.credo.result }}" != "success" ] || \
-           [ "${{ needs.test.result }}" != "success" ]; then
+           [ "${{ needs.test.result }}" != "success" ] || \
+           [ "${{ needs.hex_package.result }}" != "success" ]; then
           echo "One or more jobs failed"
           exit 1
         fi
