@@ -94,6 +94,24 @@ jobs:
     - name: Install Node parser dependencies
       run: cd priv/js_parser && npm ci
 
+    - name: Cache Haskell parser
+      id: cache-haskell-parser
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.stack
+          deps/metastatic/priv/parsers/haskell/.stack-work
+          deps/metastatic/priv/parsers/haskell/bin
+        key: ${{ runner.os }}-haskell-parser-${{ hashFiles('deps/metastatic/priv/parsers/haskell/stack.yaml.lock', 'deps/metastatic/priv/parsers/haskell/Parser.hs', 'deps/metastatic/priv/parsers/haskell/package.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-haskell-parser-
+
+    - name: Build Haskell parser
+      if: steps.cache-haskell-parser.outputs.cache-hit != 'true'
+      run: |
+        cd deps/metastatic/priv/parsers/haskell
+        stack install --local-bin-path bin
+
     # Agda and Cure tests are excluded: neither toolchain is installed on the
     # runner, and the upstream adapters are already excluded the same way in
     # metastatic's CI.
