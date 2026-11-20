@@ -169,6 +169,9 @@ jobs:
           _build_hex
         key: ${{ runner.os }}-hex-profile-${{ env.ELIXIR_VERSION }}-${{ env.OTP_VERSION }}-cpu-${{ hashFiles('mix.hex.lock') }}
 
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libgit2-dev pkg-config
+
     - name: Resolve and compile without overrides
       run: |
         mix deps.get
