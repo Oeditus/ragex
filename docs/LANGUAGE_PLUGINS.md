@@ -168,6 +168,44 @@ Both are fixed in Metastatic itself (0.37.2+), so the shim was deleted.
 `test/ragex/plugins/languages/elixir_test.exs` still asserts the corrected
 shapes: if Metastatic regresses, those tests fail here rather than silently
 degrading every Elixir analysis.
+
+---
+
+## The MetaCredo plugin
+
+`Ragex.Plugins.MetaCredo` exposes `metacredo_analyze`, which runs MetaCredo's
+whole pipeline — every enabled check from `.metacredo.exs`, the same file
+discovery, the same inline `# credo:disable-*` suppression — instead of the
+hand-picked check subsets the built-in security / business-logic / smells
+analyzers run through `Ragex.Analysis.MetaCredoBridge`.
+
+It is the worked example of a plugin that is *language-scoped without being
+language-specific*: MetaCredo checks operate on MetaAST, so they apply to every
+language Metastatic can parse. `languages/0` therefore returns
+`Ragex.Languages.supported_languages()` rather than a single atom.
+
+### Diff-scoped review
+
+`diff: true` scopes a run to the files a pull request touched — the review
+workflow, reachable from any MCP client rather than only from `mix ragex.ci`.
+`diff_lines: true` narrows *reporting* to the lines the diff changed while each
+file is still analysed whole, because a check needs surrounding context.
+
+Unlike `Ragex.Analysis.Prisma`, this stays in-process: `MetaCredo.Execution.run/1`
+is a pure library call that returns a report map, so there is no Mix task to
+shell out to. The diff is resolved with `Ragex.Git.Diff` *before* `Execution`
+runs, since `Execution` takes an explicit file list.
+
+Two details are carried over from `mix metacredo --diff`:
+
+- `lift_test_exclusion: false` — a diff-derived file list is machine generated,
+  not a deliberate user opt-in, so the default `test/` exclusion stays in force.
+- Repo-relative filenames — GitHub Actions silently drops annotations whose
+  `file=` value is absolute.
+
+An empty diff reports `partial: true` rather than a clean-looking `total: 0`,
+so a CI job cannot pass on nothing.
+
 ---
 
 ## Adding a language plugin

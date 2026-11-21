@@ -383,7 +383,7 @@ analyze_file | query_graph | list_nodes | analyze_directory | semantic_search | 
 edit_file | edit_files | validate_edit | rollback_edit | edit_history | refactor_code | advanced_refactor | preview_refactor
 
 # Quality & Security Tools
-find_dead_code | analyze_dependencies | find_circular_dependencies | find_duplicates | analyze_impact | detect_smells | analyze_business_logic | security_audit | check_secrets
+find_dead_code | analyze_dependencies | find_circular_dependencies | find_duplicates | analyze_impact | detect_smells | analyze_business_logic | security_audit | check_secrets | metacredo_analyze
 
 # RAG & AI Tools
 rag_query | rag_explain | rag_suggest | rag_query_stream | get_ai_usage | get_ai_cache_stats | clear_ai_cache

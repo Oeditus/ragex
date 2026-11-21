@@ -7,8 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Added
 
+- **`metacredo_analyze` MCP tool**, contributed by the new
+  `Ragex.Plugins.MetaCredo` plugin (registered in the default plugin set). It
+  exposes MetaCredo's whole pipeline — every enabled check from
+  `.metacredo.exs`, the same file discovery, the same inline `# credo:disable-*`
+  suppression — rather than the hand-picked check subsets the built-in
+  security / business-logic / smells analyzers run through
+  `Ragex.Analysis.MetaCredoBridge`.
+
+  `diff: true` scopes a run to the files a pull request touched, making
+  diff-scoped review reachable from any MCP client instead of only from
+  `mix ragex.ci`. `diff_lines: true` further narrows *reporting* to the lines
+  the diff changed while each file is still analysed whole (a check needs
+  surrounding context). The diff is resolved with `Ragex.Git.Diff` before
+  `MetaCredo.Execution.run/1` is called, so the run stays in-process — no
+  subprocess, unlike `Ragex.Analysis.Prisma`.
+
+  Two details carried over from `mix metacredo --diff`: `lift_test_exclusion:
+  false` keeps the default `test/` exclusion in force for a machine-derived
+  file list, and reported filenames are rewritten repo-relative so GitHub
+  Actions annotations are not silently dropped. An empty diff reports
+  `partial: true` rather than a clean-looking `total: 0`.
+
+  Backed by `Ragex.Analysis.MetaCredo`.
+
+### Changed
 - **Languages are now plug-in, not hardcoded.** Ragex no longer keeps its own
   language lists. The new `Ragex.Languages` registry **derives** from
   `Metastatic.Languages` (which discovers adapters at compile time) and merges a

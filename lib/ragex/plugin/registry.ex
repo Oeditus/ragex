@@ -12,6 +12,7 @@ defmodule Ragex.Plugin.Registry do
     Ragex.Plugins.GitArchaeology,
     Ragex.Plugins.CodeQuality,
     Ragex.Plugins.SecurityAudit,
+    Ragex.Plugins.MetaCredo,
     Ragex.Plugins.URLAnalyzer,
     Ragex.Plugins.Languages.Elixir
   ]
