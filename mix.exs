@@ -382,6 +382,7 @@ defmodule Ragex.MixProject do
         Ragex.Plugins.Languages.Elixir,
         Ragex.Plugins.Languages.Elixir.Muex,
         Ragex.Plugins.Languages.Elixir.Propwise,
+        Ragex.Plugins.MetaCredo,
         Ragex.Plugins.SecurityAudit,
         Ragex.Plugins.URLAnalyzer
       ],
@@ -538,6 +539,7 @@ defmodule Ragex.MixProject do
         Ragex.Analysis.Impact,
         Ragex.Analysis.LocationEnricher,
         Ragex.Analysis.LocationPreservation,
+        Ragex.Analysis.MetaCredo,
         Ragex.Analysis.MetaCredoBridge,
         Ragex.Analysis.MetastaticBridge,
         Ragex.Analysis.Prisma,
