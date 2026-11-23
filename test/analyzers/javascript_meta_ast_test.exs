@@ -86,10 +86,16 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
         end)
 
       assert three != nil
-      {:function_def, _meta, children} = three
-      # Children tuple contains [params, body]
-      [params | _] = children
+      {:function_def, meta, children} = three
+      # Since Metastatic 0.43, parameters live in `:params` metadata (as
+      # `:param` nodes) and only the body remains a child, matching the M2
+      # specification. They used to be raw expressions in the children list.
+      params = Keyword.fetch!(meta, :params)
       assert length(params) == 3
+      assert Keyword.fetch!(meta, :arity) == 3
+      assert Enum.all?(params, &match?({:param, _meta, _name}, &1))
+      assert [body] = children
+      assert match?({:block, _meta, []}, body)
     end
   end
 
@@ -155,9 +161,13 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
         end)
 
       assert typed != nil
-      {:function_def, _meta, [params | _]} = typed
-      # 2 params despite TypeScript type annotations
+      {:function_def, meta, _children} = typed
+      # 2 params despite TypeScript type annotations. As of Metastatic 0.43
+      # they are `:param` nodes in metadata, not raw children.
+      params = Keyword.fetch!(meta, :params)
       assert length(params) == 2
+      assert Keyword.fetch!(meta, :arity) == 2
+      assert Enum.all?(params, &match?({:param, _meta, _name}, &1))
     end
   end
 

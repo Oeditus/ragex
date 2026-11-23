@@ -96,8 +96,17 @@ defmodule Ragex.LanguagesTest do
     end
 
     test "SCIP-only languages have no adapter" do
-      refute Languages.has_adapter?(:go)
-      assert {:error, {:unsupported_language, :go}} = Languages.get_adapter(:go)
+      # `:go` graduated from SCIP-only to a first-class language when
+      # `Metastatic.Adapters.Go` landed (Metastatic 0.43). `:c_cpp` is still
+      # SCIP-only, so it carries the contract.
+      refute Languages.has_adapter?(:c_cpp)
+      assert {:error, {:unsupported_language, :c_cpp}} = Languages.get_adapter(:c_cpp)
+    end
+
+    test "go carries both an adapter and a SCIP indexer" do
+      assert Languages.has_adapter?(:go)
+      assert {:ok, Metastatic.Adapters.Go} = Languages.get_adapter(:go)
+      assert %{indexer: "scip-go"} = Languages.scip_indexer(:go)
     end
 
     test "ruby carries both an adapter and a SCIP indexer" do
@@ -135,8 +144,13 @@ defmodule Ragex.LanguagesTest do
     end
 
     test "SCIP-only extensions are not detected (preserves contract)" do
-      assert Languages.detect_language("a.go") == :unknown
+      # `.go` moved out of this contract when `Metastatic.Adapters.Go` landed;
+      # `.c` remains SCIP-only.
       assert Languages.detect_language("a.c") == :unknown
+    end
+
+    test "go is detected now that it has an adapter" do
+      assert Languages.detect_language("a.go") == :go
     end
 
     test "rust is detected now that it has an adapter" do
@@ -165,9 +179,10 @@ defmodule Ragex.LanguagesTest do
       exts = Languages.supported_extensions()
       assert ".ex" in exts
       assert ".py" in exts
-      # `.rs` is a Metastatic extension now; `.go` remains SCIP-only.
+      # `.rs` and `.go` are Metastatic extensions now; `.c` remains SCIP-only.
       assert ".rs" in exts
-      refute ".go" in exts
+      assert ".go" in exts
+      refute ".c" in exts
     end
 
     test "includes the Haskell and LFE extensions" do
