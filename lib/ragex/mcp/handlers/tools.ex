@@ -2856,8 +2856,8 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp get_callers(%{"module" => module, "function" => function, "arity" => arity}) do
     # Get incoming edges (callers)
-    module_atom = String.to_existing_atom("Elixir." <> module)
     function_atom = String.to_atom(function)
+    module_atom = resolve_module_atom(module, function_atom, arity)
     full_id = {:function, module_atom, function_atom, arity}
 
     callers = Store.get_incoming_edges(full_id, :calls)
@@ -3039,7 +3039,7 @@ defmodule Ragex.MCP.Handlers.Tools do
         {:error, "Invalid 'to' node ID format. Use 'Module' or 'Module.function/arity'"}
 
       {{:ok, from_node}, {:ok, to_node}} ->
-        paths = Algorithms.find_paths(from_node, to_node, max_depth)
+        paths = Algorithms.find_paths(from_node, to_node, max_depth: max_depth)
 
         formatted_paths =
           Enum.map(paths, fn path ->
@@ -3060,45 +3060,69 @@ defmodule Ragex.MCP.Handlers.Tools do
   defp find_paths_tool(_), do: {:error, "Missing 'from' or 'to' parameter"}
 
   defp find_callers_tool(%{"module" => module_str, "function_name" => func_str} = params) do
-    module = String.to_atom(module_str)
     func_name = String.to_atom(func_str)
+    arity = Map.get(params, "arity")
 
-    # If arity is provided, search for specific function
-    # Otherwise, find all functions with this name regardless of arity
-    callers =
-      case Map.get(params, "arity") do
-        nil ->
-          # Find all arities for this function
-          all_functions = Store.list_nodes(:function, :infinity)
+    case arity do
+      nil ->
+        module = resolve_module_atom_for_function(module_str, func_name)
 
-          matching_functions =
-            Enum.filter(all_functions, fn
-              {:function, ^module, ^func_name, _arity} -> true
-              _ -> false
-            end)
+        # Find all arities for this function
+        all_functions = Store.list_nodes(:function, :infinity)
 
-          # Get callers for all matching functions
-          matching_functions
-          |> Enum.flat_map(fn func_id ->
+        matching_functions =
+          Enum.flat_map(all_functions, fn
+            %{id: {^module, ^func_name, func_arity}} ->
+              [{:function, module, func_name, func_arity}]
+
+            {:function, ^module, ^func_name, func_arity} ->
+              [{:function, module, func_name, func_arity}]
+
+            _ ->
+              []
+          end)
+
+        # Get callers for all matching functions
+        incoming_edges =
+          Enum.flat_map(matching_functions, fn func_id ->
             Store.get_incoming_edges(func_id, :calls)
           end)
-          |> Enum.uniq()
 
-        arity when is_integer(arity) ->
-          func_id = {:function, module, func_name, arity}
-          Store.get_incoming_edges(func_id, :calls)
-      end
+        build_callers_response(module, func_name, nil, incoming_edges)
+
+      a when is_integer(a) and a >= 0 ->
+        module = resolve_module_atom(module_str, func_name, a)
+        func_id = {:function, module, func_name, a}
+        incoming_edges = Store.get_incoming_edges(func_id, :calls)
+        build_callers_response(module, func_name, a, incoming_edges)
+
+      _ ->
+        {:error, "Invalid 'arity' parameter: must be a non-negative integer"}
+    end
+  end
+
+  defp find_callers_tool(_), do: {:error, "Missing 'module' or 'function_name' parameter"}
+
+  defp build_callers_response(module, func_name, arity, incoming_edges) do
+    caller_ids =
+      incoming_edges
+      |> Enum.map(fn
+        %{from: caller_id} -> caller_id
+        caller_id -> caller_id
+      end)
+      |> Enum.uniq()
 
     # Enrich caller data with file/line information
     enriched_callers =
-      Enum.map(callers, fn caller_id ->
+      Enum.map(caller_ids, fn caller_id ->
         case caller_id do
           {:function, caller_mod, caller_func, caller_arity} ->
-            node_data = Store.find_node(:function, {caller_mod, caller_func, caller_arity})
+            node_data = Store.find_node(:function, {caller_mod, caller_func, caller_arity}) || %{}
+            formatted_id = format_node_id(caller_id)
 
             %{
-              caller_id: "#{caller_mod}.#{caller_func}/#{caller_arity}",
-              id: "#{caller_mod}.#{caller_func}/#{caller_arity}",
+              caller_id: formatted_id,
+              id: formatted_id,
               module: Atom.to_string(caller_mod),
               function: Atom.to_string(caller_func),
               arity: caller_arity,
@@ -3107,9 +3131,11 @@ defmodule Ragex.MCP.Handlers.Tools do
             }
 
           _ ->
+            formatted_id = format_node_id(caller_id)
+
             %{
-              caller_id: format_node_id(caller_id),
-              id: format_node_id(caller_id)
+              caller_id: formatted_id,
+              id: formatted_id
             }
         end
       end)
@@ -3118,13 +3144,11 @@ defmodule Ragex.MCP.Handlers.Tools do
      %{
        target:
          "#{module}.#{func_name}" <>
-           if(Map.has_key?(params, "arity"), do: "/#{params["arity"]}", else: ""),
+           if(is_integer(arity), do: "/#{arity}", else: ""),
        callers: enriched_callers,
        count: length(enriched_callers)
      }}
   end
-
-  defp find_callers_tool(_), do: {:error, "Missing 'module' or 'function_name' parameter"}
 
   defp graph_stats_tool(_params) do
     stats = Algorithms.graph_stats()
@@ -3167,23 +3191,20 @@ defmodule Ragex.MCP.Handlers.Tools do
      }}
   end
 
-  defp parse_node_id(node_str) do
-    if String.contains?(node_str, "/") and String.contains?(node_str, ".") do
-      # Module.function/arity
-      case String.split(node_str, ".") do
-        [module_str, func_arity] ->
-          case String.split(func_arity, "/") do
-            [func_str, arity_str] ->
-              case Integer.parse(arity_str) do
-                {arity, ""} ->
-                  {:ok, {:function, String.to_atom(module_str), String.to_atom(func_str), arity}}
-
-                _ ->
-                  {:error, :invalid_arity}
-              end
-
-            _ ->
-              {:error, :invalid_format}
+  defp parse_node_id(node_str) when is_binary(node_str) and node_str != "" do
+    if String.contains?(node_str, "/") do
+      case split_last(node_str, "/") do
+        {mod_func, arity_str} when mod_func != "" and arity_str != "" ->
+          with {arity, ""} when arity >= 0 <- Integer.parse(arity_str),
+               {module_str, func_str} when module_str != "" and func_str != "" <-
+                 split_last(mod_func, ".") do
+            func_atom = String.to_atom(func_str)
+            module_atom = resolve_module_atom(module_str, func_atom, arity)
+            {:ok, {:function, module_atom, func_atom, arity}}
+          else
+            :nomatch -> {:error, :invalid_format}
+            {_, _} -> {:error, :invalid_format}
+            _ -> {:error, :invalid_arity}
           end
 
         _ ->
@@ -3191,8 +3212,62 @@ defmodule Ragex.MCP.Handlers.Tools do
       end
     else
       # Just a module name
-      {:ok, {:module, String.to_atom(node_str)}}
+      {:ok, {:module, resolve_module_atom(node_str)}}
     end
+  end
+
+  defp parse_node_id(_), do: {:error, :invalid_format}
+
+  defp split_last(str, delimiter) do
+    case :binary.matches(str, delimiter) do
+      [] ->
+        :nomatch
+
+      matches ->
+        {pos, len} = List.last(matches)
+        left = binary_part(str, 0, pos)
+        right = binary_part(str, pos + len, byte_size(str) - pos - len)
+        {left, right}
+    end
+  end
+
+  defp module_atom_candidates(module_str) when is_binary(module_str) do
+    cond do
+      String.starts_with?(module_str, "Elixir.") ->
+        [String.to_atom(module_str)]
+
+      Regex.match?(~r/^[A-Z]/, module_str) ->
+        [String.to_atom("Elixir." <> module_str), String.to_atom(module_str)]
+
+      true ->
+        [String.to_atom(module_str)]
+    end
+  end
+
+  defp resolve_module_atom(module_str) do
+    candidates = module_atom_candidates(module_str)
+
+    Enum.find(candidates, hd(candidates), fn mod ->
+      Store.find_node(:module, mod) != nil
+    end)
+  end
+
+  defp resolve_module_atom(module_str, func_name, arity) do
+    candidates = module_atom_candidates(module_str)
+
+    Enum.find(candidates, hd(candidates), fn mod ->
+      Store.find_node(:function, {mod, func_name, arity}) != nil or
+        Store.find_node(:module, mod) != nil
+    end)
+  end
+
+  defp resolve_module_atom_for_function(module_str, func_name) do
+    candidates = module_atom_candidates(module_str)
+
+    Enum.find(candidates, hd(candidates), fn mod ->
+      Store.find_function(mod, func_name) != nil or
+        Store.find_node(:module, mod) != nil
+    end)
   end
 
   defp format_result(result) do
@@ -6524,39 +6599,10 @@ defmodule Ragex.MCP.Handlers.Tools do
   # Helper functions for impact analysis tools
 
   defp parse_target_string(target_str) do
-    # Module.function/arity format
-    if String.contains?(target_str, "/") and String.contains?(target_str, ".") do
-      case String.split(target_str, ".", parts: 2) do
-        [module_str, func_arity] ->
-          case String.split(func_arity, "/") do
-            [func_str, arity_str] ->
-              case Integer.parse(arity_str) do
-                {arity, ""} ->
-                  module = String.to_existing_atom("Elixir." <> module_str)
-                  function = String.to_atom(func_str)
-                  {:ok, {:function, module, function, arity}}
-
-                _ ->
-                  {:error, "Invalid arity: #{arity_str}"}
-              end
-
-            _ ->
-              {:error, "Invalid function/arity format"}
-          end
-
-        _ ->
-          {:error, "Invalid module.function format"}
-      end
-
-      # Module format
-    else
-      try do
-        module = String.to_existing_atom("Elixir." <> target_str)
-        {:ok, {:module, module}}
-      rescue
-        ArgumentError ->
-          {:error, "Module not found: #{target_str}"}
-      end
+    case parse_node_id(target_str) do
+      {:ok, node} -> {:ok, node}
+      {:error, :invalid_arity} -> {:error, "Invalid arity in target: #{target_str}"}
+      {:error, _} -> {:error, "Invalid target format: #{target_str}"}
     end
   end
 

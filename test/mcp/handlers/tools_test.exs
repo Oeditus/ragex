@@ -320,4 +320,115 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
       assert error3 =~ "query" or error3 =~ "Missing" or error3 =~ "failed"
     end
   end
+
+  describe "find_paths and find_callers with namespaced Elixir modules" do
+    setup do
+      Store.add_node(:module, Example.Billing.Invoice, %{})
+
+      for {name, line} <- [{:hello, 2}, {:message, 3}] do
+        Store.add_node(:function, {Example.Billing.Invoice, name, 1}, %{
+          module: Example.Billing.Invoice,
+          name: name,
+          arity: 1,
+          file: "lib/example/billing/invoice.ex",
+          line: line
+        })
+      end
+
+      Store.add_edge(
+        {:function, Example.Billing.Invoice, :hello, 1},
+        {:function, Example.Billing.Invoice, :message, 1},
+        :calls
+      )
+
+      Store.sync()
+      :ok
+    end
+
+    test "find_paths resolves dotted identifiers with normal and canonical module spellings" do
+      for module <- ["Example.Billing.Invoice", "Elixir.Example.Billing.Invoice"] do
+        args = %{"from" => "#{module}.hello/1", "to" => "#{module}.message/1"}
+
+        assert {:ok,
+                %{
+                  count: 1,
+                  paths: [
+                    [
+                      "Elixir.Example.Billing.Invoice.hello/1",
+                      "Elixir.Example.Billing.Invoice.message/1"
+                    ]
+                  ]
+                }} = Tools.call_tool("find_paths", args)
+      end
+    end
+
+    test "find_paths rejects malformed node identifiers" do
+      assert {:error, msg} =
+               Tools.call_tool("find_paths", %{
+                 "from" => "Example.Billing.Invoice.hello/not_an_int",
+                 "to" => "Example.Billing.Invoice.message/1"
+               })
+
+      assert msg =~ "Invalid 'from' node ID format"
+
+      assert {:error, msg} =
+               Tools.call_tool("find_paths", %{
+                 "from" => "Example.Billing.Invoice.hello/1",
+                 "to" => "just_func/1"
+               })
+
+      assert msg =~ "Invalid 'to' node ID format"
+    end
+
+    test "find_callers resolves both module spellings and optional arity" do
+      for module <- ["Example.Billing.Invoice", "Elixir.Example.Billing.Invoice"],
+          arity <- [nil, 1] do
+        args = %{"module" => module, "function_name" => "message"}
+        args = if arity, do: Map.put(args, "arity", arity), else: args
+
+        assert {:ok, %{count: 1, callers: [caller]}} = Tools.call_tool("find_callers", args)
+        assert caller.id == "Elixir.Example.Billing.Invoice.hello/1"
+        assert caller.caller_id == "Elixir.Example.Billing.Invoice.hello/1"
+        assert caller.file == "lib/example/billing/invoice.ex"
+        assert caller.line == 2
+      end
+    end
+
+    test "find_callers and find_paths work end-to-end after analyzing an Elixir file" do
+      Store.clear()
+      Store.sync()
+
+      temp_dir = System.tmp_dir!()
+      file = Path.join(temp_dir, "invoice_repro_#{:rand.uniform(999_999)}.ex")
+
+      File.write!(file, """
+      defmodule Example.Billing.Invoice do
+        def hello(name), do: Example.Billing.Invoice.message(name)
+        def message(name), do: "Hello, " <> name
+      end
+      """)
+
+      on_exit(fn -> File.rm(file) end)
+
+      assert {:ok, _} = Tools.call_tool("analyze_file", %{"path" => file})
+      Store.sync()
+
+      assert {:ok, %{count: 1, paths: [[_, _]]}} =
+               Tools.call_tool("find_paths", %{
+                 "from" => "Example.Billing.Invoice.hello/1",
+                 "to" => "Example.Billing.Invoice.message/1"
+               })
+
+      for module <- ["Example.Billing.Invoice", "Elixir.Example.Billing.Invoice"],
+          arity <- [nil, 1] do
+        args = %{"module" => module, "function_name" => "message"}
+        args = if arity, do: Map.put(args, "arity", arity), else: args
+
+        assert {:ok, %{count: 1, callers: [caller]}} = Tools.call_tool("find_callers", args)
+        assert caller.id == "Elixir.Example.Billing.Invoice.hello/1"
+        assert caller.file == file
+        assert caller.line == 2
+      end
+    end
+  end
 end
