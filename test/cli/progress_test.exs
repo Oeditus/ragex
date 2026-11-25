@@ -231,4 +231,73 @@ defmodule Ragex.CLI.ProgressTest do
       refute Process.alive?(pid)
     end
   end
+
+  describe "MCP stdio mode output routing" do
+    setup do
+      previous = Application.get_env(:ragex, :start_stdio_server)
+      Application.put_env(:ragex, :start_stdio_server, true)
+
+      on_exit(fn ->
+        if is_nil(previous) do
+          Application.delete_env(:ragex, :start_stdio_server)
+        else
+          Application.put_env(:ragex, :start_stdio_server, previous)
+        end
+      end)
+
+      :ok
+    end
+
+    test "bar/3 routes progress to stderr and leaves stdout clean" do
+      stderr =
+        capture_io(:stderr, fn ->
+          stdout =
+            capture_io(fn ->
+              Progress.bar(1, 1, label: "Synthetic fixture")
+            end)
+
+          assert stdout == "", "human progress leaked onto MCP stdout: #{inspect(stdout)}"
+        end)
+
+      assert stderr =~ "Synthetic fixture"
+      assert stderr =~ "100.0%"
+    end
+
+    test "status/2, steps/2, percent/2, and task_list/1 route to stderr in MCP stdio mode" do
+      stderr =
+        capture_io(:stderr, fn ->
+          stdout =
+            capture_io(fn ->
+              Progress.status("Indexed", status: :success)
+              Progress.steps(["Parse", "Store"], 1)
+              Progress.percent(100, label: "Index")
+              Progress.task_list([{"Analyze", :done}])
+            end)
+
+          assert stdout == ""
+        end)
+
+      assert stderr =~ "Indexed"
+      assert stderr =~ "Parse"
+      assert stderr =~ "Index"
+      assert stderr =~ "Analyze"
+    end
+
+    test "spinner/1 and stop_spinner/2 route to stderr in MCP stdio mode" do
+      stderr =
+        capture_io(:stderr, fn ->
+          stdout =
+            capture_io(fn ->
+              pid = Progress.spinner(label: "Indexing")
+              :timer.sleep(100)
+              Progress.stop_spinner(pid, "Done!")
+              :timer.sleep(50)
+            end)
+
+          assert stdout == ""
+        end)
+
+      assert stderr =~ "Done!"
+    end
+  end
 end

@@ -17,8 +17,11 @@ defmodule Ragex.MCP.SingleRequest do
   """
   @spec handle() :: no_return()
   def handle do
-    # Ensure the application is started
+    # Ensure the application is started without the persistent stdio server stealing stdin
+    Application.put_env(:ragex, :start_stdio_server, false)
     {:ok, _} = Application.ensure_all_started(:ragex)
+    # Stdout is reserved for the JSON-RPC response
+    Application.put_env(:ragex, :start_stdio_server, true)
 
     # Read the entire stdin
     request = IO.read(:stdio, :eof)

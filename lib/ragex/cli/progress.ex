@@ -4,6 +4,10 @@ defmodule Ragex.CLI.Progress do
 
   Provides visual feedback for long-running operations with progress bars,
   spinners, and status indicators.
+
+  When the MCP stdio server is enabled (via `:start_stdio_server` or default
+  `:start_server` config), output is automatically routed to `:stderr` so
+  stdout remains clean for JSON-RPC protocol messages.
   """
 
   alias Ragex.CLI.Colors
@@ -23,6 +27,7 @@ defmodule Ragex.CLI.Progress do
   - `:label` - Label to display before the bar (default: nil)
   - `:complete_char` - Character for completed portion (default: "█")
   - `:incomplete_char` - Character for incomplete portion (default: "░")
+  - `:device` - IO device to write to (default: `:stderr` in MCP stdio mode, `:stdio` otherwise)
 
   ## Examples
 
@@ -37,6 +42,7 @@ defmodule Ragex.CLI.Progress do
     label = Keyword.get(opts, :label)
     complete_char = Keyword.get(opts, :complete_char, @bar_filled)
     incomplete_char = Keyword.get(opts, :incomplete_char, @bar_empty)
+    device = io_device(opts)
 
     # Calculate progress
     percent = if total > 0, do: current / total, else: 0.0
@@ -56,8 +62,8 @@ defmodule Ragex.CLI.Progress do
     parts = if show_fraction, do: [" (#{current}/#{total})" | parts], else: parts
 
     # Clear line and render
-    IO.write("\r\e[K" <> Enum.join(Enum.reverse(parts)))
-    if current >= total, do: IO.write("\n")
+    IO.write(device, "\r\e[K" <> Enum.join(Enum.reverse(parts)))
+    if current >= total, do: IO.write(device, "\n")
 
     :ok
   end
@@ -73,6 +79,7 @@ defmodule Ragex.CLI.Progress do
   - `:type` - Progress type (`:spinner` or `:dots`) (default: `:spinner`)
   - `:frames` - Custom spinner frames (default: unicode spinner)
   - `:interval` - Milliseconds between frames (default: 80)
+  - `:device` - IO device to write to (default: `:stderr` in MCP stdio mode, `:stdio` otherwise)
 
   ## Examples
 
@@ -86,6 +93,8 @@ defmodule Ragex.CLI.Progress do
   """
   @spec start(String.t(), keyword()) :: pid() | nil
   def start(label, opts \\ []) when is_binary(label) do
+    device = io_device(opts)
+
     # Only show progress if output is a TTY
     if Colors.enabled?() do
       type = Keyword.get(opts, :type, :spinner)
@@ -93,11 +102,11 @@ defmodule Ragex.CLI.Progress do
       interval = Keyword.get(opts, :interval, 80)
 
       spawn(fn ->
-        spinner_loop(frames, label, interval, 0)
+        spinner_loop(frames, label, interval, 0, device)
       end)
     else
       # Non-TTY: just print the label once
-      IO.puts(label)
+      IO.puts(device, label)
       nil
     end
   end
@@ -136,7 +145,7 @@ defmodule Ragex.CLI.Progress do
   """
   @spec stop(pid() | nil, String.t() | nil) :: :ok
   def stop(nil, nil), do: :ok
-  def stop(nil, message) when is_binary(message), do: IO.puts(message)
+  def stop(nil, message) when is_binary(message), do: IO.puts(io_device(), message)
 
   def stop(pid, message) when is_pid(pid) and is_binary(message) do
     stop_spinner(pid, message)
@@ -169,6 +178,7 @@ defmodule Ragex.CLI.Progress do
   - `:label` - Label to display next to spinner (default: nil)
   - `:frames` - Custom spinner frames (default: unicode spinner)
   - `:interval` - Milliseconds between frames (default: 80)
+  - `:device` - IO device to write to (default: `:stderr` in MCP stdio mode, `:stdio` otherwise)
 
   ## Examples
 
@@ -181,9 +191,10 @@ defmodule Ragex.CLI.Progress do
     label = Keyword.get(opts, :label)
     frames = Keyword.get(opts, :frames, @spinner_frames)
     interval = Keyword.get(opts, :interval, 80)
+    device = io_device(opts)
 
     spawn(fn ->
-      spinner_loop(frames, label, interval, 0)
+      spinner_loop(frames, label, interval, 0, device)
     end)
   end
 
@@ -211,9 +222,11 @@ defmodule Ragex.CLI.Progress do
       end
     end
 
+    device = io_device()
+
     # Clear line and show message
-    IO.write("\r\e[K")
-    if message, do: IO.puts(message)
+    IO.write(device, "\r\e[K")
+    if message, do: IO.puts(device, message)
     :ok
   end
 
@@ -223,6 +236,7 @@ defmodule Ragex.CLI.Progress do
   ## Options
 
   - `:status` - Status type (:success, :error, :warning, :info)
+  - `:device` - IO device to write to (default: `:stderr` in MCP stdio mode, `:stdio` otherwise)
 
   ## Examples
 
@@ -235,6 +249,7 @@ defmodule Ragex.CLI.Progress do
   @spec status(String.t(), keyword()) :: :ok
   def status(message, opts \\ []) do
     status_type = Keyword.get(opts, :status, :info)
+    device = io_device(opts)
 
     {icon, color_fn} =
       case status_type do
@@ -245,7 +260,7 @@ defmodule Ragex.CLI.Progress do
         _ -> {"●", & &1}
       end
 
-    IO.puts(color_fn.("#{icon} #{message}"))
+    IO.puts(device, color_fn.("#{icon} #{message}"))
     :ok
   end
 
@@ -261,6 +276,8 @@ defmodule Ragex.CLI.Progress do
   """
   @spec steps([String.t()], non_neg_integer()) :: :ok
   def steps(step_names, current_step) do
+    device = io_device()
+
     step_names
     |> Enum.with_index()
     |> Enum.each(fn {name, idx} ->
@@ -272,7 +289,7 @@ defmodule Ragex.CLI.Progress do
         end
 
       text = if idx == current_step, do: Colors.bold(name), else: name
-      IO.puts("#{icon} #{text}")
+      IO.puts(device, "#{icon} #{text}")
     end)
 
     :ok
@@ -280,6 +297,11 @@ defmodule Ragex.CLI.Progress do
 
   @doc """
   Displays a percentage-based progress update.
+
+  ## Options
+
+  - `:label` - Label to display before the percentage (default: nil)
+  - `:device` - IO device to write to (default: `:stderr` in MCP stdio mode, `:stdio` otherwise)
 
   ## Examples
 
@@ -289,6 +311,7 @@ defmodule Ragex.CLI.Progress do
   @spec percent(number(), keyword()) :: :ok
   def percent(percentage, opts \\ []) do
     label = Keyword.get(opts, :label)
+    device = io_device(opts)
 
     colored_percent =
       cond do
@@ -299,8 +322,8 @@ defmodule Ragex.CLI.Progress do
       end
 
     output = if label, do: "#{label}: #{colored_percent}", else: colored_percent
-    IO.write("\r#{output}")
-    if percentage >= 100, do: IO.write("\n")
+    IO.write(device, "\r#{output}")
+    if percentage >= 100, do: IO.write(device, "\n")
 
     :ok
   end
@@ -352,6 +375,8 @@ defmodule Ragex.CLI.Progress do
   """
   @spec task_list([{String.t(), :done | :running | :pending | :error}]) :: :ok
   def task_list(tasks) do
+    device = io_device()
+
     Enum.each(tasks, fn {task_name, status} ->
       {icon, color_fn} =
         case status do
@@ -361,13 +386,28 @@ defmodule Ragex.CLI.Progress do
           :error -> {"✗", &Colors.error/1}
         end
 
-      IO.puts(color_fn.("#{icon} #{task_name}"))
+      IO.puts(device, color_fn.("#{icon} #{task_name}"))
     end)
 
     :ok
   end
 
   # Private helpers
+
+  defp io_device(opts \\ []) do
+    case Keyword.fetch(opts, :device) do
+      {:ok, device} -> device
+      :error -> if stdio_mcp_active?(), do: :stderr, else: :stdio
+    end
+  end
+
+  defp stdio_mcp_active? do
+    Application.get_env(
+      :ragex,
+      :start_stdio_server,
+      Application.get_env(:ragex, :start_server, true)
+    ) not in [false, nil]
+  end
 
   # Get predefined frame sets
   defp get_frames(:spinner), do: @spinner_frames
@@ -378,7 +418,7 @@ defmodule Ragex.CLI.Progress do
   defp get_frames(_), do: @spinner_frames
 
   # Main spinner loop with message handling
-  defp spinner_loop(frames, label, interval, frame_index) do
+  defp spinner_loop(frames, label, interval, frame_index, device) do
     frame = Enum.at(frames, rem(frame_index, length(frames)))
 
     output =
@@ -388,21 +428,21 @@ defmodule Ragex.CLI.Progress do
         Colors.info(frame)
       end
 
-    IO.write("\r#{output}")
+    IO.write(device, "\r#{output}")
 
     # Check for messages or timeout
     receive do
       {:update_label, new_label} ->
-        spinner_loop(frames, new_label, interval, frame_index + 1)
+        spinner_loop(frames, new_label, interval, frame_index + 1, device)
 
       :stop ->
         :ok
 
       _ ->
-        spinner_loop(frames, label, interval, frame_index + 1)
+        spinner_loop(frames, label, interval, frame_index + 1, device)
     after
       interval ->
-        spinner_loop(frames, label, interval, frame_index + 1)
+        spinner_loop(frames, label, interval, frame_index + 1, device)
     end
   end
 end
