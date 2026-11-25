@@ -429,6 +429,18 @@ defmodule Ragex.MCP.Handlers.ToolsTest do
         assert caller.file == file
         assert caller.line == 2
       end
+
+      for module <- ["Example.Billing.Invoice", "Elixir.Example.Billing.Invoice"],
+          arity <- [nil, 1] do
+        params = %{"module" => module, "function" => "hello"}
+        params = if arity, do: Map.put(params, "arity", arity), else: params
+
+        assert {:ok, %{calls: [%{to: {:function, Example.Billing.Invoice, :message, 1}}]}} =
+                 Tools.call_tool("query_graph", %{
+                   "query_type" => "get_calls",
+                   "params" => params
+                 })
+      end
     end
   end
 end

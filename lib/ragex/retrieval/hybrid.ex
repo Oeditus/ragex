@@ -21,7 +21,7 @@ defmodule Ragex.Retrieval.Hybrid do
 
   alias Ragex.Dllb.Adapter, as: DllbAdapter
   alias Ragex.Embeddings.Bumblebee
-  alias Ragex.Graph.Store
+  alias Ragex.Graph.{Algorithms, Store}
   alias Ragex.Retrieval.{MetaASTRanker, QueryExpansion}
   alias Ragex.VectorStore
 
@@ -388,28 +388,31 @@ defmodule Ragex.Retrieval.Hybrid do
     end
   end
 
-  # Fetch top-N nodes by PageRank from dllb. Returns a flat list of
-  # %{node_type, node_id, pagerank} maps. Returns [] when dllb is disabled.
+  # Fetch top-N nodes by PageRank from dllb (via Algorithms.pagerank/0, which
+  # runs native `GRAPH PAGERANK calls` and resolves DLLB IDs to Ragex node refs).
   defp pagerank_candidates(n) do
-    pr_query = Dllb.Query.graph_pagerank("ast_node_edges", limit: n)
-
-    case DllbAdapter.query(pr_query) do
-      {:ok, %Dllb.Result.Rows{data: rows}} when is_list(rows) ->
-        rows
-        |> Enum.map(fn row ->
-          id = Map.get(row, "id") || Map.get(row, :id) || ""
-          pr = Map.get(row, "score") || Map.get(row, :score) || 0.0
-
-          # dllb ids are in the form "ast_node:module_name_10" — extract kind
-          {node_type, node_id} = parse_dllb_id(id)
-          %{node_type: node_type, node_id: node_id, pagerank: pr}
-        end)
-        |> Enum.reject(fn r -> is_nil(r.node_id) end)
-
-      _ ->
-        []
-    end
+    Algorithms.pagerank()
+    |> Enum.sort_by(fn {_node, score} -> -score end)
+    |> Enum.take(n)
+    |> Enum.flat_map(fn {node, pr} ->
+      case normalize_pagerank_node(node) do
+        {node_type, node_id} -> [%{node_type: node_type, node_id: node_id, pagerank: pr}]
+        nil -> []
+      end
+    end)
   end
+
+  defp normalize_pagerank_node({:function, mod, name, arity}),
+    do: {:function, {mod, name, arity}}
+
+  defp normalize_pagerank_node({:function, {_mod, _name, _arity} = id}),
+    do: {:function, id}
+
+  defp normalize_pagerank_node({:module, mod}),
+    do: {:module, mod}
+
+  defp normalize_pagerank_node(id) when is_binary(id), do: parse_dllb_id(id)
+  defp normalize_pagerank_node(_), do: nil
 
   # Parse a dllb record ID like "ast_node:module_my_module_1" back to a
   # ragex {node_type, node_id} tuple.  Best-effort: falls back to :unknown.
@@ -427,8 +430,6 @@ defmodule Ragex.Retrieval.Hybrid do
         {:unknown, id}
     end
   end
-
-  defp parse_dllb_id(_), do: {:unknown, nil}
 
   # ---------------------------------------------------------------------------
   # HyDE retrieval helper
@@ -497,40 +498,49 @@ defmodule Ragex.Retrieval.Hybrid do
 
   # Min-max normalize BM25 scores across the result set to [0, 1].
   defp normalize_bm25_scores(rows) do
-    scores = Enum.map(rows, &(Map.get(&1, "score") || Map.get(&1, :score) || 0.0))
+    scores =
+      Enum.map(rows, fn row ->
+        raw = unwrap_dllb(Map.get(row, "score") || Map.get(row, :score))
+        if is_number(raw), do: raw / 1, else: 0.0
+      end)
+
     min_s = Enum.min(scores, fn -> 0.0 end)
     max_s = Enum.max(scores, fn -> 1.0 end)
     range = max(max_s - min_s, 1.0e-9)
 
     Enum.zip(rows, scores)
     |> Enum.map(fn {row, raw} ->
-      Map.put(row, :normalized_bm25, (raw - min_s) / range)
+      norm = if max_s == min_s and raw > 0.0, do: 1.0, else: (raw - min_s) / range
+      Map.put(row, :normalized_bm25, norm)
     end)
   end
 
   defp fts_row_to_result(row) do
-    kind = Map.get(row, "kind") || Map.get(row, :kind)
-    name = Map.get(row, "name") || Map.get(row, :name)
-    file = Map.get(row, "file_path") || Map.get(row, :file_path)
-    line = Map.get(row, "line_start") || Map.get(row, :line_start)
-    source = Map.get(row, "source_text") || Map.get(row, :source_text) || ""
+    kind = unwrap_dllb(Map.get(row, "kind") || Map.get(row, :kind))
+    name = unwrap_dllb(Map.get(row, "name") || Map.get(row, :name))
+    file = unwrap_dllb(Map.get(row, "file_path") || Map.get(row, :file_path))
+    line = unwrap_dllb(Map.get(row, "line_start") || Map.get(row, :line_start))
+    source = unwrap_dllb(Map.get(row, "source_text") || Map.get(row, :source_text)) || ""
 
     node_type =
       case kind do
-        "module" -> :module
-        "function_def" -> :function
+        k when k in ["module", "container", :module, :container] -> :module
+        k when k in ["function", "function_def", :function, :function_def] -> :function
         _ -> :unknown
       end
 
     node_id =
       case node_type do
         :module ->
-          name && String.to_atom(name)
+          mod = unwrap_dllb(Map.get(row, "module") || Map.get(row, :module)) || name
+          mod && String.to_atom(to_string(mod))
 
         :function ->
-          mod_str = Map.get(row, "module") || Map.get(row, :module) || ""
-          arity = Map.get(row, "arity") || Map.get(row, :arity) || 0
-          {String.to_atom(mod_str), String.to_atom(name || "unknown"), arity}
+          mod_str = unwrap_dllb(Map.get(row, "module") || Map.get(row, :module)) || ""
+          arity = unwrap_dllb(Map.get(row, "arity") || Map.get(row, :arity)) || 0
+
+          {String.to_atom(to_string(mod_str)), String.to_atom(to_string(name || "unknown")),
+           arity}
 
         _ ->
           name
@@ -540,10 +550,17 @@ defmodule Ragex.Retrieval.Hybrid do
       node_type: node_type,
       node_id: node_id,
       score: Map.get(row, :normalized_bm25, 0.0),
-      text: String.slice(source, 0, 500),
+      text: String.slice(to_string(source), 0, 500),
       file: file,
       line: line,
       source: :fts
     }
   end
+
+  defp unwrap_dllb(%{"String" => v}), do: v
+  defp unwrap_dllb(%{"Int" => v}), do: v
+  defp unwrap_dllb(%{"Float" => v}), do: v
+  defp unwrap_dllb(%{"Bool" => v}), do: v
+  defp unwrap_dllb("None"), do: nil
+  defp unwrap_dllb(v), do: v
 end

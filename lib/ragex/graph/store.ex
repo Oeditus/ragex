@@ -328,7 +328,7 @@ defmodule Ragex.Graph.Store do
   """
   @spec update_node_metadata(atom(), term(), map()) :: :ok
   def update_node_metadata(node_type, node_id, new_metadata) when is_map(new_metadata) do
-    backend().update_node_metadata(node_type, node_id, new_metadata)
+    GenServer.cast(__MODULE__, {:update_node_metadata, node_type, node_id, new_metadata})
   end
 
   @doc """
@@ -444,7 +444,14 @@ defmodule Ragex.Graph.Store do
   @spec compact() :: :ok | {:error, term()}
   def compact do
     if Application.get_env(:ragex, :store_backend, :ets) == :dllb do
-      case Dllb.compact() do
+      opts =
+        if ProjectManager.per_project_enabled?() do
+          [pool: ProjectManager.active_pool()]
+        else
+          []
+        end
+
+      case Dllb.compact(opts) do
         {:ok, _} ->
           Logger.info("Store compaction succeeded")
           :ok
@@ -607,6 +614,12 @@ defmodule Ragex.Graph.Store do
   @impl true
   def handle_cast({:remove_node, node_type, node_id}, state) do
     backend().remove_node(node_type, node_id)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_cast({:update_node_metadata, node_type, node_id, new_metadata}, state) do
+    backend().update_node_metadata(node_type, node_id, new_metadata)
     {:noreply, state}
   end
 

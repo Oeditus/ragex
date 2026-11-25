@@ -551,9 +551,12 @@ defmodule Ragex.Graph.Algorithms do
 
     case DllbBackend.query(query) do
       {:ok, %Dllb.Result.Rows{data: data}} ->
+        id_map = build_dllb_edge_id_map()
+
         scores =
           Map.new(data, fn row ->
-            id = unwrap_dllb_value(row["id"])
+            raw_id = unwrap_dllb_value(row["id"])
+            id = Map.get(id_map, raw_id, raw_id)
             score = unwrap_dllb_value(row["score"]) || 0.0
             {id, score}
           end)
@@ -566,55 +569,75 @@ defmodule Ragex.Graph.Algorithms do
   end
 
   defp degree_centrality_via_dllb do
-    query = Dllb.Query.graph_centrality("calls", mode: :degree)
+    in_query = Dllb.Query.graph_centrality("calls", mode: :indegree)
+    out_query = Dllb.Query.graph_centrality("calls", mode: :outdegree)
 
-    case DllbBackend.query(query) do
-      {:ok, %Dllb.Result.Rows{data: data}} ->
-        metrics =
-          Map.new(data, fn row ->
-            id = unwrap_dllb_value(row["id"])
-            in_deg = unwrap_dllb_value(row["in_degree"]) || 0
-            out_deg = unwrap_dllb_value(row["out_degree"]) || 0
-            raw_score = unwrap_dllb_value(row["score"]) || unwrap_dllb_value(row["degree"]) || 0
-            tot_deg = if in_deg + out_deg > 0, do: in_deg + out_deg, else: trunc(raw_score)
+    with {:ok, %Dllb.Result.Rows{data: in_rows}} <- DllbBackend.query(in_query),
+         {:ok, %Dllb.Result.Rows{data: out_rows}} <- DllbBackend.query(out_query) do
+      id_map = build_dllb_edge_id_map()
 
-            {id,
-             %{
-               in_degree: in_deg,
-               out_degree: out_deg,
-               total_degree: tot_deg
-             }}
-          end)
+      in_map =
+        Map.new(in_rows, fn row ->
+          raw_id = unwrap_dllb_value(row["id"])
+          score = unwrap_dllb_value(row["score"]) || 0
+          {raw_id, trunc(score)}
+        end)
 
-        {:ok, metrics}
+      out_map =
+        Map.new(out_rows, fn row ->
+          raw_id = unwrap_dllb_value(row["id"])
+          score = unwrap_dllb_value(row["score"]) || 0
+          {raw_id, trunc(score)}
+        end)
 
-      _ ->
-        {:error, :fallback}
+      all_raw_ids =
+        MapSet.union(MapSet.new(Map.keys(in_map)), MapSet.new(Map.keys(out_map)))
+
+      metrics =
+        Map.new(all_raw_ids, fn raw_id ->
+          id = Map.get(id_map, raw_id, raw_id)
+          in_deg = Map.get(in_map, raw_id, 0)
+          out_deg = Map.get(out_map, raw_id, 0)
+
+          {id,
+           %{
+             in_degree: in_deg,
+             out_degree: out_deg,
+             total_degree: in_deg + out_deg
+           }}
+        end)
+
+      {:ok, metrics}
+    else
+      _ -> {:error, :fallback}
     end
   end
 
   defp graph_stats_via_dllb do
     node_counts_query = Dllb.Query.count("ast_node", group_by: "kind")
-    edge_count_query = Dllb.Query.count("_edge_idx")
+    edges_query = Dllb.Query.graph_edges("calls")
     pagerank_query = Dllb.Query.graph_pagerank("calls", limit: 10)
 
     with {:ok, %Dllb.Result.Rows{data: type_rows}} <-
            DllbBackend.query(node_counts_query),
-         {:ok, %Dllb.Result.Count{count: edge_count}} <-
-           DllbBackend.query(edge_count_query),
+         {:ok, %Dllb.Result.Rows{data: edge_rows}} <-
+           DllbBackend.query(edges_query),
          {:ok, %Dllb.Result.Rows{data: pr_rows}} <- DllbBackend.query(pagerank_query) do
       node_counts_by_type =
-        Map.new(type_rows, fn row ->
-          type_atom = safe_type_atom(unwrap_dllb_value(row["kind"]))
+        Enum.reduce(type_rows, %{}, fn row, acc ->
+          type_atom = normalize_dllb_kind_atom(unwrap_dllb_value(row["kind"]))
           cnt = unwrap_dllb_value(row["count"]) || 0
-          {type_atom, cnt}
+          Map.update(acc, type_atom, cnt, &(&1 + cnt))
         end)
 
       node_count = Enum.sum(Map.values(node_counts_by_type))
+      edge_count = length(edge_rows)
+      id_map = edge_rows_to_id_map(edge_rows)
 
       top_nodes =
         Enum.map(pr_rows, fn row ->
-          id = unwrap_dllb_value(row["id"])
+          raw_id = unwrap_dllb_value(row["id"])
+          id = Map.get(id_map, raw_id, raw_id)
           score = unwrap_dllb_value(row["score"]) || 0.0
           {id, score}
         end)
@@ -640,6 +663,42 @@ defmodule Ragex.Graph.Algorithms do
       _ -> {:error, :fallback}
     end
   end
+
+  defp build_dllb_edge_id_map do
+    case DllbBackend.query(Dllb.Query.graph_edges("calls")) do
+      {:ok, %Dllb.Result.Rows{data: edge_rows}} -> edge_rows_to_id_map(edge_rows)
+      _ -> %{}
+    end
+  end
+
+  defp edge_rows_to_id_map(edge_rows) when is_list(edge_rows) do
+    Enum.reduce(edge_rows, %{}, fn row, acc ->
+      acc
+      |> maybe_put_edge_node(unwrap_dllb_value(row["src"]), unwrap_dllb_value(row["from_node"]))
+      |> maybe_put_edge_node(unwrap_dllb_value(row["dst"]), unwrap_dllb_value(row["to_node"]))
+    end)
+  end
+
+  defp maybe_put_edge_node(acc, raw_id, encoded)
+       when is_binary(raw_id) and is_binary(encoded) and encoded != "" do
+    case Jason.decode(encoded) do
+      {:ok, %{"type" => "function", "module" => mod, "name" => name, "arity" => arity}}
+      when is_binary(mod) and is_binary(name) and is_integer(arity) ->
+        Map.put(acc, raw_id, {:function, String.to_atom(mod), String.to_atom(name), arity})
+
+      {:ok, %{"type" => "module", "name" => name}} when is_binary(name) ->
+        Map.put(acc, raw_id, {:module, String.to_atom(name)})
+
+      _ ->
+        acc
+    end
+  end
+
+  defp maybe_put_edge_node(acc, _raw_id, _encoded), do: acc
+
+  defp normalize_dllb_kind_atom("function_def"), do: :function
+  defp normalize_dllb_kind_atom("container"), do: :module
+  defp normalize_dllb_kind_atom(other), do: safe_type_atom(other)
 
   # Unwrap serde-tagged dllb JSON values: %{"String" => v}, %{"Int" => v}, etc.
   defp unwrap_dllb_value(%{"String" => v}), do: v

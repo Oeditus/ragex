@@ -122,6 +122,8 @@ defmodule Ragex.Store.Backend.Dllb do
     :ok
   end
 
+  @edge_types [:calls, :imports, :defines, :inherits, :implements, :contains]
+
   @impl true
   def stats do
     stats_result =
@@ -144,9 +146,17 @@ defmodule Ragex.Store.Backend.Dllb do
 
     total = Map.get(stats_result, :total, 0)
     by_kind = Map.get(stats_result, :by_kind, %{})
+    edge_count = count_all_edges()
+    embedding_count = count_embeddings()
 
     Map.merge(
-      %{nodes: total, total: total, edges: 0, embeddings: 0, by_kind: by_kind},
+      %{
+        nodes: total,
+        total: total,
+        edges: edge_count,
+        embeddings: embedding_count,
+        by_kind: by_kind
+      },
       stats_result
     )
   end
@@ -254,8 +264,24 @@ defmodule Ragex.Store.Backend.Dllb do
           existing
       end
 
+    extra_fields =
+      case {node_type, node_id} do
+        {:function, {mod, _name, arity}} ->
+          %{
+            module: Map.get(normalized_data, :module, mod),
+            arity: Map.get(normalized_data, :arity, arity)
+          }
+
+        {:module, mod} ->
+          %{module: Map.get(normalized_data, :module, mod)}
+
+        _ ->
+          %{}
+      end
+
     normalized_data
     |> Map.put(:ast_serialized, ast_serialized)
+    |> Map.merge(extra_fields)
     |> Map.merge(%{
       kind: to_string(node_type),
       name: extract_name(node_type, node_id),
@@ -280,47 +306,96 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def list_nodes(node_type \\ nil, limit \\ 1_000) do
-    query_string =
+    rows =
       case node_type do
-        nil -> Dllb.Query.select("ast_node", limit: effective_limit(limit))
-        type -> MQ.nodes_by_kind(to_string(type), limit: effective_limit(limit))
+        nil ->
+          case MQ.exec(Dllb.Query.select("ast_node", limit: effective_limit(limit)), query_fn()) do
+            {:ok, rows} -> rows
+            {:error, _} -> []
+          end
+
+        type ->
+          list_rows_by_type(type, limit)
       end
 
-    case MQ.exec(query_string, query_fn()) do
-      {:ok, rows} ->
-        Enum.map(rows, fn row ->
-          %{type: row[:kind], id: row[:name], data: dllb_row_to_node_data(row)}
-        end)
+    Enum.map(rows, fn row ->
+      data = dllb_row_to_node_data(row)
+      {normalized_type, node_id} = row_to_node_entry(row, data)
+      %{type: normalized_type, id: node_id, data: data}
+    end)
+  end
 
-      {:error, _} ->
-        []
+  defp list_rows_by_type(type, limit) do
+    kinds =
+      case type do
+        :function -> ["function", "function_def"]
+        :module -> ["module", "container"]
+        other -> [to_string(other)]
+      end
+
+    eff_limit = effective_limit(limit)
+
+    rows =
+      Enum.flat_map(kinds, fn kind ->
+        case MQ.exec(MQ.nodes_by_kind(kind, limit: eff_limit), query_fn()) do
+          {:ok, found} -> found
+          {:error, _} -> []
+        end
+      end)
+
+    case eff_limit do
+      nil -> rows
+      n -> Enum.take(rows, n)
     end
   end
 
   @impl true
   def count_nodes_by_type(node_type) do
-    query_string = Dllb.Query.count("ast_node", where: "kind = '#{node_type}'")
+    kinds =
+      case node_type do
+        :function -> ["function", "function_def"]
+        :module -> ["module", "container"]
+        other -> [to_string(other)]
+      end
 
-    case query(query_string) do
-      {:ok, %Dllb.Result.Count{count: count}} ->
-        count
+    Enum.reduce(kinds, 0, fn kind, acc ->
+      query_string = Dllb.Query.count("ast_node", where: "kind = '#{kind}'")
 
-      _ ->
-        case MQ.exec(MQ.nodes_by_kind(to_string(node_type)), query_fn()) do
-          {:ok, rows} -> length(rows)
-          {:error, _} -> 0
+      count =
+        case query(query_string) do
+          {:ok, %Dllb.Result.Count{count: c}} ->
+            c
+
+          _ ->
+            case MQ.exec(MQ.nodes_by_kind(kind), query_fn()) do
+              {:ok, rows} -> length(rows)
+              {:error, _} -> 0
+            end
         end
-    end
+
+      acc + count
+    end)
   end
 
   @impl true
   def find_function(module_name, func_name) do
-    query_string = MQ.functions_of_module(inspect(module_name))
+    target_mod = module_string(module_name)
+    target_name = to_string(func_name)
+
+    query_string =
+      Dllb.Query.select("ast_node",
+        where: "name = #{escape_value(target_name)}"
+      )
 
     case MQ.exec(query_string, query_fn()) do
       {:ok, rows} ->
         Enum.find_value(rows, fn row ->
-          if row[:name] == to_string(func_name), do: dllb_row_to_node_data(row)
+          kind = normalize_kind(row[:kind])
+          row_mod = row[:module] && module_string(row[:module])
+
+          if kind == :function and row_mod == target_mod do
+            dllb_row_to_node_data(row)
+          end
         end)
 
       {:error, _} ->
@@ -338,8 +413,42 @@ defmodule Ragex.Store.Backend.Dllb do
   @impl true
   def update_node_metadata(node_type, node_id, new_metadata) when is_map(new_metadata) do
     id = node_to_dllb_id({node_type, node_id})
-    query(Dllb.Query.update("ast_node:#{id}", new_metadata))
-    :ok
+
+    case find_node(node_type, node_id) do
+      existing when is_map(existing) ->
+        existing_meta = Map.get(existing, :metadata, %{})
+
+        merged_meta =
+          if is_map(existing_meta), do: Map.merge(existing_meta, new_metadata), else: new_metadata
+
+        updated_data = Map.put(existing, :metadata, merged_meta)
+
+        case encode_ast_serialized(updated_data) do
+          nil ->
+            :ok
+
+          serialized ->
+            query(Dllb.Query.update("ast_node:#{id}", %{ast_serialized: serialized}))
+            :ok
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp encode_ast_serialized(map) when is_map(map) do
+    map
+    |> Map.drop([
+      :ast_serialized,
+      "ast_serialized",
+      :source_embedding,
+      :structure_embedding,
+      :docstring_embedding
+    ])
+    |> Jason.encode!()
+  rescue
+    _ -> nil
   end
 
   # ---------------------------------------------------------------------------
@@ -348,15 +457,7 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def store_edge(from_node, to_node, edge_type, opts \\ []) do
-    from_id = node_to_dllb_id(from_node)
-    to_id = node_to_dllb_id(to_node)
-    weight = Keyword.get(opts, :weight, 1.0)
-    metadata = Keyword.get(opts, :metadata, %{})
-    props = Map.put(metadata, :weight, weight)
-
-    query_string =
-      Dllb.Query.relate("ast_node:#{from_id}", to_string(edge_type), "ast_node:#{to_id}", props)
-
+    query_string = build_relate_query(from_node, to_node, edge_type, opts)
     query(query_string)
     :ok
   end
@@ -365,16 +466,25 @@ defmodule Ragex.Store.Backend.Dllb do
   def store_edges(edges) when is_list(edges) do
     queries =
       Enum.map(edges, fn {from_node, to_node, edge_type, opts} ->
-        from_id = node_to_dllb_id(from_node)
-        to_id = node_to_dllb_id(to_node)
-        weight = Keyword.get(opts, :weight, 1.0)
-        metadata = Keyword.get(opts, :metadata, %{})
-        props = Map.put(metadata, :weight, weight)
-
-        Dllb.Query.relate("ast_node:#{from_id}", to_string(edge_type), "ast_node:#{to_id}", props)
+        build_relate_query(from_node, to_node, edge_type, opts)
       end)
 
     exec_batch_queries(queries)
+  end
+
+  defp build_relate_query(from_node, to_node, edge_type, opts) do
+    from_id = node_to_dllb_id(from_node)
+    to_id = node_to_dllb_id(to_node)
+    weight = Keyword.get(opts, :weight, 1.0)
+    metadata = Keyword.get(opts, :metadata, %{})
+
+    props =
+      metadata
+      |> Map.put(:weight, weight)
+      |> Map.put(:from_node, encode_edge_node(from_node))
+      |> Map.put(:to_node, encode_edge_node(to_node))
+
+    Dllb.Query.relate("ast_node:#{from_id}", to_string(edge_type), "ast_node:#{to_id}", props)
   end
 
   defp exec_batch_queries([]), do: :ok
@@ -394,63 +504,138 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def get_outgoing_edges(from_node, edge_type) do
+    edge_str = to_string(edge_type)
     from_id = node_to_dllb_id(from_node)
-    query_string = "SELECT ->#{edge_type}->ast_node FROM ast_node:#{from_id}"
 
-    case MQ.exec(query_string, query_fn()) do
-      {:ok, rows} ->
-        Enum.map(rows, fn row ->
-          %{to: unwrap_typed(row[:id]), type: edge_type, metadata: %{}}
-        end)
+    rows =
+      query_graph_edges_by_endpoint(edge_str, "src", from_id, legacy_node_to_dllb_id(from_node))
 
-      {:error, _} ->
-        []
-    end
+    Enum.map(rows, fn row ->
+      %{
+        to: decode_edge_node(row["to_node"], row["dst"]),
+        type: edge_type,
+        metadata: extract_edge_metadata(row)
+      }
+    end)
   end
 
   @impl true
   def get_incoming_edges(to_node, edge_type) do
+    edge_str = to_string(edge_type)
     to_id = node_to_dllb_id(to_node)
-    query_string = "SELECT <-#{edge_type}<-ast_node FROM ast_node:#{to_id}"
 
-    case MQ.exec(query_string, query_fn()) do
-      {:ok, rows} ->
-        Enum.map(rows, fn row ->
-          %{from: unwrap_typed(row[:id]), type: edge_type, metadata: %{}}
-        end)
+    rows =
+      query_graph_edges_by_endpoint(edge_str, "dst", to_id, legacy_node_to_dllb_id(to_node))
 
-      {:error, _} ->
-        []
+    Enum.map(rows, fn row ->
+      %{
+        from: decode_edge_node(row["from_node"], row["src"]),
+        type: edge_type,
+        metadata: extract_edge_metadata(row)
+      }
+    end)
+  end
+
+  @impl true
+  def get_edge_weight(from_node, to_node, edge_type) do
+    edge_str = to_string(edge_type)
+    from_id = node_to_dllb_id(from_node)
+    to_id = node_to_dllb_id(to_node)
+
+    where = "src = #{escape_value(from_id)} AND dst = #{escape_value(to_id)}"
+
+    case query(Dllb.Query.graph_edges(edge_str, where: where)) do
+      {:ok, %Dllb.Result.Rows{data: [row | _]}} ->
+        unwrap_typed(row["weight"]) || 1.0
+
+      _ ->
+        legacy_from = legacy_node_to_dllb_id(from_node)
+        legacy_to = legacy_node_to_dllb_id(to_node)
+
+        if legacy_from && legacy_to && (legacy_from != from_id or legacy_to != to_id) do
+          legacy_where = "src = #{escape_value(legacy_from)} AND dst = #{escape_value(legacy_to)}"
+
+          case query(Dllb.Query.graph_edges(edge_str, where: legacy_where)) do
+            {:ok, %Dllb.Result.Rows{data: [row | _]}} -> unwrap_typed(row["weight"]) || 1.0
+            _ -> nil
+          end
+        else
+          nil
+        end
     end
   end
 
   @impl true
-  def get_edge_weight(_from_node, _to_node, _edge_type), do: 1.0
-
-  @impl true
   def list_edges(opts \\ []) do
     edge_type = Keyword.get(opts, :edge_type)
+    limit = Keyword.get(opts, :limit)
 
-    if edge_type do
-      query_string = Dllb.Query.graph_edges(to_string(edge_type))
+    edges =
+      if edge_type do
+        fetch_graph_edges_for_type(edge_type)
+      else
+        Enum.flat_map(@edge_types, &fetch_graph_edges_for_type/1)
+      end
 
-      case query(query_string) do
-        {:ok, %Dllb.Result.Rows{data: data}} ->
-          Enum.map(data, fn row ->
-            %{
-              from: unwrap_typed(row["src"] || row["from_id"]),
-              to: unwrap_typed(row["dst"] || row["to_id"]),
-              type: safe_to_edge_atom(unwrap_typed(row["edge_type"] || edge_type)),
-              metadata: %{}
-            }
-          end)
+    edges =
+      if edges == [] do
+        list_edges_fallback(opts)
+      else
+        edges
+      end
 
-        _ ->
-          list_edges_fallback(opts)
+    case limit do
+      n when is_integer(n) and n >= 0 -> Enum.take(edges, n)
+      _ -> edges
+    end
+  end
+
+  defp fetch_graph_edges_for_type(edge_type) do
+    query_string = Dllb.Query.graph_edges(to_string(edge_type))
+
+    case query(query_string) do
+      {:ok, %Dllb.Result.Rows{data: data}} ->
+        Enum.map(data, fn row ->
+          %{
+            from: decode_edge_node(row["from_node"], row["src"] || row["from_id"]),
+            to: decode_edge_node(row["to_node"], row["dst"] || row["to_id"]),
+            type: safe_to_edge_atom(unwrap_typed(row["edge_type"] || edge_type)),
+            metadata: extract_edge_metadata(row)
+          }
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp query_graph_edges_by_endpoint(edge_str, field, canonical_id, legacy_id) do
+    canonical_rows =
+      case query(
+             Dllb.Query.graph_edges(edge_str, where: "#{field} = #{escape_value(canonical_id)}")
+           ) do
+        {:ok, %Dllb.Result.Rows{data: data}} -> data
+        _ -> []
+      end
+
+    if canonical_rows == [] and is_binary(legacy_id) and legacy_id != canonical_id do
+      case query(Dllb.Query.graph_edges(edge_str, where: "#{field} = #{escape_value(legacy_id)}")) do
+        {:ok, %Dllb.Result.Rows{data: data}} -> data
+        _ -> []
       end
     else
-      list_edges_fallback(opts)
+      canonical_rows
     end
+  end
+
+  defp count_all_edges do
+    Enum.reduce(@edge_types, 0, fn edge_type, acc ->
+      case query(Dllb.Query.graph_edges(to_string(edge_type))) do
+        {:ok, %Dllb.Result.Rows{count: count}} when is_integer(count) -> acc + count
+        {:ok, %Dllb.Result.Rows{data: data}} when is_list(data) -> acc + length(data)
+        _ -> acc
+      end
+    end)
   end
 
   defp list_edges_fallback(opts) do
@@ -485,20 +670,26 @@ defmodule Ragex.Store.Backend.Dllb do
   # ---------------------------------------------------------------------------
 
   @impl true
-  def store_embedding(node_type, node_id, embedding, _text) when is_list(embedding) do
-    # Attach the embedding to the matching ast_node row(s) by their stable
-    # attributes (kind/module/name/arity) rather than a reconstructed record
-    # id, via a server-side `UPDATE ... WHERE`.
-    case embedding_match_attrs({node_type, node_id}) do
-      attrs when map_size(attrs) == 0 ->
+  def store_embedding(node_type, node_id, embedding, text) when is_list(embedding) do
+    fields = build_embedding_fields(embedding, text)
+    id = node_to_dllb_id({node_type, node_id})
+
+    case query(Dllb.Query.update("ast_node:#{id}", fields)) do
+      {:ok, %Dllb.Result.Update{matched: matched}} when matched > 0 ->
         :ok
 
-      attrs ->
-        attrs
-        |> MQ.set_source_embedding(embedding)
-        |> Dllb.query()
+      _ ->
+        case embedding_match_attrs({node_type, node_id}) do
+          attrs when map_size(attrs) == 0 ->
+            :ok
 
-        :ok
+          attrs ->
+            attrs
+            |> MQ.set_source_embedding(embedding)
+            |> query()
+
+            :ok
+        end
     end
   end
 
@@ -507,22 +698,42 @@ defmodule Ragex.Store.Backend.Dllb do
   @impl true
   def store_embeddings(embeddings) when is_list(embeddings) do
     queries =
-      Enum.flat_map(embeddings, fn {node_type, node_id, embedding, _text} ->
-        case embedding_match_attrs({node_type, node_id}) do
-          attrs when map_size(attrs) == 0 ->
-            []
+      Enum.flat_map(embeddings, fn
+        {node_type, node_id, embedding, text} when is_list(embedding) ->
+          id = node_to_dllb_id({node_type, node_id})
+          fields = build_embedding_fields(embedding, text)
+          [Dllb.Query.update("ast_node:#{id}", fields)]
 
-          attrs ->
-            [MQ.set_source_embedding(attrs, embedding)]
-        end
+        _ ->
+          []
       end)
 
     exec_batch_queries(queries)
   end
 
+  defp build_embedding_fields(embedding, text) when is_binary(text) and text != "" do
+    %{source_embedding: embedding, source_text: text}
+  end
+
+  defp build_embedding_fields(embedding, _text) do
+    %{source_embedding: embedding}
+  end
+
   @impl true
   def get_embedding(node_type, node_id) do
-    case embedding_match_attrs({node_type, node_id}) do
+    id = node_to_dllb_id({node_type, node_id})
+
+    case MQ.exec(Dllb.Query.select("ast_node:#{id}", []), query_fn()) do
+      {:ok, [row | _]} ->
+        extract_embedding_tuple(row)
+
+      _ ->
+        get_embedding_by_attrs({node_type, node_id})
+    end
+  end
+
+  defp get_embedding_by_attrs(node) do
+    case embedding_match_attrs(node) do
       attrs when map_size(attrs) == 0 ->
         nil
 
@@ -536,73 +747,71 @@ defmodule Ragex.Store.Backend.Dllb do
         query_string = Dllb.Query.select("ast_node", where: where, limit: 1)
 
         case MQ.exec(query_string, query_fn()) do
-          {:ok, [row | _]} ->
-            embedding = unwrap_embedding(row[:source_embedding])
-            text = row[:source_text] || row[:signature] || to_string(row[:name])
-            if is_list(embedding) and embedding != [], do: {embedding, text}, else: nil
-
-          _ ->
-            nil
+          {:ok, [row | _]} -> extract_embedding_tuple(row)
+          _ -> nil
         end
     end
   end
 
+  defp extract_embedding_tuple(row) do
+    embedding = unwrap_embedding(row[:source_embedding])
+    text = row[:source_text] || row[:signature] || to_string(row[:name])
+    if is_list(embedding) and embedding != [], do: {embedding, text}, else: nil
+  end
+
   @impl true
   def list_embeddings(node_type \\ nil, limit \\ 1_000) do
-    kind_str =
+    eff_limit = effective_limit(limit)
+
+    rows =
       case node_type do
-        nil -> nil
-        :function -> "function_def"
-        :module -> "container"
-        other -> to_string(other)
-      end
+        nil ->
+          query_string =
+            Dllb.Query.select("ast_node",
+              where: "source_embedding IS NOT NONE",
+              limit: eff_limit
+            )
 
-    where_clause =
-      case kind_str do
-        nil -> "source_embedding IS NOT NULL"
-        kind -> "kind = '#{kind}' AND source_embedding IS NOT NULL"
-      end
+          case MQ.exec(query_string, query_fn()) do
+            {:ok, found} -> found
+            {:error, _} -> []
+          end
 
-    query_string =
-      Dllb.Query.select("ast_node", where: where_clause, limit: effective_limit(limit))
-
-    case MQ.exec(query_string, query_fn()) do
-      {:ok, rows} ->
-        rows
-        |> Enum.map(fn row ->
-          nt =
-            case row[:kind] do
-              :function_def -> :function
-              :container -> :module
-              other when is_atom(other) -> other
-              other -> String.to_atom(to_string(other))
+        type ->
+          kinds =
+            case type do
+              :function -> ["function", "function_def"]
+              :module -> ["module", "container"]
+              other -> [to_string(other)]
             end
 
-          nid =
-            case nt do
-              :function ->
-                mod = row[:module]
-                name = row[:name]
-                arity = row[:arity]
-                mod_atom = if is_binary(mod), do: String.to_atom("Elixir." <> mod), else: mod
-                name_atom = if is_binary(name), do: String.to_atom(name), else: name
-                {mod_atom, name_atom, arity}
+          Enum.flat_map(kinds, fn kind ->
+            q =
+              Dllb.Query.select("ast_node",
+                where: "kind = '#{kind}' AND source_embedding IS NOT NONE",
+                limit: eff_limit
+              )
 
-              :module ->
-                mod = row[:name]
-                if is_binary(mod), do: String.to_atom("Elixir." <> mod), else: mod
-
-              _ ->
-                row[:name]
+            case MQ.exec(q, query_fn()) do
+              {:ok, found} -> found
+              {:error, _} -> []
             end
+          end)
+      end
 
-          text = row[:source_text] || row[:signature] || to_string(row[:name])
-          {nt, nid, unwrap_embedding(row[:source_embedding]), text}
-        end)
-        |> Enum.reject(fn {_, _, emb, _} -> is_nil(emb) end)
+    results =
+      rows
+      |> Enum.map(fn row ->
+        data = dllb_row_to_node_data(row)
+        {nt, nid} = row_to_node_entry(row, data)
+        text = row[:source_text] || row[:signature] || to_string(row[:name])
+        {nt, nid, unwrap_embedding(row[:source_embedding]), text}
+      end)
+      |> Enum.reject(fn {_, _, emb, _} -> is_nil(emb) or emb == [] end)
 
-      {:error, _} ->
-        []
+    case eff_limit do
+      nil -> results
+      n -> Enum.take(results, n)
     end
   end
 
@@ -620,27 +829,60 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def search_vectors(query_embedding, opts \\ []) do
-    query_string = MQ.similar_to(query_embedding, opts)
+    limit = Keyword.get(opts, :limit, 10)
+    threshold = Keyword.get(opts, :threshold, 0.0)
+    node_type_filter = Keyword.get(opts, :node_type)
+    exclude_type = Keyword.get(opts, :exclude_node_type)
 
-    case MQ.exec(query_string, query_fn()) do
-      {:ok, rows} ->
-        Enum.map(rows, fn row ->
-          {nt, nid} = Dllb.MetaAST.to_node_ref(row)
-          score = Map.get(row, :score) || Map.get(row, :distance, 0.0)
+    # Fetch extra candidates when filtering client-side so we can still return
+    # up to `limit` results after threshold/type filters.
+    k =
+      if node_type_filter != nil or exclude_type != nil or threshold > 0.0 do
+        max(limit * 3, 20)
+      else
+        limit
+      end
 
-          %{
-            node_type: nt,
-            node_id: nid,
-            score: score,
-            text:
-              row[:source_text] || row["source_text"] || row[:signature] || row["signature"] || "",
-            embedding: unwrap_embedding(row[:source_embedding] || row["source_embedding"])
-          }
+    query_string = MQ.similar_to(query_embedding, Keyword.put(opts, :limit, k))
+
+    case query(query_string) do
+      {:ok, %Dllb.Result.Rows{data: raw_rows}} ->
+        raw_rows
+        |> Enum.map(&raw_vector_row_to_result/1)
+        |> Enum.filter(fn result -> result.score >= threshold end)
+        |> Enum.filter(fn result ->
+          node_type_filter == nil or result.node_type == node_type_filter
         end)
+        |> Enum.reject(fn result ->
+          exclude_type != nil and result.node_type == exclude_type
+        end)
+        |> Enum.sort_by(& &1.score, :desc)
+        |> Enum.take(limit)
 
-      {:error, _} ->
+      _ ->
         []
     end
+  end
+
+  defp raw_vector_row_to_result(raw_row) do
+    row = Dllb.MetaAST.from_dllb_row(raw_row)
+    data = dllb_row_to_node_data(row)
+    {nt, nid} = row_to_node_entry(row, data)
+
+    score =
+      case {unwrap_typed(raw_row["score"]), unwrap_typed(raw_row["distance"])} do
+        {s, _} when is_number(s) -> s / 1
+        {_, d} when is_number(d) -> max(0.0, 1.0 - d / 1)
+        _ -> 0.0
+      end
+
+    %{
+      node_type: nt,
+      node_id: nid,
+      score: score,
+      text: row[:source_text] || row[:signature] || to_string(row[:name] || ""),
+      embedding: unwrap_embedding(row[:source_embedding])
+    }
   end
 
   # ---------------------------------------------------------------------------
@@ -713,21 +955,177 @@ defmodule Ragex.Store.Backend.Dllb do
   defp module_string(mod) when is_binary(mod), do: String.replace_prefix(mod, "Elixir.", "")
   defp module_string(mod), do: mod |> to_string() |> String.replace_prefix("Elixir.", "")
 
-  defp node_to_dllb_id({:function, {mod, name, arity}}) do
-    "#{inspect(mod)}_#{name}_#{arity}" |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
+  @doc false
+  @spec node_to_dllb_id(term()) :: String.t()
+  def node_to_dllb_id({:function, {mod, name, arity}}) do
+    "#{module_string(mod)}_#{name}_#{arity}" |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
   end
 
-  defp node_to_dllb_id({:module, name}) do
-    inspect(name) |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
+  def node_to_dllb_id({:function, mod, name, arity}) do
+    node_to_dllb_id({:function, {mod, name, arity}})
   end
 
-  defp node_to_dllb_id({type, id}) do
+  def node_to_dllb_id({:module, name}) do
+    module_string(name) |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
+  end
+
+  def node_to_dllb_id({type, id}) do
     "#{type}_#{inspect(id)}" |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
   end
 
-  defp node_to_dllb_id(other) do
+  def node_to_dllb_id(other) do
     inspect(other) |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
   end
+
+  # Legacy ID form emitted by Ragex <= 0.46.0 when 4-tuple function edge
+  # endpoints fell through to the catch-all `inspect(other)` clause.
+  defp legacy_node_to_dllb_id({:function, _mod, _name, _arity} = tuple) do
+    inspect(tuple) |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
+  end
+
+  defp legacy_node_to_dllb_id(_), do: nil
+
+  defp encode_edge_node({:function, mod, name, arity}) do
+    Jason.encode!(%{
+      "type" => "function",
+      "module" => atom_or_string(mod),
+      "name" => atom_or_string(name),
+      "arity" => arity
+    })
+  end
+
+  defp encode_edge_node({:function, {mod, name, arity}}) do
+    encode_edge_node({:function, mod, name, arity})
+  end
+
+  defp encode_edge_node({:module, name}) do
+    Jason.encode!(%{"type" => "module", "name" => atom_or_string(name)})
+  end
+
+  defp encode_edge_node({type, id}) when is_atom(type) do
+    Jason.encode!(%{"type" => Atom.to_string(type), "id" => atom_or_string(id)})
+  end
+
+  defp encode_edge_node(other), do: inspect(other)
+
+  defp atom_or_string(v) when is_atom(v), do: Atom.to_string(v)
+  defp atom_or_string(v) when is_binary(v), do: v
+  defp atom_or_string(v), do: to_string(v)
+
+  defp decode_edge_node(encoded_raw, fallback_raw) do
+    encoded = unwrap_typed(encoded_raw)
+
+    with json when is_binary(json) and json != "" <- encoded,
+         {:ok, decoded} <- Jason.decode(json),
+         {:ok, node} <- decode_edge_node_map(decoded) do
+      node
+    else
+      _ ->
+        resolve_fallback_edge_node(unwrap_typed(fallback_raw))
+    end
+  end
+
+  defp decode_edge_node_map(%{
+         "type" => "function",
+         "module" => mod,
+         "name" => name,
+         "arity" => arity
+       })
+       when is_binary(mod) and is_binary(name) and is_integer(arity) do
+    {:ok, {:function, String.to_atom(mod), String.to_atom(name), arity}}
+  end
+
+  defp decode_edge_node_map(%{"type" => "module", "name" => name}) when is_binary(name) do
+    {:ok, {:module, String.to_atom(name)}}
+  end
+
+  defp decode_edge_node_map(%{"type" => type, "id" => id})
+       when is_binary(type) and is_binary(id) do
+    {:ok, {String.to_atom(type), id}}
+  end
+
+  defp decode_edge_node_map(_), do: :error
+
+  defp resolve_fallback_edge_node(nil), do: nil
+
+  defp resolve_fallback_edge_node(raw_id) when is_binary(raw_id) do
+    bare = String.replace_prefix(raw_id, "ast_node:", "")
+
+    case MQ.exec(Dllb.Query.select("ast_node:#{bare}", []), query_fn()) do
+      {:ok, [row | _]} ->
+        data = dllb_row_to_node_data(row)
+
+        case row_to_node_entry(row, data) do
+          {:function, {mod, name, arity}} -> {:function, mod, name, arity}
+          {type, id} -> {type, id}
+        end
+
+      _ ->
+        raw_id
+    end
+  end
+
+  defp resolve_fallback_edge_node(other), do: other
+
+  defp extract_edge_metadata(row) when is_map(row) do
+    weight = unwrap_typed(row["weight"]) || 1.0
+    %{weight: weight}
+  end
+
+  defp row_to_node_entry(row, data) do
+    kind = normalize_kind(row[:kind])
+
+    case kind do
+      :function ->
+        mod_raw = data[:module] || row[:module]
+        name_raw = data[:name] || row[:name]
+        arity = data[:arity] || row[:arity]
+        mod_atom = to_module_atom(mod_raw)
+        name_atom = to_name_atom(name_raw)
+        {:function, {mod_atom, name_atom, arity}}
+
+      :module ->
+        mod_raw = row[:module] || data[:module] || data[:name] || row[:name]
+        {:module, to_module_atom(mod_raw)}
+
+      other ->
+        {other, row[:name]}
+    end
+  end
+
+  defp normalize_kind(:function), do: :function
+  defp normalize_kind(:function_def), do: :function
+  defp normalize_kind("function"), do: :function
+  defp normalize_kind("function_def"), do: :function
+  defp normalize_kind(:module), do: :module
+  defp normalize_kind(:container), do: :module
+  defp normalize_kind("module"), do: :module
+  defp normalize_kind("container"), do: :module
+  defp normalize_kind(other) when is_atom(other), do: other
+  defp normalize_kind(other) when is_binary(other), do: String.to_atom(other)
+  defp normalize_kind(_), do: :unknown
+
+  defp to_module_atom(nil), do: nil
+  defp to_module_atom(atom) when is_atom(atom), do: atom
+
+  defp to_module_atom(":" <> rest), do: String.to_atom(rest)
+
+  defp to_module_atom(str) when is_binary(str) do
+    cond do
+      String.starts_with?(str, "Elixir.") ->
+        String.to_atom(str)
+
+      String.contains?(str, ".") ->
+        String.to_atom("Elixir." <> str)
+
+      true ->
+        String.to_atom(str)
+    end
+  end
+
+  defp to_name_atom(nil), do: nil
+  defp to_name_atom(atom) when is_atom(atom), do: atom
+  defp to_name_atom(str) when is_binary(str), do: String.to_atom(str)
 
   defp dllb_row_to_node_data(row) do
     data =

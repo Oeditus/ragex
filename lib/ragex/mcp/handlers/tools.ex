@@ -2806,14 +2806,16 @@ defmodule Ragex.MCP.Handlers.Tools do
   end
 
   defp find_module(%{"name" => name}) do
-    case Store.find_node(:module, name) do
+    module = resolve_module_atom(name)
+
+    case Store.find_node(:module, module) || Store.find_node(:module, name) do
       nil ->
         {:ok, %{found: false}}
 
       node ->
         # Add PageRank score
         pagerank_scores = Algorithms.pagerank()
-        importance_score = Map.get(pagerank_scores, {:module, String.to_atom(name)}, 0.0)
+        importance_score = Map.get(pagerank_scores, {:module, module}, 0.0)
 
         enhanced_node = Map.put(node, :importance_score, Float.round(importance_score, 6))
         {:ok, %{found: true, node: enhanced_node}}
@@ -2822,15 +2824,18 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp find_module(_), do: {:error, "Missing 'name' parameter"}
 
-  defp find_function(%{"module" => module, "name" => name}) do
-    case Store.find_function(module, name) do
+  defp find_function(%{"module" => module_str, "name" => name}) do
+    func_atom = String.to_atom(name)
+    module = resolve_module_atom_for_function(module_str, func_atom)
+
+    case Store.find_function(module, func_atom) || Store.find_function(module_str, name) do
       nil ->
         {:ok, %{found: false}}
 
       node ->
         # Add PageRank score
         pagerank_scores = Algorithms.pagerank()
-        func_id = {:function, String.to_atom(module), String.to_atom(name), node.arity}
+        func_id = {:function, module, func_atom, node[:arity]}
         importance_score = Map.get(pagerank_scores, func_id, 0.0)
 
         enhanced_node = Map.put(node, :importance_score, Float.round(importance_score, 6))
@@ -2840,14 +2845,49 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp find_function(_), do: {:error, "Missing 'module' or 'name' parameter"}
 
-  defp get_calls(%{"module" => module, "function" => function}) do
-    calls = Store.get_outgoing_edges({:function, module, function}, :calls)
+  defp get_calls(%{"module" => module_str, "function" => func_str} = params) do
+    func_name = String.to_atom(func_str)
+    arity = Map.get(params, "arity")
+
+    calls =
+      case arity do
+        a when is_integer(a) and a >= 0 ->
+          module = resolve_module_atom(module_str, func_name, a)
+          Store.get_outgoing_edges({:function, module, func_name, a}, :calls)
+
+        nil ->
+          module = resolve_module_atom_for_function(module_str, func_name)
+
+          matching_functions =
+            Store.list_nodes(:function, :infinity)
+            |> Enum.flat_map(fn
+              %{id: {^module, ^func_name, func_arity}} ->
+                [{:function, module, func_name, func_arity}]
+
+              {:function, ^module, ^func_name, func_arity} ->
+                [{:function, module, func_name, func_arity}]
+
+              _ ->
+                []
+            end)
+
+          if matching_functions != [] do
+            Enum.flat_map(matching_functions, &Store.get_outgoing_edges(&1, :calls))
+          else
+            Store.get_outgoing_edges({:function, module_str, func_str}, :calls)
+          end
+
+        _ ->
+          []
+      end
+
     {:ok, %{calls: calls}}
   end
 
   defp get_calls(_), do: {:error, "Missing 'module' or 'function' parameter"}
 
-  defp get_dependencies(%{"module" => module}) do
+  defp get_dependencies(%{"module" => module_str}) do
+    module = resolve_module_atom(module_str)
     deps = Store.get_outgoing_edges({:module, module}, :imports)
     {:ok, %{dependencies: deps}}
   end
@@ -2864,20 +2904,24 @@ defmodule Ragex.MCP.Handlers.Tools do
 
     # Enrich with file/line information
     enriched_callers =
-      Enum.map(callers, fn %{from: {:function, mod, func, ar}} = edge ->
-        case Store.find_node(:function, {mod, func, ar}) do
-          nil ->
-            edge
+      Enum.map(callers, fn
+        %{from: {:function, mod, func, ar}} = edge ->
+          case Store.find_node(:function, {mod, func, ar}) do
+            nil ->
+              edge
 
-          node ->
-            Map.merge(edge, %{
-              caller_module: Atom.to_string(mod),
-              caller_function: Atom.to_string(func),
-              caller_arity: ar,
-              file: node[:file],
-              line: node[:line]
-            })
-        end
+            node ->
+              Map.merge(edge, %{
+                caller_module: Atom.to_string(mod),
+                caller_function: Atom.to_string(func),
+                caller_arity: ar,
+                file: node[:file],
+                line: node[:line]
+              })
+          end
+
+        edge ->
+          edge
       end)
 
     {:ok, %{callers: enriched_callers, count: length(enriched_callers)}}
@@ -3326,7 +3370,7 @@ defmodule Ragex.MCP.Handlers.Tools do
 
   defp format_node_id(id), do: NodeFormatter.format_node_id(id)
 
-  defp store_analysis(%{modules: modules, functions: functions, calls: calls}) do
+  defp store_analysis(%{modules: modules, functions: functions, calls: calls} = analysis) do
     # Store modules
     Enum.each(modules, fn module ->
       Store.add_node(:module, module.name, module)
@@ -3345,10 +3389,21 @@ defmodule Ragex.MCP.Handlers.Tools do
 
     # Store call relationships
     Enum.each(calls, fn call ->
+      to_module = call.to_module || call.from_module
+
       Store.add_edge(
         {:function, call.from_module, call.from_function, call.from_arity},
-        {:function, call.to_module, call.to_function, call.to_arity},
+        {:function, to_module, call.to_function, call.to_arity},
         :calls
+      )
+    end)
+
+    # Store import relationships
+    Enum.each(Map.get(analysis, :imports, []), fn import ->
+      Store.add_edge(
+        {:module, import.from_module},
+        {:module, import.to_module},
+        :imports
       )
     end)
   end

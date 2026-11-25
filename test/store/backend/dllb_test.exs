@@ -57,6 +57,25 @@ defmodule Ragex.Store.Backend.DllbTest do
     end
   end
 
+  describe "node_to_dllb_id/1" do
+    test "produces identical IDs for 2-tuple node keys and 4-tuple edge endpoints" do
+      node_key = {:function, {YokeBookkeeperWeb.LedgerLive, :load_ledger, 2}}
+      edge_endpoint = {:function, YokeBookkeeperWeb.LedgerLive, :load_ledger, 2}
+
+      assert Dllb.node_to_dllb_id(node_key) == Dllb.node_to_dllb_id(edge_endpoint)
+      assert Dllb.node_to_dllb_id(node_key) == "YokeBookkeeperWeb_LedgerLive_load_ledger_2"
+    end
+
+    test "normalizes string and atom module names identically" do
+      assert Dllb.node_to_dllb_id({:module, EdgeBatcher}) == "EdgeBatcher"
+      assert Dllb.node_to_dllb_id({:module, "EdgeBatcher"}) == "EdgeBatcher"
+      assert Dllb.node_to_dllb_id({:module, "Elixir.EdgeBatcher"}) == "EdgeBatcher"
+
+      assert Dllb.node_to_dllb_id({:function, EdgeBatcher, :edge, 2}) ==
+               Dllb.node_to_dllb_id({:function, "EdgeBatcher", :edge, 2})
+    end
+  end
+
   defp vector_index_ddl do
     Enum.find(Dllb.schema_statements(), &String.contains?(&1, "DEFINE VECTOR INDEX"))
   end

@@ -1005,11 +1005,10 @@ defmodule Ragex.Analysis.Quality do
 
       if Backend.module() == Backend.Dllb do
         limit = Keyword.get(opts, :limit, 100_000)
-        query_opts = [limit: limit, project_path: Path.expand(path)]
-        query_string = Query.complex_functions(min_complexity, query_opts)
+        query_string = Query.complex_functions(min_complexity, limit: limit)
 
         case Query.exec(query_string, &Backend.Dllb.query/1) do
-          {:ok, rows} ->
+          {:ok, [_ | _] = rows} ->
             res =
               Enum.map(rows, fn row ->
                 mod = row[:module]
@@ -1017,7 +1016,14 @@ defmodule Ragex.Analysis.Quality do
                 file = row[:file_path]
                 line = row[:line_start]
 
-                mod_atom = if is_binary(mod), do: String.to_atom("Elixir." <> mod), else: mod
+                mod_atom =
+                  cond do
+                    is_atom(mod) -> mod
+                    is_binary(mod) and String.starts_with?(mod, "Elixir.") -> String.to_atom(mod)
+                    is_binary(mod) -> String.to_atom("Elixir." <> mod)
+                    true -> mod
+                  end
+
                 name_atom = if is_binary(name), do: String.to_atom(name), else: name
 
                 %{
@@ -1035,19 +1041,25 @@ defmodule Ragex.Analysis.Quality do
 
             {:ok, res}
 
-          {:error, reason} ->
-            {:error, reason}
+          _ ->
+            find_complex_code_from_store(min_complexity)
         end
       else
-        complex_functions =
-          [limit: 100_000]
-          |> Store.list_functions()
-          |> Enum.flat_map(&do_file_metrics(&1, min_complexity))
-          |> Enum.sort_by(& &1.cyclomatic_complexity, :desc)
-
-        {:ok, complex_functions}
+        find_complex_code_from_store(min_complexity)
       end
     end
+  end
+
+  defp find_complex_code_from_store(min_complexity) do
+    alias Ragex.Graph.Store
+
+    complex_functions =
+      [limit: 100_000]
+      |> Store.list_functions()
+      |> Enum.flat_map(&do_file_metrics(&1, min_complexity))
+      |> Enum.sort_by(& &1.cyclomatic_complexity, :desc)
+
+    {:ok, complex_functions}
   end
 
   # Check if this function's file was analyzed

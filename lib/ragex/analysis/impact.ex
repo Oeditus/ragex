@@ -422,19 +422,26 @@ defmodule Ragex.Analysis.Impact do
   defp get_complexity(target) do
     if Application.get_env(:ragex, :store_backend, :ets) == :dllb and
          Application.get_env(:dllb, :enabled, false) do
-      id =
+      normalized =
         case target do
-          {:function, {m, f, a}} -> "function:#{m}.#{f}/#{a}"
-          {:module, m} -> "module:#{m}"
-          {m, f, a} -> "function:#{m}.#{f}/#{a}"
-          other -> to_string(other)
+          {m, f, a} -> {:function, m, f, a}
+          other -> other
         end
 
-      query = "SELECT ast::complexity(meta_ast) AS c FROM ast_node:#{id}"
+      id = DllbBackend.node_to_dllb_id(normalized)
+      query = "SELECT ast::complexity(ast_serialized) AS c FROM ast_node:#{id}"
 
       case DllbBackend.query(query) do
-        {:ok, %Dllb.Result.Rows{data: [%{"c" => val} | _]}} when is_number(val) ->
-          min(val / 10.0, 1.0)
+        {:ok, %Dllb.Result.Rows{data: [%{"c" => raw} | _]}} ->
+          val =
+            case raw do
+              %{"Int" => v} -> v
+              %{"Float" => v} -> v
+              v when is_number(v) -> v
+              _ -> nil
+            end
+
+          if is_number(val), do: min(val / 10.0, 1.0), else: 0.5
 
         _ ->
           0.5

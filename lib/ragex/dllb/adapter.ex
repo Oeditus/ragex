@@ -24,7 +24,7 @@ defmodule Ragex.Dllb.Adapter do
   @spec query(String.t()) :: {:ok, any()} | {:error, atom()}
   def query(statement) do
     if enabled?() do
-      Dllb.query(statement)
+      Backend.query(statement)
     else
       {:error, :dllb_disabled}
     end
