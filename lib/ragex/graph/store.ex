@@ -588,16 +588,17 @@ defmodule Ragex.Graph.Store do
   def handle_call({:reset_project, project_path}, _from, state) do
     target_root = canonical_project_root(project_path)
 
-    with :ok <- backend().load_project(target_root) do
-      :ets.delete_all_objects(@nodes_table)
-      :ets.delete_all_objects(@edges_table)
-      :ets.delete_all_objects(@embeddings_table)
-      FileTracker.clear_all()
-      backend().clear()
+    case backend().load_project(target_root) do
+      :ok ->
+        :ets.delete_all_objects(@nodes_table)
+        :ets.delete_all_objects(@edges_table)
+        :ets.delete_all_objects(@embeddings_table)
+        FileTracker.clear_all()
+        backend().clear()
 
-      {:reply, :ok,
-       %{state | project_path: target_root, cache_loaded: true, loaded_backend: backend()}}
-    else
+        {:reply, :ok,
+         %{state | project_path: target_root, cache_loaded: true, loaded_backend: backend()}}
+
       {:error, _reason} = error ->
         {:reply, error, %{state | cache_loaded: false, loaded_backend: nil}}
     end

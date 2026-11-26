@@ -2,6 +2,7 @@ defmodule Ragex.Analyzers.DirectoryIncrementalTest do
   use ExUnit.Case, async: false
 
   alias Ragex.Analyzers.Directory
+  alias Ragex.Graph.Store
 
   setup do
     tmp_dir =
@@ -27,9 +28,9 @@ defmodule Ragex.Analyzers.DirectoryIncrementalTest do
   test "saves once after changes and never for an unchanged scan", %{tmp_dir: tmp_dir} do
     file = Path.join(tmp_dir, "warm.ex")
     File.write!(file, "defmodule WarmDirectoryTest do\n  def value, do: :first\nend\n")
-    store = Process.whereis(Ragex.Graph.Store)
+    store = Process.whereis(Store)
     pattern = [{[{:save_cache, :_}, :_, :_], [], []}]
-    :erlang.trace_pattern({Ragex.Graph.Store, :handle_call, 3}, pattern, [:local])
+    :erlang.trace_pattern({Store, :handle_call, 3}, pattern, [:local])
     :erlang.trace(store, true, [:call])
     opts = [notify: false, watch: false, generate_embeddings: false]
 
@@ -44,7 +45,7 @@ defmodule Ragex.Analyzers.DirectoryIncrementalTest do
       assert_cache_saves(store, 1)
     after
       :erlang.trace(store, false, [:call])
-      :erlang.trace_pattern({Ragex.Graph.Store, :handle_call, 3}, false, [:local])
+      :erlang.trace_pattern({Store, :handle_call, 3}, false, [:local])
     end
   end
 
@@ -103,15 +104,15 @@ defmodule Ragex.Analyzers.DirectoryIncrementalTest do
 
     opts = [notify: false, watch: false, generate_embeddings: false]
     assert {:ok, %{success: 2}} = Directory.analyze_directory(tmp_dir, opts)
-    assert Ragex.Graph.Store.get_module(RemovedRefreshModule) != nil
+    assert Store.get_module(RemovedRefreshModule) != nil
 
     File.rm!(removed)
 
     assert {:ok, %{success: 1}} =
              Directory.analyze_directory(tmp_dir, Keyword.put(opts, :force_refresh, true))
 
-    assert Ragex.Graph.Store.get_module(KeptRefreshModule) != nil
-    assert Ragex.Graph.Store.get_module(RemovedRefreshModule) == nil
+    assert Store.get_module(KeptRefreshModule) != nil
+    assert Store.get_module(RemovedRefreshModule) == nil
   end
 
   defp assert_cache_saves(store, count) do
@@ -119,11 +120,9 @@ defmodule Ragex.Analyzers.DirectoryIncrementalTest do
     assert_receive {:trace_delivered, ^store, ^delivery}
 
     for _ <- List.duplicate(:save, count) do
-      assert_received {:trace, ^store, :call,
-                       {Ragex.Graph.Store, :handle_call, [{:save_cache, _}, _, _]}}
+      assert_received {:trace, ^store, :call, {Store, :handle_call, [{:save_cache, _}, _, _]}}
     end
 
-    refute_received {:trace, ^store, :call,
-                     {Ragex.Graph.Store, :handle_call, [{:save_cache, _}, _, _]}}
+    refute_received {:trace, ^store, :call, {Store, :handle_call, [{:save_cache, _}, _, _]}}
   end
 end
