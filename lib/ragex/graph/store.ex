@@ -360,6 +360,15 @@ defmodule Ragex.Graph.Store do
   end
 
   @doc """
+  Clears all stored graph data, embeddings, and file tracking for `project_path`
+  while keeping the project loaded and ready for a fresh full re-index.
+  """
+  @spec reset_project(String.t()) :: :ok | {:error, term()}
+  def reset_project(project_path) do
+    GenServer.call(__MODULE__, {:reset_project, project_path}, :infinity)
+  end
+
+  @doc """
   Saves current graph, embeddings, and analysis cache to disk for the given project path.
   """
   @spec save_cache(String.t() | nil) :: :ok
@@ -572,6 +581,25 @@ defmodule Ragex.Graph.Store do
         {:error, _reason} = error ->
           {:reply, error, %{state | cache_loaded: false, loaded_backend: nil}}
       end
+    end
+  end
+
+  @impl true
+  def handle_call({:reset_project, project_path}, _from, state) do
+    target_root = canonical_project_root(project_path)
+
+    with :ok <- backend().load_project(target_root) do
+      :ets.delete_all_objects(@nodes_table)
+      :ets.delete_all_objects(@edges_table)
+      :ets.delete_all_objects(@embeddings_table)
+      FileTracker.clear_all()
+      backend().clear()
+
+      {:reply, :ok,
+       %{state | project_path: target_root, cache_loaded: true, loaded_backend: backend()}}
+    else
+      {:error, _reason} = error ->
+        {:reply, error, %{state | cache_loaded: false, loaded_backend: nil}}
     end
   end
 

@@ -94,6 +94,26 @@ defmodule Ragex.Analyzers.DirectoryIncrementalTest do
     end
   end
 
+  test "force_refresh on a directory clears stale nodes from deleted files", %{tmp_dir: tmp_dir} do
+    kept = Path.join(tmp_dir, "kept.ex")
+    removed = Path.join(tmp_dir, "removed.ex")
+
+    File.write!(kept, "defmodule KeptRefreshModule do\n  def ok, do: :ok\nend\n")
+    File.write!(removed, "defmodule RemovedRefreshModule do\n  def gone, do: :gone\nend\n")
+
+    opts = [notify: false, watch: false, generate_embeddings: false]
+    assert {:ok, %{success: 2}} = Directory.analyze_directory(tmp_dir, opts)
+    assert Ragex.Graph.Store.get_module(RemovedRefreshModule) != nil
+
+    File.rm!(removed)
+
+    assert {:ok, %{success: 1}} =
+             Directory.analyze_directory(tmp_dir, Keyword.put(opts, :force_refresh, true))
+
+    assert Ragex.Graph.Store.get_module(KeptRefreshModule) != nil
+    assert Ragex.Graph.Store.get_module(RemovedRefreshModule) == nil
+  end
+
   defp assert_cache_saves(store, count) do
     delivery = :erlang.trace_delivered(store)
     assert_receive {:trace_delivered, ^store, ^delivery}

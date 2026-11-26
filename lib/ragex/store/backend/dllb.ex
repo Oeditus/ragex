@@ -105,18 +105,37 @@ defmodule Ragex.Store.Backend.Dllb do
 
   @impl true
   def clear do
-    # Unconditionally wipe every row from the active project's tables.
-    #
-    # `MQ.exec_delete_by_project/2` was used here previously, but it filters
-    # on the `project_path` column (`DELETE ast_node WHERE project_path =
-    # '...'`). `prepare_node_fields/3` never populates `:project_path` on
-    # stored nodes, so that WHERE clause never matched any row and this
-    # function was a permanent no-op -- data from every test (and every
-    # analyzed project, in :global mode) accumulated forever in the
-    # underlying `.ragex/dllb.redb` file. Isolation between projects is
-    # already provided by `Ragex.Dllb.ProjectManager` (a dedicated dllb
-    # instance/database per project in :per_project mode), so clearing the
-    # active project's tables unconditionally is the correct behavior here.
+    # `DELETE ast_node` / `DELETE _edge_idx` only removes document tables;
+    # native graph edges created via `RELATE` live in dllb's graph edge store
+    # and have no query-level delete verb yet. In `:per_project` mode we own
+    # the dedicated `.ragex/dllb.redb` file, so recreating it wipes nodes,
+    # embeddings, and native graph edges (including legacy pre-0.46.1 edge
+    # representations) cleanly.
+    if ProjectManager.per_project_enabled?() do
+      case ProjectManager.active_project() do
+        project_path when is_binary(project_path) ->
+          case ProjectManager.reset_instance(project_path) do
+            :ok ->
+              :ok
+
+            {:error, reason} ->
+              Logger.warning(
+                "Could not reset per-project dllb database for #{project_path} (#{inspect(reason)}); " <>
+                  "falling back to table deletes"
+              )
+
+              clear_tables()
+          end
+
+        _ ->
+          clear_tables()
+      end
+    else
+      clear_tables()
+    end
+  end
+
+  defp clear_tables do
     query(Dllb.Query.delete_where("ast_node"))
     query(Dllb.Query.delete_where("_edge_idx"))
     :ok

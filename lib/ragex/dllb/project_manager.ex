@@ -145,6 +145,22 @@ defmodule Ragex.Dllb.ProjectManager do
     end
   end
 
+  @doc """
+  Stops an owned per-project dllb instance, deletes its `.ragex/dllb.redb`
+  file, and starts a fresh bootstrapped instance.
+
+  Returns `:ok` on success, or `{:error, :not_owned}` when the running
+  `dllb-server` was adopted from another process and cannot be safely removed.
+  """
+  @spec reset_instance(String.t()) :: :ok | {:error, term()}
+  def reset_instance(project_path) do
+    if Process.whereis(__MODULE__) do
+      GenServer.call(__MODULE__, {:reset_instance, project_path}, :infinity)
+    else
+      {:error, :manager_not_started}
+    end
+  end
+
   @doc "Stops all managed per-project dllb instances."
   @spec stop_all_instances() :: :ok
   def stop_all_instances do
@@ -326,6 +342,35 @@ defmodule Ragex.Dllb.ProjectManager do
   end
 
   @impl true
+  def handle_call({:reset_instance, project_path}, _from, state) do
+    abs_path = Path.expand(project_path)
+    instance_file = instance_state_path(abs_path)
+
+    case Map.fetch(state.instances, abs_path) do
+      {:ok, %{owned?: false}} ->
+        {:reply, {:error, :not_owned}, state}
+
+      {:ok, info} ->
+        do_stop_instance(info)
+        state = %{state | instances: Map.delete(state.instances, abs_path)}
+        recreate_instance(abs_path, state)
+
+      :error ->
+        case read_instance_file(instance_file) do
+          {:ok, port, _os_pid} ->
+            if server_reachable?(port) do
+              {:reply, {:error, :not_owned}, state}
+            else
+              recreate_instance(abs_path, state)
+            end
+
+          :error ->
+            recreate_instance(abs_path, state)
+        end
+    end
+  end
+
+  @impl true
   def handle_call(:stop_all_instances, _from, state) do
     Enum.each(state.instances, fn {_path, info} ->
       do_stop_instance(info)
@@ -425,6 +470,29 @@ defmodule Ragex.Dllb.ProjectManager do
       {:ok, info} -> {:ok, info}
       {:error, _reason} = error -> error
       :none -> spawn_and_attach(project_path, port, db_path, instance_file)
+    end
+  end
+
+  defp recreate_instance(abs_path, state) do
+    db_path = Path.join([abs_path, ".ragex", "dllb.redb"])
+    _ = File.rm(db_path)
+
+    {port, next_port} = select_available_port(state.next_port)
+
+    case do_start_instance(abs_path, port) do
+      {:ok, info} ->
+        new_state = %{
+          state
+          | instances: Map.put(state.instances, abs_path, info),
+            active_project: abs_path,
+            next_port: next_port
+        }
+
+        {:reply, :ok, new_state}
+
+      {:error, reason} ->
+        active = if state.active_project == abs_path, do: nil, else: state.active_project
+        {:reply, {:error, reason}, %{state | active_project: active, next_port: next_port}}
     end
   end
 

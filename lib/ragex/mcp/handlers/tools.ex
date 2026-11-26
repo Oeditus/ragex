@@ -222,6 +222,17 @@ defmodule Ragex.MCP.Handlers.Tools do
               type: "array",
               description: "Directory/file patterns to exclude (e.g., node_modules, .git)",
               items: %{type: "string"}
+            },
+            force_refresh: %{
+              type: "boolean",
+              description:
+                "Force a full re-index from scratch, clearing existing graph data (including legacy edge formats) before re-analyzing all files (default: false)",
+              default: false
+            },
+            generate_embeddings: %{
+              type: "boolean",
+              description: "Generate embeddings for semantic search (default: true)",
+              default: true
             }
           },
           required: ["path"]
@@ -2590,26 +2601,25 @@ defmodule Ragex.MCP.Handlers.Tools do
     # language-scoped plugins only advertise tools that can do something here.
     refresh_active_languages(path)
 
-    opts = []
-
     opts =
-      if Map.has_key?(params, "max_depth") do
-        Keyword.put(opts, :max_depth, params["max_depth"])
-      else
-        opts
-      end
-
-    opts =
-      if Map.has_key?(params, "exclude_patterns") do
-        Keyword.put(opts, :exclude_patterns, params["exclude_patterns"])
-      else
-        opts
-      end
+      []
+      |> maybe_put_opt(:max_depth, params, "max_depth")
+      |> maybe_put_opt(:exclude_patterns, params, "exclude_patterns")
+      |> maybe_put_opt(:force_refresh, params, "force_refresh")
+      |> maybe_put_opt(:generate_embeddings, params, "generate_embeddings")
 
     Directory.analyze_directory(path, opts)
   end
 
   defp analyze_directory(_), do: {:error, "Invalid parameters for analyze_directory"}
+
+  defp maybe_put_opt(opts, key, params, param_name) do
+    if Map.has_key?(params, param_name) do
+      Keyword.put(opts, key, params[param_name])
+    else
+      opts
+    end
+  end
 
   # Derives the workspace's language set from the files actually present and
   # hands it to the plugin registry. Best-effort: any failure leaves scoping

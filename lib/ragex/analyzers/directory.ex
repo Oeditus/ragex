@@ -209,6 +209,8 @@ defmodule Ragex.Analyzers.Directory do
 
     if success_count > 0 and Keyword.get(opts, :persist, true) do
       Store.save_cache()
+    else
+      Store.sync()
     end
 
     {:ok,
@@ -245,6 +247,10 @@ defmodule Ragex.Analyzers.Directory do
     {result, scip_updated?} =
       case File.stat(path) do
         {:ok, %File.Stat{type: :directory}} ->
+          if force_refresh and Keyword.get(opts, :load_project, true) do
+            Store.reset_project(path)
+          end
+
           if notify do
             notify_progress("analysis_scanning", %{stage: "scanning_directory", path: path})
           end

@@ -379,4 +379,148 @@ defmodule Ragex.Store.Backend.DllbGraphTest do
     assert {:ok, _} = Tools.call_tool("coupling_report", %{})
     assert {:ok, _} = Tools.call_tool("find_circular_dependencies", %{})
   end
+
+  test "Store.clear/0 removes native DLLB graph edges in per-project mode", %{tmp_dir: tmp_dir} do
+    file = Path.join(tmp_dir, "clear_me.ex")
+
+    File.write!(file, """
+    defmodule ClearMe do
+      def a, do: b()
+      def b, do: :ok
+    end
+    """)
+
+    assert {:ok, _} = Tools.call_tool("analyze_file", %{"path" => file})
+    Store.sync()
+
+    assert {:ok, %Dllb.Result.Rows{count: before_count}} =
+             DllbBackend.query(Dllb.Query.graph_edges("calls"))
+
+    assert before_count > 0
+
+    Store.clear()
+    Store.sync()
+
+    assert {:ok, %Dllb.Result.Rows{count: 0, data: []}} =
+             DllbBackend.query(Dllb.Query.graph_edges("calls"))
+
+    stats = Store.stats()
+    assert stats.nodes == 0
+    assert stats.edges == 0
+  end
+
+  test "forced refresh replaces legacy pre-0.46.1 edges and matches an empty-index rebuild", %{
+    tmp_dir: tmp_dir
+  } do
+    file = Path.join(tmp_dir, "ledger_live.ex")
+
+    File.write!(file, """
+    defmodule YokeBookkeeperWeb.LedgerLive do
+      def mount(params, _session, socket) do
+        YokeBookkeeperWeb.LedgerLive.load_ledger(socket, params)
+      end
+
+      def load_ledger(socket, params) do
+        GenServer.cast(socket, params)
+      end
+    end
+    """)
+
+    # Seed legacy pre-0.46.1 RELATE edges (4-tuple inspected IDs without
+    # from_node/to_node JSON properties) plus a stale edge for a removed function.
+    legacy_mount =
+      inspect({:function, YokeBookkeeperWeb.LedgerLive, :mount, 3})
+      |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
+
+    legacy_load =
+      inspect({:function, YokeBookkeeperWeb.LedgerLive, :load_ledger, 2})
+      |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
+
+    legacy_removed =
+      inspect({:function, YokeBookkeeperWeb.LedgerLive, :deleted_fn, 0})
+      |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
+
+    assert {:ok, _} =
+             DllbBackend.query(
+               Dllb.Query.relate(
+                 "ast_node:#{legacy_mount}",
+                 "calls",
+                 "ast_node:#{legacy_load}",
+                 %{weight: 1.0}
+               )
+             )
+
+    assert {:ok, _} =
+             DllbBackend.query(
+               Dllb.Query.relate(
+                 "ast_node:#{legacy_mount}",
+                 "calls",
+                 "ast_node:#{legacy_removed}",
+                 %{weight: 1.0}
+               )
+             )
+
+    assert {:ok, %Dllb.Result.Rows{count: 2}} =
+             DllbBackend.query(Dllb.Query.graph_edges("calls"))
+
+    # Run forced refresh through the MCP analyze_directory handler (matching
+    # `mix ragex.prime --full` and direct MCP forced reanalysis).
+    assert {:ok, %{errors: 0, success: 1}} =
+             Tools.call_tool("analyze_directory", %{
+               "path" => tmp_dir,
+               "force_refresh" => true,
+               "generate_embeddings" => false
+             })
+
+    Store.sync()
+
+    # Exact canonical edge count (2 calls: mount->load_ledger and load_ledger->GenServer.cast),
+    # NOT 2 legacy + 2 canonical = 4.
+    assert {:ok, %Dllb.Result.Rows{count: 2, data: call_rows}} =
+             DllbBackend.query(Dllb.Query.graph_edges("calls"))
+
+    refute Enum.any?(call_rows, fn row ->
+             match?(%{"String" => "_function_" <> _}, row["src"]) or
+               match?(%{"String" => "_function_" <> _}, row["dst"])
+           end)
+
+    assert {:ok, mcp_stats} = Tools.call_tool("graph_stats", %{})
+    assert mcp_stats.edge_count == 2
+
+    # Caller location and named path work cleanly with no legacy duplicates.
+    assert {:ok, %{count: 1, callers: [caller]}} =
+             Tools.call_tool("find_callers", %{
+               "module" => "YokeBookkeeperWeb.LedgerLive",
+               "function_name" => "load_ledger",
+               "arity" => 2
+             })
+
+    assert caller.id == "Elixir.YokeBookkeeperWeb.LedgerLive.mount/3"
+    assert caller.file == file
+    assert caller.line == 2
+
+    assert {:ok, %{count: 1}} =
+             Tools.call_tool("find_paths", %{
+               "from" => "YokeBookkeeperWeb.LedgerLive.mount/3",
+               "to" => "YokeBookkeeperWeb.LedgerLive.load_ledger/2"
+             })
+
+    # Restart the per-project DLLB process and verify the clean state persists.
+    assert :ok = ProjectManager.stop_instance(tmp_dir)
+    assert :ok = Store.load_project(tmp_dir)
+
+    assert {:ok, %Dllb.Result.Rows{count: 2}} =
+             DllbBackend.query(Dllb.Query.graph_edges("calls"))
+
+    assert {:ok, %{count: 1, callers: [restarted_caller]}} =
+             Tools.call_tool("find_callers", %{
+               "module" => "YokeBookkeeperWeb.LedgerLive",
+               "function_name" => "load_ledger",
+               "arity" => 2
+             })
+
+    assert restarted_caller.id == "Elixir.YokeBookkeeperWeb.LedgerLive.mount/3"
+    assert restarted_caller.file == file
+    assert restarted_caller.line == 2
+  end
 end
