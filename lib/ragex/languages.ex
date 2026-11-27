@@ -14,12 +14,12 @@ defmodule Ragex.Languages do
 
   ## Adding a language
 
-  * **A language Metastatic already supports** (e.g. `:rust` once an adapter
-    exists): it appears here automatically. To give it a validator or native
-    analyzer, add an entry to the relevant overlay map below.
-  * **A language only Ragex can handle** (via SCIP, e.g. Go, Rust): add
-    it to `@scip_languages`. It is surfaced as a language with no Metastatic
-    adapter but a SCIP indexer.
+  * **A language Metastatic already supports** (e.g. `:go` and `:rust`): it
+    appears here automatically. To give it a validator or native analyzer, add
+    an entry to the relevant overlay map below.
+  * **A language only Ragex can handle** (via SCIP, e.g. `:c_cpp`, `:kotlin`):
+    add it to `@scip_languages`. It is surfaced as a language with no
+    Metastatic adapter but a SCIP indexer.
 
   A language can be both. `:java` is the worked example: Metastatic ships a
   `Metastatic.Adapters.Java` adapter (JDK tree API via a subprocess bridge), so
@@ -252,7 +252,10 @@ defmodule Ragex.Languages do
       {:ok, Metastatic.Adapters.Elixir}
 
       iex> Ragex.Languages.get_adapter(:go)
-      {:error, {:unsupported_language, :go}}
+      {:ok, Metastatic.Adapters.Go}
+
+      iex> Ragex.Languages.get_adapter(:c_cpp)
+      {:error, {:unsupported_language, :c_cpp}}
   """
   @spec get_adapter(atom()) :: {:ok, module()} | {:error, {:unsupported_language, atom()}}
   def get_adapter(language) when is_atom(language) do

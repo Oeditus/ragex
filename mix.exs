@@ -148,16 +148,17 @@ defmodule Ragex.MixProject do
       # so `LOCAL_METASTATIC=1` can point it at the sibling checkout during
       # development.
       #
-      # 0.40.0 is the floor: it is the release that added the LFE adapter
-      # (`Metastatic.Adapters.Lfe`, `.lfe`) and the real-world Haskell
-      # construct support (record syntax, sections, ranges, `::` type
-      # signatures, pattern nodes) that Ragex's Haskell analysis relies on.
+      # 0.43.0 is the floor: it adds the Go adapter (`Metastatic.Adapters.Go`,
+      # `.go`), first-class JavaScript/TypeScript M2 conformance (`:param`
+      # metadata on `:function_def`/`:lambda`), first-class Python support,
+      # LFE and real-world Haskell support, and (in 0.43.2) up-to-date Cure
+      # support.
       case {hex_profile?(), System.get_env("LOCAL_METASTATIC")} do
         {false, value} when not is_nil(value) ->
           {:metastatic, path: "../metastatic", override: true}
 
         _ ->
-          {:metastatic, "~> 0.40"}
+          {:metastatic, "~> 0.43"}
       end,
       # LFE toolchain (`lfe_scan`, `lfe_io`, `lfe_comp`), which is *not* part
       # of OTP. `Metastatic.Adapters.Lfe` reaches it in-process and degrades to

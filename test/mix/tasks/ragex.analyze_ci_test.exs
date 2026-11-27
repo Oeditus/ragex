@@ -148,4 +148,32 @@ defmodule Mix.Tasks.Ragex.AnalyzeCITest do
       assert Analyze.count_ci_issues(results) == 0
     end
   end
+
+  describe "format_github_lines/1 parity with count_ci_issues/1" do
+    test "emits GitHub annotations for god, unstable, unused, and circular findings" do
+      results = %{
+        circulars: %{cycles: [[:A, :B]]},
+        god_modules: %{
+          modules: [%{module: Ragex.Graph.Store, afferent: 1, efferent: 22, total: 23}]
+        },
+        unstable_modules: %{
+          modules: [
+            %{module: Ragex.Graph.Store, instability: 0.9565, afferent: 1, efferent: 22}
+          ]
+        },
+        unused_modules: %{modules: [GoodModule, BadByteModule]},
+        coupling: %{metrics: [%{module: :A, afferent: 1, efferent: 2, instability: 0.67}]},
+        quality: %{overall_score: 50}
+      }
+
+      lines = Analyze.format_github_lines(results)
+
+      assert length(lines) == Analyze.count_ci_issues(results)
+      assert Enum.any?(lines, &(&1 =~ "::error" and &1 =~ "CIRCULAR"))
+      assert Enum.any?(lines, &(&1 =~ "::warning" and &1 =~ "GOD_MODULE Ragex.Graph.Store"))
+      assert Enum.any?(lines, &(&1 =~ "::warning" and &1 =~ "UNSTABLE Ragex.Graph.Store"))
+      assert Enum.any?(lines, &(&1 =~ "::notice" and &1 =~ "UNUSED GoodModule"))
+      assert Enum.any?(lines, &(&1 =~ "::notice" and &1 =~ "UNUSED BadByteModule"))
+    end
+  end
 end

@@ -16,6 +16,10 @@ defmodule Ragex.LanguageSupport do
   - `:haskell` -- `.hs`, `.lhs`
   - `:javascript` -- `.js`, `.jsx`, `.mjs`, `.cjs`
   - `:typescript` -- `.ts`, `.tsx`
+  - `:java` -- `.java`
+  - `:rust` -- `.rs`
+  - `:go` -- `.go`
+  - `:sql` -- `.sql`
   - `:cure` -- `.cure`
   - `:agda` -- `.agda`, `.lagda`
   - `:markdown` -- `.md`, `.markdown`
@@ -183,7 +187,9 @@ defmodule Ragex.LanguageSupport do
     ".hg",
     ".svn",
     "_build",
+    "_build_hex",
     "deps",
+    "deps_hex",
     "target",
     "dist",
     "build",

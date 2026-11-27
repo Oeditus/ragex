@@ -574,10 +574,14 @@ defmodule Mix.Tasks.Ragex.Analyze do
   end
 
   # GitHub Actions workflow command format for inline PR annotations
+  @doc false
+  @spec format_github_lines(map()) :: [String.t()]
+  def format_github_lines(results) do
+    Enum.flat_map(results, fn {type, data} -> github_lines_for(type, data) end)
+  end
+
   defp output_github(report) do
-    lines =
-      report.results
-      |> Enum.flat_map(fn {type, data} -> github_lines_for(type, data) end)
+    lines = format_github_lines(report.results)
 
     Enum.each(lines, fn line -> Mix.shell().info(line) end)
 
@@ -697,6 +701,33 @@ defmodule Mix.Tasks.Ragex.Analyze do
       first = List.first(cycle)
       file = format_file_path(first)
       "::error file=#{file},line=1::CIRCULAR dependency: #{chain}"
+    end)
+  end
+
+  defp github_lines_for(:god_modules, %{modules: modules}) do
+    Enum.map(modules, fn m ->
+      name = format_module_name(m.module)
+      file = format_file_path(Map.get(m, :file) || name)
+
+      "::warning file=#{file},line=1::GOD_MODULE #{name} (afferent=#{m.afferent}, efferent=#{m.efferent}, total=#{m.total})"
+    end)
+  end
+
+  defp github_lines_for(:unstable_modules, %{modules: modules}) do
+    Enum.map(modules, fn m ->
+      name = format_module_name(m.module)
+      file = format_file_path(Map.get(m, :file) || name)
+      instability = Float.round(m.instability * 1.0, 2)
+
+      "::warning file=#{file},line=1::UNSTABLE #{name} (instability=#{instability})"
+    end)
+  end
+
+  defp github_lines_for(:unused_modules, %{modules: modules}) do
+    Enum.map(modules, fn mod ->
+      name = format_module_name(mod)
+      file = format_file_path(name)
+      "::notice file=#{file},line=1::UNUSED #{name}"
     end)
   end
 
