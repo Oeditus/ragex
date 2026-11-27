@@ -426,9 +426,9 @@ defmodule Ragex.Graph.Store do
   Useful in tests to ensure async operations (add_node, add_edge, etc.)
   have been applied to ETS before querying.
   """
-  @spec sync() :: :ok
-  def sync do
-    GenServer.call(__MODULE__, :sync)
+  @spec sync(timeout()) :: :ok
+  def sync(timeout \\ :infinity) do
+    GenServer.call(__MODULE__, :sync, timeout)
   end
 
   @doc """
