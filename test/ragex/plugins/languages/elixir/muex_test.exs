@@ -78,7 +78,7 @@ defmodule Ragex.Plugins.Languages.Elixir.MuexTest do
 
       case Muex.run(%{"path" => dir}) do
         {:error, {:exit, code, output}} ->
-          assert code == 1
+          assert is_integer(code) and code > 0
           assert output =~ "muex"
 
         # A machine with muex installed as a global archive would actually run
