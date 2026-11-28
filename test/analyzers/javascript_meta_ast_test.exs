@@ -226,6 +226,47 @@ defmodule Ragex.Analyzers.JavaScriptMetaASTTest do
 
       assert Enum.any?(result.imports, fn i -> i.to_module == "lodash" end)
     end
+
+    test "extract/2 records exact call arity for JS/TS calls (Metastatic 0.45 :callee shape)" do
+      source = """
+      class Worker {
+        run(x) {
+          this.process(x, 42);
+          helper(x);
+        }
+      }
+      """
+
+      {:ok, doc} = LanguageSupport.parse_document(source, :javascript)
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "worker.js")
+
+      process_call = Enum.find(result.calls, &(&1.to_function == :process))
+      helper_call = Enum.find(result.calls, &(&1.to_function == :helper))
+
+      assert process_call.to_arity == 2
+      assert helper_call.to_arity == 1
+    end
+  end
+
+  describe "Metastatic 0.45 MetaAST normalization" do
+    test "arrays and objects emit canonical :list and :map nodes" do
+      {:ok, ast} = parse_meta("const a = [1, 2]; const b = { x: 1 };")
+
+      assert match?([_ | _], collect_nodes(ast, :list))
+      assert match?([_ | _], collect_nodes(ast, :map))
+      assert collect_nodes(ast, :collection) == []
+    end
+
+    test "qualified calls carry callee in metadata and only arguments in children" do
+      {:ok, ast} = parse_meta("obj.send(1, 2);")
+
+      [{:function_call, meta, args} | _] = collect_nodes(ast, :function_call)
+      assert Keyword.get(meta, :name) == "obj.send"
+      assert Keyword.has_key?(meta, :callee)
+      assert length(args) == 2
+      assert is_integer(Keyword.get(meta, :end_line))
+      assert is_integer(Keyword.get(meta, :end_col))
+    end
   end
 
   describe "LanguageSupport integration" do

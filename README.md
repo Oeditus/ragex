@@ -1167,20 +1167,24 @@ The following streaming improvements are planned but not yet implemented:
 
 Everything that’s supported by [`metastatic`](https://metastatic.hexdocs.pm)
 
-| Language | Atom Identifier | Extensions   | Adapter Module | Parser Strategy                                      |
-|----------|-----------------|--------------|----------------|------------------------------------------------------|
-| Agda     | :agda           | .agda, .lagda| agda.ex        | Subprocess Agda parser bridge (priv/parsers/agda)    |
-| Cure     | :cure           | .cure        | cure.ex        | In-process BEAM modules with Subprocess fallback     |
-| Elixir   | :elixir         | .ex, .exs	| elixir.ex      | Native Elixir Code.string_to_quoted/2                |
-| Erlang   | :erlang         | .erl, .hrl	| erlang.ex      | Native BEAM :erl_scan and :erl_parse                 |
-| Haskell  | :haskell        | .hs, .lhs	| haskell.ex     | Subprocess Stack binary (priv/parsers/haskell)       |
-| JS       | :javascript     | .js, .jsx	| javascript.ex  | Subprocess Node.js Babel parser (priv/parsers/js)    |
-| LFE      | :lfe            | .lfe         | lfe.ex         | In-process LFE reader (lfe_scan/lfe_io), no subprocess |
-| March    | :march          | .march, .mch	| march.ex       | Subprocess OCaml Dune binary (priv/parsers/march)    |
-| Markdown | :markdown       | .md, .markdown | markdown.ex    | In-process dependency-free Markdown parser (NL-MetaAST) |
-| Python   | :python         | .py          | python.ex      | Subprocess Python ast parser (priv/parsers/python)   |
-| Ruby     | :ruby           | .rb          | ruby.ex        | Subprocess Parser gem (priv/parsers/ruby)            |
-| TS       | :typescript     | .ts, .tsx    | typescript.ex  | Subprocess TypeScript compiler API (priv/parsers/js) |
+| Language | Atom Identifier | Extensions | Adapter Module | Parser Strategy |
+|----------|-----------------|------------|----------------|-----------------|
+| Agda | `:agda` | `.agda`, `.lagda` | `agda.ex` | Subprocess Agda parser bridge (`priv/parsers/agda`) |
+| Cure | `:cure` | `.cure` | `cure.ex` | In-process BEAM modules with subprocess fallback |
+| Elixir | `:elixir` | `.ex`, `.exs` | `elixir.ex` | Native Elixir `Code.string_to_quoted/2` |
+| Erlang | `:erlang` | `.erl`, `.hrl` | `erlang.ex` | Native BEAM `:erl_scan` and `:erl_parse` (round-trips via `:erl_pp`) |
+| Go | `:go` | `.go` | `go.ex` | Subprocess Go `go/parser` & `go/format` bridge (`priv/parsers/go`) |
+| Haskell | `:haskell` | `.hs`, `.lhs` | `haskell.ex` | Subprocess Stack binary (`priv/parsers/haskell`) |
+| Java | `:java` | `.java` | `java.ex` | Subprocess JDK compiler tree API bridge (`priv/parsers/java`) |
+| JavaScript | `:javascript` | `.js`, `.mjs`, `.cjs`, `.jsx` | `javascript.ex` | Subprocess Node.js Babel parser (`priv/parsers/javascript`) |
+| LFE | `:lfe` | `.lfe` | `lfe.ex` | In-process LFE reader (`lfe_scan`/`lfe_io`), no subprocess |
+| March | `:march` | `.march`, `.mch` | `march.ex` | Subprocess OCaml Dune binary (`priv/parsers/march`) |
+| Markdown | `:markdown` | `.md`, `.markdown` | `markdown.ex` | In-process dependency-free Markdown parser (NL-MetaAST) |
+| Python | `:python` | `.py`, `.pyw` | `python.ex` | Subprocess Python `ast` parser (`priv/parsers/python`) |
+| Ruby | `:ruby` | `.rb` | `ruby.ex` | Subprocess `parser`/`unparser` gems (`priv/parsers/ruby`) |
+| Rust | `:rust` | `.rs` | `rust.ex` | Subprocess `syn`/`prettyplease` bridge (`priv/parsers/rust`) |
+| SQL | `:sql` | `.sql` | `sql.ex` | Subprocess SQL parser bridge (`priv/parsers/sql`) |
+| TypeScript | `:typescript` | `.ts`, `.tsx` | `typescript.ex` | Subprocess Node.js Babel parser (`--dialect typescript`) |
 
 **Markdown is a *documentation* language.** It is parsed, validated and indexed
 like every other language -- prose linting, readability metrics and semantic
@@ -1196,4 +1200,14 @@ flattening it into the `:name` display string, and `case/when`,
 instead of raising. Ragex reads `:receiver` when resolving call targets, so
 `User.find_by(id: 1)` is attributed to `User` rather than to a module literally
 named `obj`, and `rename_function`/`rename_module` work on `.rb` files.
+
+**Erlang round-trips through MetaAST & standardized adapter availability.**
+Since `metastatic` 0.45 `Erlang.FromMeta` and `Erlang.unparse/1` reify full
+Erlang modules, functions, `-export`/`-import` attributes, maps, lambdas and
+`try/catch`, enabling `rename_function` (including `-export` entries) and
+`rename_module` on `.erl` files. JavaScript/TypeScript `:function_call` nodes
+carry non-bare callees in `:callee` metadata with only arguments in `children`,
+so refactoring updates `:callee` alongside `:name` and call arity matches the
+actual argument count. Adapter toolchain availability is exposed uniformly via
+`Ragex.Languages.available?/1` and `Ragex.LanguageSupport.available?/1`.
 

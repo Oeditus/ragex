@@ -566,19 +566,17 @@ defmodule Ragex.Editor.Refactor do
 
   # Refactor function in content based on language
   #
-  # Ruby and every other Metastatic-backed language go through
+  # Ruby, Erlang and every other Metastatic-backed language go through
   # `Refactor.MetaAST`, which parses to MetaAST, rewrites the node and reifies
-  # the result back to source. That path only became usable for Ruby once
-  # Metastatic 0.44 shipped the missing `FromMeta` clauses and stopped
-  # flattening call receivers into `:name` -- before that, renaming a Ruby
-  # method either raised or silently rewrote the receiver to `obj`.
+  # the result back to source. Ruby became usable in Metastatic 0.44 (which
+  # shipped the missing `FromMeta` clauses and kept call receivers in
+  # `:receiver`); Erlang became usable in Metastatic 0.45 (which completed
+  # `Erlang.FromMeta` for modules, functions, imports/exports, maps, lambdas
+  # and `try/catch`, and extended `Erlang.unparse/1` to print full forms).
   defp refactor_function_content(content, old_name, new_name, arity, language) do
     case language do
       :elixir ->
         ElixirRefactor.rename_function(content, old_name, new_name, arity)
-
-      :erlang ->
-        {:error, "Erlang refactoring not yet implemented"}
 
       lang ->
         MetaRefactor.rename_function(content, lang, to_string(old_name), to_string(new_name),
@@ -616,9 +614,6 @@ defmodule Ragex.Editor.Refactor do
     case language do
       :elixir ->
         ElixirRefactor.rename_module(content, old_name, new_name)
-
-      :erlang ->
-        {:error, "Erlang refactoring not yet implemented"}
 
       lang ->
         MetaRefactor.rename_module(content, lang, to_string(old_name), to_string(new_name))

@@ -47,6 +47,12 @@ defmodule Ragex.LanguageSupport do
   `begin/rescue/ensure` and module mixins reify instead of raising. That is what
   makes `Ragex.Editor.Refactor` usable on `.rb` files.
 
+  Erlang round-trips through MetaAST since Metastatic 0.45: `Erlang.FromMeta`
+  reifies modules, functions, imports/exports, maps, lambdas and `try/catch`,
+  and `Erlang.unparse/1` prints full Erlang forms, making `Ragex.Editor.Refactor`
+  usable on `.erl` files as well. Adapter toolchain availability can be probed
+  uniformly via `available?/1` (backed by `Metastatic.Adapter.available?/1`).
+
   ## Usage
 
       alias Ragex.LanguageSupport
@@ -309,6 +315,13 @@ defmodule Ragex.LanguageSupport do
   """
   @spec has_adapter?(language()) :: boolean()
   defdelegate has_adapter?(language), to: Ragex.Languages
+
+  @doc """
+  Returns whether the Metastatic adapter toolchain for `language` is available
+  in the current environment.
+  """
+  @spec available?(language()) :: boolean()
+  defdelegate available?(language), to: Ragex.Languages
 
   @doc """
   Returns whether a language describes documents rather than executable code.

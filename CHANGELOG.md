@@ -89,6 +89,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over it; Elixir/Erlang stay in-process, and Agda/Cure keep their custom
   callbacks. Behaviour is unchanged.
 
+- **Aligned with `metastatic` 0.45.** Dependency floor bumped from `~> 0.44` to
+  `~> 0.45` (both `mix.lock` and `mix.hex.lock` updated):
+  - **Erlang refactoring enabled.** `metastatic` 0.45 completed
+    `Erlang.FromMeta` (modules, functions, `-export`/`-import`, maps, lambdas,
+    `try/catch`) and `Erlang.unparse/1` for full forms. `Ragex.Editor.Refactor`
+    now routes Erlang `rename_function` and `rename_module` through
+    `Ragex.Editor.Refactor.MetaAST` instead of returning `"Erlang refactoring
+    not yet implemented"`, and `Refactor.MetaAST` also keeps `-export([...])`
+    entries in sync when renaming functions.
+  - **JavaScript / TypeScript `:callee` and constructor refactoring.**
+    `metastatic` 0.45 moved non-bare JS/TS call callees out of `children` into
+    `:callee` metadata (so `children` holds only the call arguments and
+    `JavaScript.FromMeta` reifies `:callee` in preference to `:name`).
+    `Refactor.MetaAST` now rewrites `member_access` `:callee` nodes for both
+    `rename_function` and `rename_module`, and handles `new OldClass()`
+    constructor calls.
+  - **Standardized adapter availability.** Added `Ragex.Languages.available?/1`
+    and `Ragex.LanguageSupport.available?/1` delegating to
+    `Metastatic.Adapter.available?/1`.
+
 - **Ruby aligned with `metastatic` 0.44.** Metastatic 0.44 sharpened the Ruby
   provider, and Ragex now reads the new MetaAST shape everywhere it resolves a
   Ruby call or definition.

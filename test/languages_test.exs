@@ -29,6 +29,20 @@ defmodule Ragex.LanguagesTest do
     test "descriptors are %Ragex.Language{} structs" do
       assert Enum.all?(Languages.all(), &match?(%Language{}, &1))
     end
+
+    test "available?/1 delegates to Metastatic.Adapter.available?/1" do
+      assert Languages.available?(:elixir)
+      assert Languages.available?(:erlang)
+      assert Languages.available?(:markdown)
+      refute Languages.available?(:c_cpp)
+      refute Languages.available?(:unknown)
+
+      for lang <- Metastatic.Languages.supported_languages() do
+        {:ok, adapter} = Languages.get_adapter(lang)
+        assert Languages.available?(lang) == Metastatic.Adapter.available?(adapter)
+        assert Ragex.LanguageSupport.available?(lang) == Languages.available?(lang)
+      end
+    end
   end
 
   describe "validators overlay" do

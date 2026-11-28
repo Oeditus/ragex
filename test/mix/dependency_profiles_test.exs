@@ -70,7 +70,7 @@ defmodule Ragex.DependencyProfilesTest do
     for {env, flag} <- [dev: true, prod: false] do
       deps = profile.(env, flag)[:deps]
       assert {:metacredo, "~> 0.1", []} == normalize.(List.keyfind(deps, :metacredo, 0))
-      assert {:metastatic, "~> 0.44", []} == normalize.(List.keyfind(deps, :metastatic, 0))
+      assert {:metastatic, "~> 0.45", []} == normalize.(List.keyfind(deps, :metastatic, 0))
     end
 
     deps = profile.(:dev, false)[:deps]

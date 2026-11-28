@@ -273,6 +273,30 @@ defmodule Ragex.Languages do
     Metastatic.Languages.supported?(language)
   end
 
+  @doc """
+  Returns whether the Metastatic adapter toolchain for `language` is available
+  in the current environment.
+
+  Delegates to `Metastatic.Adapter.available?/1` (standardized across all
+  adapters in Metastatic 0.45). Returns `false` for SCIP-only or unknown
+  languages that have no Metastatic adapter.
+
+  ## Examples
+
+      iex> Ragex.Languages.available?(:elixir)
+      true
+
+      iex> Ragex.Languages.available?(:c_cpp)
+      false
+  """
+  @spec available?(atom()) :: boolean()
+  def available?(language) when is_atom(language) do
+    case get_adapter(language) do
+      {:ok, adapter} -> Metastatic.Adapter.available?(adapter)
+      {:error, _} -> false
+    end
+  end
+
   @doc "Returns the validator module for a language, or `nil`."
   @spec validator(atom()) :: module() | nil
   def validator(language) do

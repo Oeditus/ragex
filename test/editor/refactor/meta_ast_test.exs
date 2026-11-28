@@ -251,6 +251,149 @@ defmodule Ragex.Editor.Refactor.MetaASTTest do
     end
   end
 
+  describe "rename_function/5 with Erlang" do
+    # Metastatic 0.45 completed `Erlang.FromMeta` for full modules, functions,
+    # exports/imports, maps, lambdas and `try/catch`, plus `Erlang.unparse/1`
+    # for forms and multi-form blocks, making `.erl` refactoring viable.
+
+    test "renames function definition, local call, and -export entry" do
+      source = """
+      -module(my_mod).
+      -export([old_fn/1, caller/0]).
+
+      old_fn(X) ->
+          X + 1.
+
+      caller() ->
+          old_fn(41).
+      """
+
+      assert {:ok, result} = MetaRefactor.rename_function(source, :erlang, "old_fn", "new_fn")
+      assert result =~ "-export([new_fn/1,caller/0])."
+      assert result =~ "new_fn(X) ->"
+      assert result =~ "new_fn(41)"
+      refute result =~ "old_fn"
+    end
+
+    test "renames remote Erlang calls" do
+      source = """
+      -module(caller).
+      -export([run/1]).
+
+      run(X) ->
+          helper:old_fn(X).
+      """
+
+      assert {:ok, result} = MetaRefactor.rename_function(source, :erlang, "old_fn", "new_fn")
+      assert result =~ "helper:new_fn(X)"
+      refute result =~ "old_fn"
+    end
+
+    test "arity filter limits scope in both definitions and -export" do
+      source = """
+      -module(calc).
+      -export([add/1, add/2]).
+
+      add(X) ->
+          X.
+
+      add(X, Y) ->
+          X + Y.
+      """
+
+      assert {:ok, result} =
+               MetaRefactor.rename_function(source, :erlang, "add", "inc", arity: 1)
+
+      assert result =~ "-export([inc/1,add/2])."
+      assert result =~ "inc(X) ->"
+      assert result =~ "add(X, Y) ->"
+    end
+  end
+
+  describe "rename_module/4 with Erlang" do
+    test "renames module attribute and remote calls" do
+      source = """
+      -module(old_mod).
+      -export([run/1]).
+
+      run(X) ->
+          old_mod:helper(X).
+      """
+
+      assert {:ok, result} = MetaRefactor.rename_module(source, :erlang, "old_mod", "new_mod")
+      assert result =~ "-module(new_mod)."
+      assert result =~ "new_mod:helper(X)"
+      refute result =~ "old_mod"
+    end
+  end
+
+  describe "rename_function/5 with JavaScript" do
+    # Metastatic 0.45 moved non-bare JS/TS call callees out of `children` into
+    # `:callee` metadata, which `JavaScript.FromMeta` reifies in preference to
+    # `:name`. Renaming must update `:callee` as well as `:name`.
+
+    test "renames bare and member_access method calls" do
+      source = """
+      class Greeter {
+        oldMethod(x) {
+          return x + 1;
+        }
+        run() {
+          this.oldMethod(1);
+          Greeter.oldMethod(2);
+          oldMethod(3);
+        }
+      }
+      """
+
+      assert {:ok, result} =
+               MetaRefactor.rename_function(source, :javascript, "oldMethod", "newMethod")
+
+      assert result =~ "newMethod(x)"
+      assert result =~ "this.newMethod(1)"
+      assert result =~ "Greeter.newMethod(2)"
+      assert result =~ "newMethod(3)"
+      refute result =~ "oldMethod"
+    end
+
+    test "arity filter matches actual JS call argument count" do
+      source = """
+      function run() {
+        calc(1);
+        calc(1, 2);
+      }
+      """
+
+      assert {:ok, result} =
+               MetaRefactor.rename_function(source, :javascript, "calc", "calcOne", arity: 1)
+
+      assert result =~ "calcOne(1)"
+      assert result =~ "calc(1, 2)"
+    end
+  end
+
+  describe "rename_module/4 with JavaScript" do
+    test "renames class definition, static member_access calls, and constructors" do
+      source = """
+      class OldClass {
+        static helper(x) {
+          return x;
+        }
+      }
+      OldClass.helper(1);
+      new OldClass();
+      """
+
+      assert {:ok, result} =
+               MetaRefactor.rename_module(source, :javascript, "OldClass", "NewClass")
+
+      assert result =~ "class NewClass"
+      assert result =~ "NewClass.helper(1)"
+      assert result =~ "new NewClass()"
+      refute result =~ "OldClass"
+    end
+  end
+
   describe "rename_function_doc/4" do
     test "transforms document directly" do
       source = """

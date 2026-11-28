@@ -157,11 +157,14 @@ defmodule Ragex.Editor.Refactor.MetaAST do
 
   # Rename function_call nodes (bare calls and qualified calls)
   #
-  # `:name` is a display string only -- since Metastatic 0.44 the receiver of a
-  # qualified call travels separately in `:receiver`, and `FromMeta` rebuilds
-  # the call from that key, never by parsing `:name`. Renaming therefore has to
-  # rewrite the trailing segment of `:name` and leave `:receiver` untouched;
-  # rewriting the receiver would move the call to a different object.
+  # `:name` is a display string only -- since Metastatic 0.44 Ruby carries the
+  # receiver of a qualified call in `:receiver`, and since Metastatic 0.45
+  # JavaScript/TypeScript carries a non-bare callee (such as a `member_access`
+  # chain) in `:callee`, which `FromMeta` reifies in preference to `:name`.
+  # Renaming therefore rewrites the trailing segment of `:name`, updates the
+  # property segment of a `member_access` `:callee` when present, and leaves
+  # `:receiver` untouched (rewriting it would move the call to a different
+  # object).
   defp rename_fn_pre(
          {:function_call, meta, args},
          old_name,
@@ -173,9 +176,36 @@ defmodule Ragex.Editor.Refactor.MetaAST do
     call_arity = length(args)
 
     if bare_name(call_name) == old_name and arity_matches?(call_arity, target_arity) do
-      {:function_call, Keyword.put(meta, :name, requalify(call_name, new_name)), args}
+      meta =
+        meta
+        |> Keyword.put(:name, requalify(call_name, new_name))
+        |> maybe_rename_callee_property(old_name, new_name)
+
+      {:function_call, meta, args}
     else
       {:function_call, meta, args}
+    end
+  end
+
+  # Rename Erlang `-export([foo/1, ...])` entries when renaming a function.
+  # Metastatic 0.45 reifies `:import` with `import_type: :export` back into
+  # `-export([...]).`, so keeping `:names` in sync preserves valid exports.
+  defp rename_fn_pre(
+         {:import, meta, children},
+         old_name,
+         new_name,
+         target_arity,
+         _target_module
+       ) do
+    if Keyword.get(meta, :import_type) == :export and is_list(Keyword.get(meta, :names)) do
+      names =
+        Enum.map(Keyword.get(meta, :names), fn entry ->
+          rename_export_entry(entry, old_name, new_name, target_arity)
+        end)
+
+      {:import, Keyword.put(meta, :names, names), children}
+    else
+      {:import, meta, children}
     end
   end
 
@@ -206,29 +236,31 @@ defmodule Ragex.Editor.Refactor.MetaAST do
     end
   end
 
-  # Rename qualified function calls whose receiver names the old module.
+  # Rename qualified function calls whose receiver or callee names the old
+  # module, as well as constructor calls (`new OldClass()`).
   #
-  # The receiver travels in `:receiver` (a MetaAST node) since Metastatic
-  # 0.44, and `:name` is only its display rendering. Both are rewritten so
-  # that a reified call and its display string agree; missing `:receiver`
-  # (older MetaAST, or a bare call) leaves the node's receiver untouched.
+  # Ruby carries the receiver in `:receiver` (Metastatic 0.44+), while
+  # JavaScript/TypeScript carries a non-bare callee in `:callee` (Metastatic
+  # 0.45+); `:name` is only a display rendering. Both metadata keys and `:name`
+  # are rewritten so that the reified call and its display string agree.
   defp rename_mod_pre({:function_call, meta, args}, old_name, new_name) do
     call_name = Keyword.get(meta, :name, "")
 
     meta =
-      case Keyword.get(meta, :receiver) do
-        {:literal, recv_meta, ^old_name} ->
-          Keyword.put(meta, :receiver, {:literal, recv_meta, new_name})
+      meta
+      |> maybe_rename_receiver_module(old_name, new_name)
+      |> maybe_rename_callee_module(old_name, new_name)
 
-        _ ->
-          meta
-      end
+    cond do
+      String.starts_with?(call_name, old_name <> ".") ->
+        suffix = String.slice(call_name, String.length(old_name)..-1//1)
+        {:function_call, Keyword.put(meta, :name, new_name <> suffix), args}
 
-    if String.starts_with?(call_name, old_name <> ".") do
-      suffix = String.slice(call_name, String.length(old_name)..-1//1)
-      {:function_call, Keyword.put(meta, :name, new_name <> suffix), args}
-    else
-      {:function_call, meta, args}
+      Keyword.get(meta, :constructor) == true and call_name == old_name ->
+        {:function_call, Keyword.put(meta, :name, new_name), args}
+
+      true ->
+        {:function_call, meta, args}
     end
   end
 
@@ -236,6 +268,76 @@ defmodule Ragex.Editor.Refactor.MetaAST do
   defp rename_mod_pre(node, _old, _new), do: node
 
   # -- Helpers --
+
+  defp maybe_rename_receiver_module(meta, old_name, new_name) do
+    case Keyword.get(meta, :receiver) do
+      {:literal, recv_meta, ^old_name} ->
+        Keyword.put(meta, :receiver, {:literal, recv_meta, new_name})
+
+      _ ->
+        meta
+    end
+  end
+
+  defp maybe_rename_callee_property(meta, old_name, new_name) do
+    case Keyword.get(meta, :callee) do
+      {:function_call, cmeta, [obj, {:variable, vmeta, ^old_name}]} ->
+        if Keyword.get(cmeta, :name) == "member_access" and Keyword.get(cmeta, :computed) != true do
+          Keyword.put(
+            meta,
+            :callee,
+            {:function_call, cmeta, [obj, {:variable, vmeta, new_name}]}
+          )
+        else
+          meta
+        end
+
+      _ ->
+        meta
+    end
+  end
+
+  defp maybe_rename_callee_module(meta, old_name, new_name) do
+    case Keyword.get(meta, :callee) do
+      nil ->
+        meta
+
+      callee ->
+        Keyword.put(meta, :callee, rename_callee_root(callee, old_name, new_name))
+    end
+  end
+
+  defp rename_callee_root({:variable, vmeta, old_name}, old_name, new_name) do
+    {:variable, vmeta, new_name}
+  end
+
+  defp rename_callee_root({:function_call, cmeta, [obj, prop]}, old_name, new_name) do
+    if Keyword.get(cmeta, :name) == "member_access" do
+      {:function_call, cmeta, [rename_callee_root(obj, old_name, new_name), prop]}
+    else
+      {:function_call, cmeta, [obj, prop]}
+    end
+  end
+
+  defp rename_callee_root(other, _old_name, _new_name), do: other
+
+  defp rename_export_entry(entry, old_name, new_name, target_arity) when is_binary(entry) do
+    case String.split(entry, "/", parts: 2) do
+      [^old_name, arity_str] ->
+        case Integer.parse(arity_str) do
+          {arity, ""} ->
+            if arity_matches?(arity, target_arity), do: "#{new_name}/#{arity}", else: entry
+
+          _ ->
+            entry
+        end
+
+      _ ->
+        entry
+    end
+  end
+
+  defp rename_export_entry(entry, _old_name, _new_name, _target_arity), do: entry
 
   # The trailing segment of a possibly-qualified display name.
   defp bare_name(name) when is_binary(name), do: name |> String.split(".") |> List.last()
