@@ -88,8 +88,13 @@ jobs:
         elixir-version: ${{ env.ELIXIR_VERSION }}
         otp-version: ${{ env.OTP_VERSION }}
 
-    - name: Install Ruby parser gem
-      run: gem install --user-install parser
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.3'
+
+    - name: Install Ruby parser and unparser gems
+      run: gem install --no-document parser unparser
 
     - name: Install Node parser dependencies
       run: cd priv/js_parser && npm ci
