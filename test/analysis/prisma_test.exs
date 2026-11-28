@@ -15,6 +15,7 @@ defmodule Ragex.Analysis.PrismaTest do
   alias Ragex.Analysis.Prisma
   alias Ragex.MCP.Handlers.Tools
   alias Ragex.Plugins.CodeQuality
+  alias Ragex.Plugins.Prisma, as: PrismaPlugin
 
   @prisma_json """
   Compiling 3 files (.ex)
@@ -75,9 +76,22 @@ defmodule Ragex.Analysis.PrismaTest do
   end
 
   describe "MCP tool integration" do
-    test "is advertised by the CodeQuality plugin" do
+    test "is advertised by the Prisma plugin" do
+      assert [%{name: "prisma_analyze"}] = PrismaPlugin.tools()
+    end
+
+    test "is not advertised by CodeQuality, which no longer owns it" do
+      # Two plugins advertising one tool name would make the registry's tool
+      # map depend on topological order -- the last plugin would silently win.
       names = CodeQuality.tools() |> Enum.map(& &1.name)
-      assert "prisma_analyze" in names
+      refute "prisma_analyze" in names
+    end
+
+    test "CodeQuality still dispatches it, so an advertised tool stays reachable" do
+      assert {:error, message} =
+               CodeQuality.execute("prisma_analyze", %{"path" => tmp_project(%{})})
+
+      assert message =~ "Prisma is not available"
     end
 
     test "returns an actionable error when Prisma is unavailable" do

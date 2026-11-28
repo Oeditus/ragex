@@ -164,4 +164,31 @@ defmodule Ragex.PluginTest do
       assert {:error, _reason} = MCPTools.call_tool("analyze_url", %{"url" => "invalid_url"})
     end
   end
+
+  describe "tool list has no duplicates" do
+    # A language plugin serving several languages commonly returns the same
+    # schema for each of them -- `Ragex.Plugins.Prisma` serves `:elixir` and
+    # `:erlang` but has a single tool. `advertised_tools/2` flat-maps
+    # `language_tools/1` over every served language, so without deduplication
+    # the tool is advertised once per language.
+    test "no tool name appears twice, with scoping disabled" do
+      PluginRegistry.set_active_languages([])
+      names = PluginRegistry.list_tools() |> Enum.map(& &1.name)
+
+      assert names == Enum.uniq(names),
+             "duplicate tools: #{inspect(names -- Enum.uniq(names))}"
+    end
+
+    test "no tool name appears twice when a multi-language plugin is fully active" do
+      # Activating every language Prisma serves exercises the flat_map over
+      # both of them, which is where the duplicate came from.
+      PluginRegistry.set_active_languages([:elixir, :erlang])
+      names = PluginRegistry.list_tools() |> Enum.map(& &1.name)
+
+      assert names == Enum.uniq(names),
+             "duplicate tools: #{inspect(names -- Enum.uniq(names))}"
+
+      PluginRegistry.set_active_languages([])
+    end
+  end
 end

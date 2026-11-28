@@ -193,6 +193,15 @@ defmodule Ragex.MixProject do
       # crash on struct updates and moves ExPanda to 0.3, whose walker no
       # longer splices `with`/`for` body options into the argument list.
       {:typle, "~> 0.4", optional: true},
+      # Prisma, a hybrid success/gradual type analyzer for Erlang and Elixir.
+      # Development/test only: `Ragex.Analysis.Prisma` shells out to `mix prisma`
+      # because Prisma ships no library API and its Mix task calls
+      # `erlang:halt/1`, so it can never be linked into this long-running
+      # process. Declaring it here makes the bridge exercisable locally and in
+      # CI instead of only on hosts that happen to have Prisma installed; the
+      # bridge still degrades to `{:error, :unavailable}` for any project that
+      # does not depend on Prisma itself.
+      {:prisma, "~> 0.2", only: [:dev, :test], runtime: false},
       # Image processing library (optional -- native/NIF-backed via Vix/libvips,
       # degrades gracefully when absent, see Ragex.Image.available?/0)
       {:image, "~> 0.54", optional: true},
@@ -395,6 +404,7 @@ defmodule Ragex.MixProject do
         Ragex.Plugins.Languages.Elixir.Muex,
         Ragex.Plugins.Languages.Elixir.Propwise,
         Ragex.Plugins.MetaCredo,
+        Ragex.Plugins.Prisma,
         Ragex.Plugins.SecurityAudit,
         Ragex.Plugins.URLAnalyzer
       ],

@@ -13,6 +13,7 @@ defmodule Ragex.Plugin.Registry do
     Ragex.Plugins.CodeQuality,
     Ragex.Plugins.SecurityAudit,
     Ragex.Plugins.MetaCredo,
+    Ragex.Plugins.Prisma,
     Ragex.Plugins.URLAnalyzer,
     Ragex.Plugins.Languages.Elixir
   ]
@@ -388,6 +389,13 @@ defmodule Ragex.Plugin.Registry do
       |> filter_active(active)
       |> Enum.flat_map(&mod.language_tools/1)
       |> Enum.map(&Map.put_new(&1, :destruction_level, :none))
+      # A plugin serving several languages commonly returns the same tool for
+      # each of them (Prisma serves `:elixir` and `:erlang` but has one tool).
+      # Without this, disabling scoping -- or any workspace containing more than
+      # one of its languages -- advertises that tool once per language, and
+      # `list_tools/0` returns duplicates that a client sees as two identical
+      # entries. Deduplicate by name, keeping the first (priority-ordered) one.
+      |> Enum.uniq_by(& &1.name)
     else
       entry.tools
     end

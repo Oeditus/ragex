@@ -33,6 +33,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Backed by `Ragex.Analysis.MetaCredo`.
 
+- **`prisma_analyze` is now a language-scoped plugin**, `Ragex.Plugins.Prisma`,
+  registered in the default plugin set. The tool previously lived in
+  `Ragex.Plugins.CodeQuality`, which is language-agnostic, so it was advertised
+  for every workspace including Python- or Ruby-only ones where it could only
+  fail. Prisma analyzes compiled Erlang/Elixir beams, so the plugin declares
+  `language: [:elixir, :erlang]` and `available?/1` keeps the tool out of
+  `tools/list` for projects that do not depend on Prisma. Scope governs
+  discovery, never reachability: `CodeQuality` still dispatches the name, so an
+  already-advertised tool stays callable.
+
+  `{:prisma, "~> 0.2", only: [:dev, :test], runtime: false}` is now declared in
+  `mix.exs`, which makes the bridge exercisable locally and in CI instead of
+  only on hosts that happen to have Prisma installed. It stays a
+  dev/test-only dependency because Prisma ships no library API and its Mix task
+  calls `erlang:halt/1`; `Ragex.Analysis.Prisma` shells out to it and still
+  degrades to `{:error, :unavailable}` for any project that does not depend on
+  Prisma itself.
+
+### Fixed
+
+- **`list_tools/0` could advertise the same tool twice.** A language plugin
+  serving more than one language commonly returns the same schema for each of
+  them (`Ragex.Plugins.Prisma` serves `:elixir` and `:erlang` but has one tool).
+  `advertised_tools/2` flat-mapped `language_tools/1` over every served
+  language, so disabling scoping -- or any workspace containing both languages
+  -- produced a duplicate entry in the tool list. It now deduplicates by name,
+  keeping the first (priority-ordered) occurrence.
+
 ### Changed
 - **Languages are now plug-in, not hardcoded.** Ragex no longer keeps its own
   language lists. The new `Ragex.Languages` registry **derives** from
