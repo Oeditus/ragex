@@ -1,5 +1,16 @@
 defmodule Ragex.Analysis.PrismaTest do
-  use ExUnit.Case, async: true
+  # `async: false` because this module both mutates global state and reads it.
+  # The JSON-parsing tests drive `analyze/2` against a fake project whose `mix`
+  # is a shell script placed first on PATH (`with_stub_on_path/2` mutates the
+  # *global* PATH via `System.put_env/2`), while `Prisma.available?/1` reads
+  # that same global through `System.find_executable/1`.
+  #
+  # That global PATH is *not* what made `analyze/2 when Prisma is unavailable`
+  # flake -- a `mix` stub on PATH leaves `find_executable("prisma")` nil, so
+  # `available?/1` still returns false. The actual cause was temp-directory
+  # reuse across runs; see the comment on `tmp_project/1`. Serialising the
+  # module is still correct hygiene for the PATH mutation, just not the fix.
+  use ExUnit.Case, async: false
 
   alias Ragex.Analysis.Prisma
   alias Ragex.MCP.Handlers.Tools
@@ -184,14 +195,27 @@ defmodule Ragex.Analysis.PrismaTest do
     }
   end
 
+  # Creates a throwaway project directory and removes it when the test ends.
+  #
+  # The name must be unique across *runs*, not just within one BEAM.
+  # `System.unique_integer([:positive])` restarts at each `mix test` invocation,
+  # so two runs reuse the same names -- and a directory a previous run's
+  # `stub_project/3` populated still holds its `mix.lock` with `"prisma"` in it.
+  # `Prisma.available?/1` reads that file, so a later `tmp_project(%{})` could
+  # land on a stale stub directory, report Prisma as available, and make
+  # "returns {:error, :unavailable}" take the run branch and fail with
+  # `{:invalid_json, "** (Mix) The task \"prisma\" could not be found"}`.
+  # `:rand.uniform/1` is seeded from the system clock per VM, so it does not
+  # collide across runs, and `on_exit` stops the directories accumulating.
   defp tmp_project(files) do
     dir =
       Path.join(
         System.tmp_dir!(),
-        "ragex_prisma_#{System.unique_integer([:positive])}"
+        "ragex_prisma_#{System.system_time(:nanosecond)}_#{:rand.uniform(1_000_000)}"
       )
 
     File.mkdir_p!(dir)
+    ExUnit.Callbacks.on_exit(fn -> File.rm_rf(dir) end)
 
     Enum.each(files, fn {name, content} ->
       File.write!(Path.join(dir, name), content)
@@ -203,6 +227,10 @@ defmodule Ragex.Analysis.PrismaTest do
   # Builds a throwaway project whose `mix prisma` is a shell script that prints
   # the given output and exits with the given status. This lets the real
   # `System.cmd` path be exercised without Prisma installed.
+  #
+  # The caller supplies `dir` (a `:tmp_dir`), which ExUnit removes afterwards --
+  # important, because this is the directory that carries a `mix.lock` naming
+  # `prisma`, the very thing `Prisma.available?/1` looks for.
   defp stub_project(dir, output, opts \\ []) do
     exit_status = Keyword.get(opts, :exit_status, 0)
     bin = Path.join(dir, "bin")
@@ -224,6 +252,11 @@ defmodule Ragex.Analysis.PrismaTest do
 
   # Runs `fun` with the stub project's bin directory prepended to PATH, so the
   # `System.cmd("mix", ...)` inside `Prisma.analyze/2` resolves to the stub.
+  #
+  # PATH is global process state, so it is restored in an `after` block. The
+  # restore handles an originally-unset PATH explicitly: `System.put_env/2`
+  # raises on `nil`, which would otherwise leave PATH corrupted for every test
+  # that runs afterwards.
   defp with_stub_on_path(dir, fun) do
     bin = Path.join(dir, "bin")
     original = System.get_env("PATH")
@@ -232,7 +265,9 @@ defmodule Ragex.Analysis.PrismaTest do
     try do
       fun.()
     after
-      System.put_env("PATH", original)
+      if original,
+        do: System.put_env("PATH", original),
+        else: System.delete_env("PATH")
     end
   end
 end

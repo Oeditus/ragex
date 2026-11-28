@@ -1,5 +1,12 @@
 defmodule Ragex.Analyzers.SCIPTest do
-  use ExUnit.Case, async: true
+  # `async: false` because of the "directory auto-SCIP indexing" block below.
+  # `Directory.analyze_directory/2` mutates process-wide state: it points the
+  # global store at its own project (`Store.load_project/1`), reads the global
+  # `:enable_auto_scip` flag, and writes the shared analysis cache. ExUnit
+  # reserves the `:async` tag, so this cannot be narrowed to that one describe
+  # block -- the whole module is serialised. `Ragex.Analyzers.DirectoryTest`
+  # is `async: false` for the same reason.
+  use ExUnit.Case, async: false
 
   alias Ragex.Analyzers.Directory
   alias Ragex.Analyzers.SCIP.{Adapter, Parser, Registry}
@@ -177,9 +184,22 @@ defmodule Ragex.Analyzers.SCIPTest do
 
   describe "directory auto-SCIP indexing" do
     test "analyze_directory/2 triggers auto_index_scip and handles missing binary gracefully" do
-      # Create a temp directory with a go.mod file (SCIP marker)
-      dir = Path.join(System.tmp_dir!(), "scip_auto_#{:rand.uniform(100_000)}")
+      # Create a temp directory with a go.mod file (SCIP marker).
+      #
+      # The name must be unique across *runs*: `FileTracker` is a named public
+      # ETS table and `Store.load_project/1` imports tracking data from the
+      # persisted project cache, so reusing a path an earlier run already
+      # tracked makes this test's `lib.ex` look unchanged. A timestamp plus a
+      # random suffix makes a collision effectively impossible.
+      dir =
+        Path.join(
+          System.tmp_dir!(),
+          "scip_auto_#{System.system_time(:nanosecond)}_#{:rand.uniform(1_000_000)}"
+        )
+
       File.mkdir_p!(dir)
+      on_exit(fn -> File.rm_rf(dir) end)
+
       File.write!(Path.join(dir, "go.mod"), "module example.com/test")
 
       # Also add one elixir file so directory analysis completes normally
@@ -198,10 +218,24 @@ defmodule Ragex.Analyzers.SCIPTest do
 
       Application.put_env(:ragex, :enable_auto_scip, true)
 
-      # Directory analysis should complete without crashing even if scip-go is missing
-      assert {:ok, result} = Directory.analyze_directory(dir, notify: false)
-      assert result.success >= 1
+      # `force_refresh: true` and `incremental: false` make this test hermetic.
+      # `Ragex.Embeddings.FileTracker` is a *named public ETS table* shared by
+      # the whole BEAM, and `Store.load_project/1` imports tracking data from
+      # the project's persisted cache. Without these options a `lib.ex` at this
+      # path that an earlier run already tracked is reported "unchanged", so
+      # the walk analyzes 0 files and `result.success` is 0 rather than 1.
+      #
+      # `watch: false` also stops the test from leaving a filesystem watcher
+      # running against a directory it deletes on the next line.
+      assert {:ok, result} =
+               Directory.analyze_directory(dir,
+                 notify: false,
+                 watch: false,
+                 incremental: false,
+                 force_refresh: true
+               )
 
+      assert result.success >= 1
       File.rm_rf!(dir)
     end
   end
