@@ -328,8 +328,6 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
     name |> String.split(".") |> List.last()
   end
 
-  defp bare_call_name(name), do: name
-
   # The container a `:function_def` belongs to.
   #
   # A singleton definition (`def self.list`, `def Foo.bar`) defines a method on
@@ -360,7 +358,6 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   end
 
   defp self_prefixed?(name) when is_binary(name), do: String.starts_with?(name, "self.")
-  defp self_prefixed?(_name), do: false
 
   # Normalize module names according to language conventions.
   # Elixir: "TestModule" -> Module atom (Elixir.TestModule)
