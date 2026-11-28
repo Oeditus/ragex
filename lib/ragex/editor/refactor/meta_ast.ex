@@ -138,20 +138,30 @@ defmodule Ragex.Editor.Refactor.MetaAST do
   # -- Function rename helpers --
 
   # Rename function_def nodes
+  #
+  # `:name` is a display string. When the definition has a receiver
+  # (`def self.list`, `def Foo.bar`) it is qualified, so only the trailing
+  # segment is the function name and the receiver prefix must be preserved.
   defp rename_fn_pre({:function_def, meta, body}, old_name, new_name, target_arity, target_module) do
     name = Keyword.get(meta, :name)
     params = Keyword.get(meta, :params, [])
     arity = length(params)
 
-    if name == old_name and arity_matches?(arity, target_arity) and
+    if bare_name(name) == old_name and arity_matches?(arity, target_arity) and
          module_matches?(meta, target_module) do
-      {:function_def, Keyword.put(meta, :name, new_name), body}
+      {:function_def, Keyword.put(meta, :name, requalify(name, new_name)), body}
     else
       {:function_def, meta, body}
     end
   end
 
   # Rename function_call nodes (bare calls and qualified calls)
+  #
+  # `:name` is a display string only -- since Metastatic 0.44 the receiver of a
+  # qualified call travels separately in `:receiver`, and `FromMeta` rebuilds
+  # the call from that key, never by parsing `:name`. Renaming therefore has to
+  # rewrite the trailing segment of `:name` and leave `:receiver` untouched;
+  # rewriting the receiver would move the call to a different object.
   defp rename_fn_pre(
          {:function_call, meta, args},
          old_name,
@@ -162,18 +172,10 @@ defmodule Ragex.Editor.Refactor.MetaAST do
     call_name = Keyword.get(meta, :name, "")
     call_arity = length(args)
 
-    cond do
-      # Bare call: "old_name" -> "new_name"
-      call_name == old_name and arity_matches?(call_arity, target_arity) ->
-        {:function_call, Keyword.put(meta, :name, new_name), args}
-
-      # Qualified call: "Module.old_name" -> "Module.new_name"
-      String.ends_with?(call_name, "." <> old_name) and arity_matches?(call_arity, target_arity) ->
-        prefix = String.slice(call_name, 0, String.length(call_name) - String.length(old_name))
-        {:function_call, Keyword.put(meta, :name, prefix <> new_name), args}
-
-      true ->
-        {:function_call, meta, args}
+    if bare_name(call_name) == old_name and arity_matches?(call_arity, target_arity) do
+      {:function_call, Keyword.put(meta, :name, requalify(call_name, new_name)), args}
+    else
+      {:function_call, meta, args}
     end
   end
 
@@ -204,9 +206,23 @@ defmodule Ragex.Editor.Refactor.MetaAST do
     end
   end
 
-  # Rename qualified function calls whose prefix matches the old module
+  # Rename qualified function calls whose receiver names the old module.
+  #
+  # The receiver travels in `:receiver` (a MetaAST node) since Metastatic
+  # 0.44, and `:name` is only its display rendering. Both are rewritten so
+  # that a reified call and its display string agree; missing `:receiver`
+  # (older MetaAST, or a bare call) leaves the node's receiver untouched.
   defp rename_mod_pre({:function_call, meta, args}, old_name, new_name) do
     call_name = Keyword.get(meta, :name, "")
+
+    meta =
+      case Keyword.get(meta, :receiver) do
+        {:literal, recv_meta, ^old_name} ->
+          Keyword.put(meta, :receiver, {:literal, recv_meta, new_name})
+
+        _ ->
+          meta
+      end
 
     if String.starts_with?(call_name, old_name <> ".") do
       suffix = String.slice(call_name, String.length(old_name)..-1//1)
@@ -220,6 +236,20 @@ defmodule Ragex.Editor.Refactor.MetaAST do
   defp rename_mod_pre(node, _old, _new), do: node
 
   # -- Helpers --
+
+  # The trailing segment of a possibly-qualified display name.
+  defp bare_name(name) when is_binary(name), do: name |> String.split(".") |> List.last()
+  defp bare_name(name), do: name
+
+  # Replaces the trailing segment of a display name, keeping any qualifier.
+  defp requalify(name, new_name) when is_binary(name) do
+    case String.split(name, ".") do
+      [_bare] -> new_name
+      parts -> parts |> Enum.drop(-1) |> Kernel.++([new_name]) |> Enum.join(".")
+    end
+  end
+
+  defp requalify(_name, new_name), do: new_name
 
   defp arity_matches?(_actual, nil), do: true
   defp arity_matches?(actual, target), do: actual == target

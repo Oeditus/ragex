@@ -41,6 +41,12 @@ defmodule Ragex.LanguageSupport do
   analyzable, but it is kept out of code-only passes (dead code, duplication,
   refactoring) that assume callable entities.
 
+  Ruby round-trips through MetaAST since Metastatic 0.44: a qualified call
+  carries its receiver in the `:receiver` meta key (so `User.find_by(id: 1)`
+  resolves to `User`, not to a module literally named `obj`), and `case/when`,
+  `begin/rescue/ensure` and module mixins reify instead of raising. That is what
+  makes `Ragex.Editor.Refactor` usable on `.rb` files.
+
   ## Usage
 
       alias Ragex.LanguageSupport

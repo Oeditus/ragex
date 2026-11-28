@@ -20,7 +20,7 @@ Ragex is an MCP (Model Context Protocol) server that analyzes codebases using co
   <summary>Multi-Language Support</summary>
     ▸ Erlang Analyzer: Uses `:erl_scan` and `:erl_parse` for native Erlang AST parsing<br/>
     ▸ Python Analyzer: Shells out to Python's `ast` module for comprehensive analysis<br/>
-    ▸ Ruby Analyzer: Uses Metastatic Ruby adapter (parser gem) with native fallback<br/>
+    ▸ Ruby Analyzer: Metastatic Ruby adapter (`parser` gem) with native fallback; qualified calls resolve their real receiver<br/>
     ▸ JavaScript/TypeScript Analyzer: Regex-based parsing for common JS/TS patterns<br/>
     ▸ Auto-detection: Automatically detects language from file extension<br/>
     ▸ Directory Analysis: Batch analyze entire projects with parallel processing<br/>
@@ -1179,7 +1179,7 @@ Everything that’s supported by [`metastatic`](https://metastatic.hexdocs.pm)
 | March    | :march          | .march, .mch	| march.ex       | Subprocess OCaml Dune binary (priv/parsers/march)    |
 | Markdown | :markdown       | .md, .markdown | markdown.ex    | In-process dependency-free Markdown parser (NL-MetaAST) |
 | Python   | :python         | .py          | python.ex      | Subprocess Python ast parser (priv/parsers/python)   |
-| Ruby     | :ruby           | .rb          | ruby.ex        | Subprocess Prism / Parser gem (priv/parsers/ruby)    |
+| Ruby     | :ruby           | .rb          | ruby.ex        | Subprocess Parser gem (priv/parsers/ruby)            |
 | TS       | :typescript     | .ts, .tsx    | typescript.ex  | Subprocess TypeScript compiler API (priv/parsers/js) |
 
 **Markdown is a *documentation* language.** It is parsed, validated and indexed
@@ -1188,3 +1188,12 @@ enrichment all apply -- but it defines no callable entities, so it is excluded
 from passes that reason about calls and definitions (dead code, duplication,
 refactoring, directory source discovery). Pass `include_documentation: false`
 to `Ragex.LanguageSupport.find_source_files/2` for a code-only file list.
+
+**Ruby round-trips through MetaAST.** Since `metastatic` 0.44 the Ruby provider
+carries the receiver of a qualified call in the `:receiver` meta key rather than
+flattening it into the `:name` display string, and `case/when`,
+`begin/rescue/ensure` and module mixins (`include`/`prepend`/`extend`) reify
+instead of raising. Ragex reads `:receiver` when resolving call targets, so
+`User.find_by(id: 1)` is attributed to `User` rather than to a module literally
+named `obj`, and `rename_function`/`rename_module` work on `.rb` files.
+

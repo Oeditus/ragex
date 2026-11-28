@@ -15,6 +15,17 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
   - **Calls** -- `:function_call` nodes with caller/callee resolution
   - **Imports** -- `:import` nodes with source and import type
 
+  ## Qualified calls
+
+  A `:function_call` carries its callee in two places: `:name` is a *display*
+  string (`"User.find_by"`), and `:receiver` holds the receiver as a real
+  MetaAST node (`{:literal, [subtype: :constant], "User"}`). Since Metastatic
+  0.44 the receiver is authoritative -- `:name` is a lossy rendering that
+  `FromMeta` never parses back, and for a receiver the adapter cannot render it
+  is the literal `"obj"`. Call resolution therefore prefers `:receiver` and
+  falls back to splitting `:name` only when the node has no receiver (a bare
+  call such as `puts`, or MetaAST produced by an older Metastatic).
+
   ## Usage
 
       alias Ragex.Analyzers.MetaASTExtractor
@@ -136,12 +147,18 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
     visibility = Keyword.get(meta, :visibility, :public)
     line = Keyword.get(meta, :line, 0)
     arity = length(params)
-    func_atom = safe_to_atom(name_str)
+
+    # A singleton definition (`def self.list`, `def Foo.bar`) is a method of
+    # the *receiver*, not of the enclosing container. Metastatic 0.44 carries
+    # the receiver node in `:receiver`; a `"self."` prefix on `:name` (the
+    # pre-0.44 shape) still resolves through the same helper.
+    module = container_for_function(meta, ctx.container, ctx.language)
+    func_atom = safe_to_atom(qualified_function_name(name_str, meta))
 
     func_entry = %{
       name: func_atom,
       arity: arity,
-      module: ctx.container || "top_level",
+      module: module,
       file: ctx.file,
       line: line,
       doc: nil,
@@ -167,13 +184,18 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
     line = Keyword.get(meta, :line, 0)
     call_arity = length(args)
 
-    {to_module, to_function} = split_call_name(name_str, ctx.language)
+    {to_module, to_function} = resolve_call_target(meta, name_str, ctx.language)
+
+    from_module = ctx.container || normalize_module_name("top_level", ctx.language)
 
     call_entry = %{
-      from_module: ctx.container || normalize_module_name("top_level", ctx.language),
+      from_module: from_module,
       from_function: ctx.function || :top_level,
       from_arity: ctx.arity || 0,
-      to_module: to_module,
+      # A call on a value receiver (`record&.title`, `@x.foo`) belongs to no
+      # module, so it is attributed to the caller's container rather than
+      # left dangling on `nil`.
+      to_module: to_module || from_module,
       to_function: to_function,
       to_arity: call_arity,
       line: line
@@ -260,6 +282,85 @@ defmodule Ragex.Analyzers.MetaASTExtractor do
         {normalize_module_name(mod, language), safe_to_atom(func)}
     end
   end
+
+  # Resolves the callee of a `:function_call`.
+  #
+  # The `:receiver` meta key (Metastatic 0.44+) is authoritative: it holds the
+  # receiver as a real MetaAST node, while `:name` is a display string that is
+  # lossy for anything the adapter cannot render (it falls back to `"obj"`).
+  # When there is no receiver the call is bare, and `:name` is the whole
+  # story -- including the legacy `"Module.func"` shape from older MetaAST and
+  # from languages whose adapters still flatten qualified names.
+  defp resolve_call_target(meta, name_str, language) do
+    case Keyword.get(meta, :receiver) do
+      nil ->
+        split_call_name(name_str, language)
+
+      receiver ->
+        {receiver_module(receiver, language), safe_to_atom(bare_call_name(name_str))}
+    end
+  end
+
+  # Renders a receiver node as a module name, or `nil` when it names no module.
+  #
+  # Constants (`User`, `Foo::Bar`) are the only receivers that denote a module.
+  # A variable, instance variable or nested call receiver (`record&.title`,
+  # `@x.foo`, `a.b.c`) is a value, so the call has no module to attribute and
+  # the caller's container is used instead.
+  defp receiver_module({:literal, meta, name}, language) when is_binary(name) do
+    if Keyword.get(meta, :subtype) == :constant do
+      normalize_module_name(name, language)
+    end
+  end
+
+  defp receiver_module({:function_call, meta, _args}, language) do
+    # `Foo::Bar.new` arrives as a call whose own receiver is the constant.
+    case Keyword.get(meta, :receiver) do
+      nil -> nil
+      inner -> receiver_module(inner, language)
+    end
+  end
+
+  defp receiver_module(_receiver, _language), do: nil
+
+  # The trailing segment of a possibly-qualified display name.
+  defp bare_call_name(name) when is_binary(name) do
+    name |> String.split(".") |> List.last()
+  end
+
+  defp bare_call_name(name), do: name
+
+  # The container a `:function_def` belongs to.
+  #
+  # A singleton definition (`def self.list`, `def Foo.bar`) defines a method on
+  # the receiver, so a constant receiver names the module. Without one the
+  # definition belongs to the enclosing container, falling back to
+  # `"top_level"` for a definition outside any container. MetaAST from before
+  # Metastatic 0.44 carries no `:receiver`, only a `"self."` prefix on `:name`;
+  # that shape still resolves to the enclosing container.
+  defp container_for_function(meta, container, language) do
+    case Keyword.get(meta, :receiver) do
+      nil -> container || "top_level"
+      receiver -> receiver_module(receiver, language) || container || "top_level"
+    end
+  end
+
+  # The bare method name of a `:function_def`.
+  #
+  # `:name` is a display string (`"self.list"`, `"Foo.bar"`) when the
+  # definition has a receiver; the function itself is the trailing segment.
+  # The `"self."` prefix of pre-0.44 MetaAST is stripped the same way, so a
+  # document produced by either Metastatic version yields the same name.
+  defp qualified_function_name(name_str, meta) do
+    if Keyword.has_key?(meta, :receiver) or self_prefixed?(name_str) do
+      bare_call_name(name_str)
+    else
+      name_str
+    end
+  end
+
+  defp self_prefixed?(name) when is_binary(name), do: String.starts_with?(name, "self.")
+  defp self_prefixed?(_name), do: false
 
   # Normalize module names according to language conventions.
   # Elixir: "TestModule" -> Module atom (Elixir.TestModule)

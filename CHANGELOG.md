@@ -61,6 +61,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   over it; Elixir/Erlang stay in-process, and Agda/Cure keep their custom
   callbacks. Behaviour is unchanged.
 
+- **Ruby aligned with `metastatic` 0.44.** Metastatic 0.44 sharpened the Ruby
+  provider, and Ragex now reads the new MetaAST shape everywhere it resolves a
+  Ruby call or definition.
+
+  `ToMeta` no longer flattens the receiver of a qualified call into the `:name`
+  display string; it carries the receiver as a real node in `:receiver` and
+  leaves `:name` as a lossy rendering (which falls back to the literal `"obj"`
+  for anything it cannot print). `Ragex.Analyzers.MetaASTExtractor` therefore
+  resolves call targets from `:receiver` first and only splits `:name` when the
+  node has no receiver (a bare call, or MetaAST from an older Metastatic).
+  Before this, `User.find_by(id: 1)` was attributed to a module literally named
+  `obj`.
+
+  A receiver that names no module -- a local variable, an instance variable, a
+  chained call (`record&.title`, `@x.foo`, `a.b.c`) -- is now attributed to the
+  caller's own container rather than left on `nil`, matching the convention
+  every native analyzer already followed.
+
+  A singleton definition (`def self.list`, `def Foo.bar`) is recorded under its
+  bare name (`:list`, not `:self.list`) and attributed to its receiver.
+
+  The dependency floor moves from `~> 0.43` to `~> 0.44`, because the older
+  shape is not interchangeable: 0.44 also moved the `ensure` body onto the
+  node's own meta (so `begin/rescue/ensure` survives a statement list), stopped
+  interning arbitrary Ruby method names as atoms, and stored keyword splats as
+  transformed children instead of a raw M1 map.
+
+- **Ruby refactoring is implemented.** `Ragex.Editor.Refactor` previously
+  returned `"Ruby refactoring not yet implemented"` for `rename_function`,
+  `rename_module` and inline refactoring. Rename operations now route through
+  `Ragex.Editor.Refactor.MetaAST` for Ruby and every other Metastatic-backed
+  language -- a path that only became usable once 0.44 shipped the missing
+  `FromMeta` clauses for `case/when`, `begin/rescue/ensure` and module mixins.
+  Inline refactoring remains Elixir-only.
+
+  `Refactor.MetaAST` was also corrected for the new shape: renaming a function
+  rewrites only the trailing segment of `:name` and leaves `:receiver` alone
+  (rewriting the receiver would move the call to a different object), while
+  renaming a module updates both the `:name` prefix and the `:receiver` node so
+  the reified call and its rendering stay in agreement.
+
 ### Added
 
 - **`Ragex.Language`** -- struct describing a language (adapter, validator,

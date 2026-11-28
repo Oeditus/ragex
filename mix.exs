@@ -148,17 +148,28 @@ defmodule Ragex.MixProject do
       # so `LOCAL_METASTATIC=1` can point it at the sibling checkout during
       # development.
       #
-      # 0.43.0 is the floor: it adds the Go adapter (`Metastatic.Adapters.Go`,
-      # `.go`), first-class JavaScript/TypeScript M2 conformance (`:param`
-      # metadata on `:function_def`/`:lambda`), first-class Python support,
-      # LFE and real-world Haskell support, and (in 0.43.2) up-to-date Cure
-      # support.
+      # 0.44.0 is the floor: it sharpens the Ruby provider. `ToMeta` now keeps
+      # the receiver of a qualified call in the `:receiver` meta key instead of
+      # flattening it into `:name` (which rendered as the literal `"obj"`),
+      # carries `:ensure` on the node's own meta so `begin/rescue/ensure`
+      # survives a statement list, stops interning arbitrary Ruby method names
+      # as atoms, and stores keyword splats as transformed children. `FromMeta`
+      # gained the missing clauses for `:pattern_match`, `:exception_handling`,
+      # `:import` (include/prepend/extend) and `:language_specific` kwsplat, so
+      # those constructs actually reify. Ragex's Ruby analysis reads `:name`
+      # and `:receiver` from the same nodes, so the older shape is not
+      # interchangeable.
+      #
+      # Earlier floors folded into this one: 0.43.0 added the Go adapter,
+      # first-class JavaScript/TypeScript M2 conformance (`:param` metadata on
+      # `:function_def`/`:lambda`), first-class Python support, LFE and
+      # real-world Haskell support; 0.43.2 added up-to-date Cure support.
       case {hex_profile?(), System.get_env("LOCAL_METASTATIC")} do
         {false, value} when not is_nil(value) ->
           {:metastatic, path: "../metastatic", override: true}
 
         _ ->
-          {:metastatic, "~> 0.43"}
+          {:metastatic, "~> 0.44"}
       end,
       # LFE toolchain (`lfe_scan`, `lfe_io`, `lfe_comp`), which is *not* part
       # of OTP. `Metastatic.Adapters.Lfe` reaches it in-process and degrades to

@@ -25,7 +25,9 @@ defmodule Ragex.Languages do
   `Metastatic.Adapters.Java` adapter (JDK tree API via a subprocess bridge), so
   Java becomes a first-class parseable language with a validator and a native
   fallback analyzer, *and* it keeps its `scip-java` entry for projects that
-  prefer precise cross-file symbol indexing. `:ruby` is the same shape.
+  prefer precise cross-file symbol indexing. `:ruby` is the same shape: the
+  Metastatic adapter parses and (since 0.44) round-trips, while `scip-ruby`
+  remains available for precise cross-file indexing.
 
   `:haskell` and `:lfe` are the two languages Ragex inherits from Metastatic
   0.40 with no overlay entry at all: neither has a Ragex validator or native

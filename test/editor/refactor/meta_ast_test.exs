@@ -146,6 +146,111 @@ defmodule Ragex.Editor.Refactor.MetaASTTest do
     end
   end
 
+  describe "rename_function/5 with Ruby" do
+    # The Ruby adapter only became round-trippable in Metastatic 0.44, so these
+    # are the first tests that exercise Ruby reification at all. They shell out
+    # to the `parser`/`unparser` gems and skip when Ruby is unavailable.
+    @describetag :ruby
+
+    setup do
+      if System.find_executable("ruby") do
+        :ok
+      else
+        {:ok, skip: true}
+      end
+    end
+
+    test "renames a method definition and its call" do
+      source = """
+      class Greeter
+        def greet(name)
+          name.upcase
+        end
+
+        def shout(name)
+          greet(name)
+        end
+      end
+      """
+
+      assert {:ok, result} = MetaRefactor.rename_function(source, :ruby, "greet", "welcome")
+      assert result =~ "def welcome"
+      assert result =~ "welcome(name)"
+      refute result =~ "greet"
+    end
+
+    test "renames a qualified call without disturbing its receiver" do
+      # `:name` is a display string and the receiver travels in `:receiver`.
+      # Renaming the method must leave the receiver alone -- rewriting it would
+      # move the call to a different object.
+      assert {:ok, result} =
+               MetaRefactor.rename_function("User.find_by(id: 1)", :ruby, "find_by", "lookup")
+
+      assert result =~ "User.lookup"
+      refute result =~ "find_by"
+    end
+
+    test "preserves the receiver of an unrelated qualified call" do
+      source = "Account.find_by(id: 1)\n"
+
+      assert {:ok, result} = MetaRefactor.rename_function(source, :ruby, "find_by", "lookup")
+      assert result =~ "Account.lookup"
+      refute result =~ "obj."
+    end
+
+    test "arity filter limits scope" do
+      source = """
+      class Calc
+        def add(x)
+          x
+        end
+
+        def add(x, y)
+          x + y
+        end
+      end
+      """
+
+      assert {:ok, result} = MetaRefactor.rename_function(source, :ruby, "add", "plus", arity: 1)
+      assert result =~ "def plus(x)"
+      assert result =~ "def add(x, y)"
+    end
+  end
+
+  describe "rename_module/4 with Ruby" do
+    @describetag :ruby
+
+    setup do
+      if System.find_executable("ruby") do
+        :ok
+      else
+        {:ok, skip: true}
+      end
+    end
+
+    test "renames a class definition" do
+      source = """
+      class OldClass
+        def hello
+          1
+        end
+      end
+      """
+
+      assert {:ok, result} = MetaRefactor.rename_module(source, :ruby, "OldClass", "NewClass")
+      assert result =~ "class NewClass"
+      refute result =~ "OldClass"
+    end
+
+    test "renames a qualified call and its receiver node together" do
+      # Both `:name` (display) and `:receiver` (the real node) must move, or
+      # the reified call and its rendering disagree.
+      assert {:ok, result} = MetaRefactor.rename_module("OldMod.run", :ruby, "OldMod", "NewMod")
+      assert result =~ "NewMod.run"
+      refute result =~ "OldMod"
+    end
+  end
+
   describe "rename_function_doc/4" do
     test "transforms document directly" do
       source = """

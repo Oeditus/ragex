@@ -239,9 +239,12 @@ defmodule Ragex.Analyzers.MetaASTExtractorTest do
       assert logger_call.to_function == :info
       assert logger_call.from_function == :do_work
 
-      local_call = Enum.find(result.calls, &is_nil(&1.to_module))
-      assert local_call.to_function == :process
-
+      # A bare call has no receiver, so it is attributed to the caller's own
+      # container -- the same convention every native analyzer (Python,
+      # JavaScript, Ruby, Java) already follows. `to_module` is never `nil`.
+      local_call = Enum.find(result.calls, &(&1.to_function == :process))
+      assert local_call.to_module == TestMod
+      assert local_call.from_module == TestMod
       assert [imp] = result.imports
       assert imp.to_module == Logger
       assert imp.type == :require
@@ -347,6 +350,207 @@ defmodule Ragex.Analyzers.MetaASTExtractorTest do
       assert func.metadata.params == ["σ", "ρ", "k"]
       assert [call] = result.calls
       assert String.length(Atom.to_string(call.to_function)) == 255
+    end
+  end
+
+  describe "extract/2 call receivers" do
+    # Metastatic 0.44 moved the receiver of a qualified call out of the
+    # `:name` display string and into a real `:receiver` MetaAST node. `:name`
+    # is now lossy -- it renders as the literal "obj" for any receiver the
+    # adapter cannot print -- so resolution has to read `:receiver`.
+    test "resolves a constant receiver from the :receiver meta key" do
+      ast =
+        {:container, [container_type: :class, name: "BookService", language: :ruby],
+         [
+           {:function_def, [name: "find", params: [{:param, [], "id"}], language: :ruby],
+            [
+              {:function_call,
+               [
+                 name: "User.find_by",
+                 receiver: {:literal, [subtype: :constant], "User"}
+               ], [{:variable, [], "id"}]}
+            ]}
+         ]}
+
+      doc = Document.new(ast, :ruby)
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "book_service.rb")
+
+      assert [call] = result.calls
+      assert call.to_module == "User"
+      assert call.to_function == :find_by
+      assert call.from_module == "BookService"
+    end
+
+    test "prefers :receiver over a lossy :name rendering" do
+      # `:name` says "obj.title" because the adapter could not render the
+      # receiver; the real receiver is a local variable, so the call belongs
+      # to the caller's container rather than to a module called "obj".
+      ast =
+        {:container, [container_type: :class, name: "Report", language: :ruby],
+         [
+           {:function_def, [name: "title", params: [], language: :ruby],
+            [
+              {:function_call, [name: "obj.title", receiver: {:variable, [], "record"}], []}
+            ]}
+         ]}
+
+      doc = Document.new(ast, :ruby)
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "report.rb")
+
+      assert [call] = result.calls
+      assert call.to_module == "Report"
+      assert call.to_function == :title
+      refute call.to_module == "obj"
+    end
+
+    test "falls back to splitting :name when there is no :receiver" do
+      # Bare calls and MetaAST produced before Metastatic 0.44 carry no
+      # `:receiver`; the dotted `:name` is then the only signal.
+      ast =
+        {:container, [container_type: :module, name: "Legacy", language: :ruby],
+         [
+           {:function_def, [name: "run", params: [], language: :ruby],
+            [{:function_call, [name: "Kernel.puts"], []}]}
+         ]}
+
+      doc = Document.new(ast, :ruby)
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "legacy.rb")
+
+      assert [call] = result.calls
+      assert call.to_module == "Kernel"
+      assert call.to_function == :puts
+    end
+
+    test "a singleton definition belongs to its receiver, not the enclosing container" do
+      ast =
+        {:container, [container_type: :class, name: "Catalog", language: :ruby],
+         [
+           {:function_def,
+            [
+              name: "self.list",
+              params: [],
+              receiver: {:literal, [subtype: :constant], "Catalog"},
+              language: :ruby
+            ], []}
+         ]}
+
+      doc = Document.new(ast, :ruby)
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "catalog.rb")
+
+      assert [func] = result.functions
+      assert func.name == :list
+      assert func.module == "Catalog"
+    end
+
+    test "a definition without a receiver keeps its plain name" do
+      ast =
+        {:container, [container_type: :class, name: "Catalog", language: :ruby],
+         [{:function_def, [name: "find", params: [], language: :ruby], []}]}
+
+      doc = Document.new(ast, :ruby)
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "catalog.rb")
+
+      assert [func] = result.functions
+      assert func.name == :find
+      assert func.module == "Catalog"
+    end
+
+    test "a top-level definition falls back to the top_level container" do
+      ast =
+        {:block, [], [{:function_def, [name: "helper", params: [], language: :ruby], []}]}
+
+      doc = Document.new(ast, :ruby)
+      assert {:ok, result} = MetaASTExtractor.extract(doc, "script.rb")
+
+      assert [func] = result.functions
+      assert func.module == "top_level"
+    end
+  end
+
+  describe "extract/2 with Ruby source" do
+    # End-to-end through the real Metastatic Ruby adapter (which shells out to
+    # the `parser` gem), so these are skipped when Ruby is unavailable.
+    @describetag :ruby
+
+    setup do
+      if System.find_executable("ruby") do
+        :ok
+      else
+        {:ok, skip: true}
+      end
+    end
+
+    test "resolves a constant receiver on a qualified call" do
+      source = """
+      class BookService
+        def find(id)
+          User.find_by(id: id)
+        end
+      end
+      """
+
+      {:ok, doc} = Ragex.LanguageSupport.parse_document(source, :ruby)
+      {:ok, result} = MetaASTExtractor.extract(doc, "book_service.rb")
+
+      call = Enum.find(result.calls, &(&1.to_function == :find_by))
+      assert call, "expected a find_by call, got #{inspect(result.calls)}"
+      assert call.to_module == "User"
+      assert call.from_module == "BookService"
+    end
+
+    test "a value receiver is attributed to the caller, never to \"obj\"" do
+      source = """
+      class Report
+        def title
+          record&.title
+        end
+      end
+      """
+
+      {:ok, doc} = Ragex.LanguageSupport.parse_document(source, :ruby)
+      {:ok, result} = MetaASTExtractor.extract(doc, "report.rb")
+
+      call = Enum.find(result.calls, &(&1.to_function == :title))
+      assert call, "expected a title call, got #{inspect(result.calls)}"
+      assert call.to_module == "Report"
+      refute Enum.any?(result.calls, &(&1.to_module == "obj"))
+    end
+
+    test "a singleton definition is named without its receiver prefix" do
+      source = """
+      class Catalog
+        def self.list
+          all
+        end
+      end
+      """
+
+      {:ok, doc} = Ragex.LanguageSupport.parse_document(source, :ruby)
+      {:ok, result} = MetaASTExtractor.extract(doc, "catalog.rb")
+
+      assert [func] = result.functions
+      assert func.name == :list
+      assert func.module == "Catalog"
+    end
+
+    test "module mixins become imports" do
+      source = """
+      class Service
+        include Enumerable
+        extend ClassMethods
+      end
+      """
+
+      {:ok, doc} = Ragex.LanguageSupport.parse_document(source, :ruby)
+      {:ok, result} = MetaASTExtractor.extract(doc, "service.rb")
+
+      types = Enum.map(result.imports, & &1.type)
+      assert :include in types
+      assert :extend in types
+
+      targets = Enum.map(result.imports, & &1.to_module)
+      assert "Enumerable" in targets
+      assert "ClassMethods" in targets
     end
   end
 
